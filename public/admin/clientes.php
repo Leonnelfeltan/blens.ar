@@ -118,7 +118,7 @@ else {
             foreach ($ents as $r) if ((int)$r['id'] === $ve) $ent = $r; }
     }
 }
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=10"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=11"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Proyectos</a><a href="./?v=consultas">Consultas</a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="../portal/" target="_blank" rel="noopener">Ver portal</a></nav>
 <form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
@@ -142,38 +142,38 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
 <?php elseif ($ent !== null): ?>
 <h1><?= $e($cli['nombre']) ?> · <?= $ent['id'] ? 'Editar entrega' : 'Nueva entrega' ?></h1>
 <form class="f" method="post" enctype="multipart/form-data"><input type="hidden" name="a" value="entrega"><input type="hidden" name="nonce" value="<?= bin2hex(random_bytes(8)) ?>"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$ent['id'] ?>">
-<label class="full">Título<input name="titulo" value="<?= $e($ent['titulo']) ?>" maxlength="120" required></label>
-<label class="full">Descripción / copy para publicar (se respetan saltos de línea y emojis)<textarea name="descripcion" rows="9" maxlength="4000"><?= $e($ent['descripcion']) ?></textarea></label>
-<label class="full">Link de Google Drive (público, en la mejor calidad)<input name="link_hd" value="<?= $e($ent['link_hd']) ?>" placeholder="https://drive.google.com/..." required></label>
+<label class="full"><span class="lbl">Título <span class="req">* obligatorio</span></span><input name="titulo" value="<?= $e($ent['titulo']) ?>" maxlength="120" required></label>
+<label class="full"><span class="lbl">Descripción / copy para publicar <span class="opt">(opcional)</span> (se respetan saltos de línea y emojis)</span><textarea name="descripcion" rows="9" maxlength="4000"><?= $e($ent['descripcion']) ?></textarea></label>
+<label class="full"><span class="lbl">Link de Google Drive <span class="req">* obligatorio</span> (público, en la mejor calidad)</span><input name="link_hd" value="<?= $e($ent['link_hd']) ?>" placeholder="https://drive.google.com/..." required></label>
 <?php $ps = $pdo->prepare("SELECT id,titulo,cliente FROM proyectos WHERE categoria <> 'showreel' ORDER BY (cliente_id = ?) DESC, id DESC"); $ps->execute([(int)$cli['id']]); ?>
-<label class="full">Proyecto de la web relacionado, opcional (si no subís un video de vista previa, se usa el de ese proyecto)<select name="proyecto_id"><option value="0">— Ninguno —</option><?php foreach ($ps as $x): ?><option value="<?= (int)$x['id'] ?>"<?= (int)($ent['proyecto_id'] ?? 0) === (int)$x['id'] ? ' selected' : '' ?>><?= $e($x['titulo'] . ($x['cliente'] ? ' · ' . $x['cliente'] : '')) ?></option><?php endforeach; ?></select></label>
-<label class="full">Video para la vista previa, opcional (si no subís nada, el portal muestra el video desde el link de Drive) <?= $ent['preview'] ? '· ya cargado; dejá vacío para mantenerlo' : '' ?><input type="file" name="mp4" accept="video/*"></label>
+<label class="full"><span class="lbl">Proyecto de la web relacionado <span class="opt">(opcional)</span> (si no subís un video de vista previa, se usa el de ese proyecto)</span><select name="proyecto_id"><option value="0">— Ninguno —</option><?php foreach ($ps as $x): ?><option value="<?= (int)$x['id'] ?>"<?= (int)($ent['proyecto_id'] ?? 0) === (int)$x['id'] ? ' selected' : '' ?>><?= $e($x['titulo'] . ($x['cliente'] ? ' · ' . $x['cliente'] : '')) ?></option><?php endforeach; ?></select></label>
+<label class="full"><span class="lbl">Video para la vista previa <span class="opt">(opcional)</span> (si no subís nada, el portal muestra el video desde el link de Drive) <?= $ent['preview'] ? '· ya cargado; dejá vacío para mantenerlo' : '' ?></span><input type="file" name="mp4" accept="video/*"></label>
 <p class="mut full">Se convierte solo a 720p y solo lo ve este cliente al entrar con su usuario. Puede tardar unos minutos: no cierres la página.</p>
-<label class="full">Portada propia, opcional<input type="file" name="poster" accept="image/jpeg,image/png,image/webp"></label>
+<label class="full"><span class="lbl">Portada propia <span class="opt">(opcional)</span></span><input type="file" name="poster" accept="image/jpeg,image/png,image/webp"></label>
 <div class="row full"><button>Guardar</button><a class="btn g" href="?c=<?= (int)$cli['id'] ?>">Cancelar</a></div></form>
-<?php if ($ent['id']): ?><h2>Eliminar entrega</h2><form method="post" class="row"><input type="hidden" name="a" value="del_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$ent['id'] ?>"><label class="chk"><input type="checkbox" required>Confirmo que quiero eliminarla</label><button class="r">Eliminar</button></form><?php endif; ?>
+<?php if ($ent['id']): ?><h2>Eliminar entrega</h2><form method="post" class="row"><input type="hidden" name="a" value="del_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$ent['id'] ?>"><label class="chk"><input type="checkbox" required>Confirmo que quiero eliminarla <span class="req">* obligatorio</span></label><button class="r">Eliminar</button></form><?php endif; ?>
 
 <?php else: ?>
 <h1><?= $cli['id'] ? $e(($cli['empresa'] ? $cli['empresa'] . ' · ' : '') . $cli['nombre']) : 'Nuevo cliente' ?></h1>
 <?php if ($cli['id'] && $cli['telefono'] && ($w = wa_url($cli['telefono'], 'Hola ' . explode(' ', trim($cli['nombre']))[0] . ', '))) echo '<p><a class="btn g" href="' . $e($w) . '" target="_blank" rel="noopener">Escribir por WhatsApp</a></p>'; ?>
 <form class="f" method="post" enctype="multipart/form-data"><input type="hidden" name="a" value="cliente"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>">
-<label>Empresa<input name="empresa" value="<?= $e($cli['empresa'] ?? '') ?>" maxlength="100"></label>
-<label>Persona de contacto<input name="nombre" value="<?= $e($cli['nombre']) ?>" maxlength="80" required></label>
-<label>Usuario para entrar<input name="usuario" value="<?= $e($cli['usuario']) ?>" maxlength="60" autocapitalize="none" required></label>
-<label>WhatsApp de esa persona<input name="telefono" value="<?= $e($cli['telefono']) ?>" maxlength="30"></label>
-<label>Clave <?= $cli['id'] ? '(vacío = no cambiar)' : '(vacío = se genera una al azar)' ?><input name="clave" type="text" autocomplete="off" placeholder="mínimo 6 caracteres"></label>
-<label>Tarifa por video ($)<input name="tarifa_video" inputmode="numeric" value="<?= $e($cli['tarifa_video'] ?? '') ?>"></label>
-<label>Tarifa por foto ($)<input name="tarifa_foto" inputmode="numeric" value="<?= $e($cli['tarifa_foto'] ?? '') ?>"></label>
-<label>Abono mensual ($)<input name="abono" inputmode="numeric" value="<?= $e($cli['abono'] ?? '') ?>"></label>
-<label class="full">Logo del cliente (PNG, JPG o WebP; mejor con fondo transparente)<input type="file" name="logo" accept="image/png,image/jpeg,image/webp"></label>
-<?php if (!empty($cli['logo'])): ?><div class="full"><img class="clogo" src="../media/logos/<?= $e($cli['logo']) ?>" alt=""><label class="chk"><input type="checkbox" name="quitar_logo">Quitar el logo actual</label></div><?php endif; ?>
-<label class="chk full"><input type="checkbox" name="logo_web" <?= !empty($cli['logo_web']) ? 'checked' : '' ?>>Mostrar el logo en la página principal</label>
-<label class="chk full"><input type="checkbox" name="activo" <?= $cli['activo'] ? 'checked' : '' ?>>Puede entrar al portal</label>
+<label><span class="lbl">Empresa <span class="opt">(opcional)</span></span><input name="empresa" value="<?= $e($cli['empresa'] ?? '') ?>" maxlength="100"></label>
+<label><span class="lbl">Persona de contacto <span class="req">* obligatorio</span></span><input name="nombre" value="<?= $e($cli['nombre']) ?>" maxlength="80" required></label>
+<label><span class="lbl">Usuario para entrar <span class="req">* obligatorio</span></span><input name="usuario" value="<?= $e($cli['usuario']) ?>" maxlength="60" autocapitalize="none" required></label>
+<label><span class="lbl">WhatsApp de esa persona <span class="opt">(opcional)</span></span><input name="telefono" value="<?= $e($cli['telefono']) ?>" maxlength="30"></label>
+<label><span class="lbl">Clave <span class="opt">(opcional)</span> <?= $cli['id'] ? '(vacío = no cambiar)' : '(vacío = se genera una al azar)' ?></span><input name="clave" type="text" autocomplete="off" placeholder="mínimo 6 caracteres"></label>
+<label><span class="lbl">Tarifa por video ($) <span class="opt">(opcional)</span></span><input name="tarifa_video" inputmode="numeric" value="<?= $e($cli['tarifa_video'] ?? '') ?>"></label>
+<label><span class="lbl">Tarifa por foto ($) <span class="opt">(opcional)</span></span><input name="tarifa_foto" inputmode="numeric" value="<?= $e($cli['tarifa_foto'] ?? '') ?>"></label>
+<label><span class="lbl">Abono mensual ($) <span class="opt">(opcional)</span></span><input name="abono" inputmode="numeric" value="<?= $e($cli['abono'] ?? '') ?>"></label>
+<label class="full"><span class="lbl">Logo del cliente <span class="opt">(opcional)</span> (PNG, JPG o WebP; mejor con fondo transparente)</span><input type="file" name="logo" accept="image/png,image/jpeg,image/webp"></label>
+<?php if (!empty($cli['logo'])): ?><div class="full"><img class="clogo" src="../media/logos/<?= $e($cli['logo']) ?>" alt=""><label class="chk"><input type="checkbox" name="quitar_logo">Quitar el logo actual <span class="opt">(opcional)</span></label></div><?php endif; ?>
+<label class="chk full"><input type="checkbox" name="logo_web" <?= !empty($cli['logo_web']) ? 'checked' : '' ?>>Mostrar el logo en la página principal <span class="opt">(opcional)</span></label>
+<label class="chk full"><input type="checkbox" name="activo" <?= $cli['activo'] ? 'checked' : '' ?>>Puede entrar al portal <span class="opt">(opcional)</span></label>
 <div class="row full"><button>Guardar cliente</button><a class="btn g" href="clientes.php">Volver</a></div></form>
 <?php if ($cli['id']): ?>
 <div class="row"><a class="btn" href="cobros.php?c=<?= (int)$cli['id'] ?>">Cobros y trabajos</a><form method="post"><input type="hidden" name="a" value="ver_como"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><button class="g">Ver el portal como este cliente</button></form><form method="post"><input type="hidden" name="a" value="nueva_clave"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><button class="g">Restablecer a la clave inicial</button></form></div>
 <h2>Entregas</h2><a class="btn" href="?c=<?= (int)$cli['id'] ?>&e=0">Agregar entrega</a>
 <table><tr><th>Título</th><th>Fecha</th><th>Links</th><th></th></tr>
 <?php foreach ($ents as $r): ?><tr><td><?= $e($r['titulo']) ?></td><td class="mut"><?= $e(substr($r['creado'], 0, 10)) ?></td><td><?= $r['link_hd'] ? 'HD ' : '' ?><?= $r['link_4k'] ? '4K' : '' ?></td><td><a class="btn g" href="?c=<?= (int)$cli['id'] ?>&e=<?= (int)$r['id'] ?>">Editar</a></td></tr><?php endforeach; if (!$ents) echo '<tr><td colspan="4" class="mut">Sin entregas todavía.</td></tr>'; ?></table>
-<h2>Eliminar cliente</h2><form method="post" class="row"><input type="hidden" name="a" value="del_cliente"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><label class="chk"><input type="checkbox" required>Confirmo: se borran el cliente y todas sus entregas</label><button class="r">Eliminar</button></form>
-<?php endif; endif; ?><script src="admin.js?v=10"></script></body></html>
+<h2>Eliminar cliente</h2><form method="post" class="row"><input type="hidden" name="a" value="del_cliente"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><label class="chk"><input type="checkbox" required>Confirmo: se borran el cliente y todas sus entregas <span class="req">* obligatorio</span></label><button class="r">Eliminar</button></form>
+<?php endif; endif; ?><script src="admin.js?v=11"></script></body></html>

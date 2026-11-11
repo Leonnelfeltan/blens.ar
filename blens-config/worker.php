@@ -16,6 +16,20 @@ if (!$p) exit(1);
 
 function borrar_pub(?string $rel, string $pub): void { if ($rel && str_starts_with($rel, 'media/uploads/')) @unlink($pub . '/' . $rel); }
 
+// Busca ffmpeg/ffprobe en el PATH, en rutas habituales o en una copia local (blens-private/bin).
+function ff_bin(string $name): string {
+    $env = getenv(strtoupper($name) . '_BIN');
+    if ($env && @is_file($env) && @is_executable($env)) return $env;
+    $o = []; $rc = 1; @exec('command -v ' . escapeshellarg($name) . ' 2>/dev/null', $o, $rc);
+    $c = trim((string)($o[0] ?? ''));
+    if ($rc === 0 && $c !== '') return $c;
+    foreach ([dirname(__DIR__, 2) . '/blens-private/bin', __DIR__ . '/bin', '/usr/local/bin', '/usr/bin', '/bin', '/snap/bin'] as $d) {
+        $p = $d . '/' . $name;
+        if (@is_file($p) && @is_executable($p)) return $p;
+    }
+    throw new RuntimeException("Falta $name en el servidor. Instalá FFmpeg con: sudo apt install ffmpeg");
+}
+
 function descargar_drive(string $url, string $dest): void {
     if (!preg_match('#/d/([A-Za-z0-9_-]{10,})#', $url, $m) && !preg_match('#[?&]id=([A-Za-z0-9_-]{10,})#', $url, $m)) throw new RuntimeException('No pude leer el ID del link de Drive.');
     $id = $m[1]; $jar = $dest . '.jar'; $u = 'https://drive.google.com/uc?export=download&id=' . $id; $ct = '';
@@ -49,10 +63,17 @@ try {
     if (!$src && $p['fuente_drive']) { $src = COLA . '/dl_' . bin2hex(random_bytes(6)) . '.bin'; descargar_drive((string)$p['fuente_drive'], $src); $descargado = true; }
     if (!$src) throw new RuntimeException('No hay un archivo de origen para procesar.');
 
-    // 2) medidas del video
-    $o = []; exec('ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 ' . escapeshellarg($src) . ' 2>&1', $o);
-    if (!preg_match('/^(\d+),(\d+)/', trim($o[0] ?? ''), $m)) throw new RuntimeException('El archivo no parece un video válido.');
-    $short = min((int)$m[1], (int)$m[2]);
+    $ffmpeg = ff_bin('ffmpeg'); $ffprobe = ff_bin('ffprobe');
+
+    // 2) medidas del video (solo la pista de video: los videos sin audio también son válidos)
+    $o = []; exec(escapeshellarg($ffprobe) . ' -v error -select_streams v:0 -show_entries stream=width,height -of json ' . escapeshellarg($src) . ' 2>&1', $o, $prc);
+    $pj = json_decode(implode("\n", $o), true); $st = is_array($pj) ? ($pj['streams'][0] ?? null) : null;
+    $w = (int)($st['width'] ?? 0); $h = (int)($st['height'] ?? 0);
+    if ($prc !== 0 || $w <= 0 || $h <= 0) {
+        $det = trim(implode(' ', array_slice($o, -2)));
+        throw new RuntimeException('El archivo no parece un video válido' . ($descargado ? ' (descarga de Drive)' : '') . ($det !== '' ? ': ' . mb_substr($det, 0, 160) : '.'));
+    }
+    $short = min($w, $h);
 
     // 3) calidades (nunca agrandan el original): lado corto 1080, 720 y 480
     $crf = [1080 => 20, 720 => 23, 480 => 26];
@@ -63,7 +84,7 @@ try {
         $f = "$dirMedia/$base-$t.mp4";
         $vf = "scale='if(gt(iw,ih),-2,min($t,iw))':'if(gt(iw,ih),min($t,ih),-2)'";
         $o = [];
-        exec('nice -n 10 ffmpeg -v error -y -i ' . escapeshellarg($src) . ' -vf ' . escapeshellarg($vf) . ' -c:v libx264 -preset veryfast -crf ' . $crf[$t] . ' -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a ' . ($t >= 1080 ? '160k' : '128k') . ' ' . escapeshellarg($f) . ' 2>&1', $o, $rc);
+        exec('nice -n 10 ' . escapeshellarg($ffmpeg) . ' -v error -y -i ' . escapeshellarg($src) . ' -map 0:v:0 -map 0:a:0? -sn -dn -vf ' . escapeshellarg($vf) . ' -c:v libx264 -preset veryfast -threads 0 -crf ' . $crf[$t] . ' -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a ' . ($t >= 1080 ? '160k' : '128k') . ' ' . escapeshellarg($f) . ' 2>&1', $o, $rc);
         if ($rc !== 0 || !is_file($f)) throw new RuntimeException('No se pudo convertir a ' . $t . 'p: ' . mb_substr(implode(' ', array_slice($o, -2)), 0, 160));
         $creados[] = $f; $out[$t] = "media/uploads/$base-$t.mp4";
     }
@@ -76,7 +97,7 @@ try {
     $poster = null;
     if ($p['poster_auto'] || !$p['poster']) {
         $jpg = "$dirMedia/$base.jpg"; $ref = $pub . '/' . $main;
-        foreach ([1, 0] as $ss) { exec('ffmpeg -v error -y -ss ' . $ss . ' -i ' . escapeshellarg($ref) . ' -frames:v 1 -vf ' . escapeshellarg("scale='min(720,iw)':-2") . ' -q:v 3 ' . escapeshellarg($jpg) . ' 2>&1'); if (is_file($jpg)) break; }
+        foreach ([1, 0] as $ss) { exec(escapeshellarg($ffmpeg) . ' -v error -y -threads 0 -ss ' . $ss . ' -i ' . escapeshellarg($ref) . ' -frames:v 1 -vf ' . escapeshellarg("scale='min(720,iw)':-2") . ' -q:v 3 ' . escapeshellarg($jpg) . ' 2>&1'); if (is_file($jpg)) break; }
         if (is_file($jpg)) { $poster = "media/uploads/$base.jpg"; $creados[] = $jpg; }
     }
 

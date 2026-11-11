@@ -132,4 +132,43 @@ if (pform) {
     x.send(new FormData(pform));
   });
 }
+// ---- Portfolio: reordenar arrastrando las tarjetas y guardar el orden en MySQL ----
+const portfolio = document.getElementById('portfolio-list');
+if (portfolio) {
+  let dragged = null;
+  const cards = () => Array.from(portfolio.querySelectorAll(':scope > .pi[data-id]'));
+  const guardarOrden = async () => {
+    const body = new URLSearchParams();
+    body.set('a', 'reorder');
+    body.set('t', portfolio.dataset.t || '');
+    cards().forEach(c => body.append('ids[]', c.dataset.id));
+    try {
+      const r = await fetch(location.pathname, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'No se pudo guardar el orden.');
+    } catch (err) {
+      aviso('No se pudo guardar el orden. Recargá la página e intentá de nuevo.');
+    }
+  };
+  portfolio.addEventListener('dragstart', e => {
+    const c = e.target.closest('.pi[data-id]');
+    if (!c || e.target.closest('a,button,input,select,textarea,label,form')) { e.preventDefault(); return; }
+    dragged = c; c.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', c.dataset.id); } catch (_) { }
+  });
+  portfolio.addEventListener('dragend', () => { if (dragged) dragged.classList.remove('dragging'); dragged = null; });
+  portfolio.addEventListener('dragover', e => {
+    if (!dragged) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+    const t = e.target.closest('.pi[data-id]');
+    if (!t || t === dragged) return;
+    const r = t.getBoundingClientRect();
+    portfolio.insertBefore(dragged, (e.clientY - r.top) > r.height / 2 ? t.nextSibling : t);
+  });
+  portfolio.addEventListener('drop', e => {
+    if (!dragged) return;
+    e.preventDefault(); guardarOrden();
+  });
+}
 if (document.querySelector('[data-proc]')) setTimeout(() => location.reload(), 8000);
