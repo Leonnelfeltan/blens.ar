@@ -1,0 +1,39 @@
+# --- blens.ar | Apache (requiere mod_headers, mod_expires, mod_deflate, mod_rewrite) ---
+Options -Indexes -MultiViews
+ErrorDocument 404 /404.html
+ErrorDocument 403 /404.html
+
+# HTTPS y dominio canónico (activar en producción)
+#RewriteEngine On
+#RewriteCond %{HTTPS} off
+#RewriteRule ^ https://blens.ar%{REQUEST_URI} [L,R=301]
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; media-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'self'; frame-ancestors 'none'"
+  #Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"  # solo con HTTPS
+</IfModule>
+
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css application/javascript image/svg+xml application/json
+</IfModule>
+
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType text/html "access plus 0 seconds"
+  ExpiresByType text/css "access plus 1 hour"
+  ExpiresByType application/javascript "access plus 1 hour"
+  ExpiresByType image/svg+xml "access plus 1 year"
+  ExpiresByType image/jpeg "access plus 1 year"
+  ExpiresByType image/png "access plus 1 year"
+  ExpiresByType video/mp4 "access plus 1 year"
+  ExpiresByType video/webm "access plus 1 year"
+</IfModule>
+
+# Archivos que nunca deben servirse
+<FilesMatch "(^\.|\.(sql|md|example\.php|log|bak)$)">
+  Require all denied
+</FilesMatch>
