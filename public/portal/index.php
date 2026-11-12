@@ -44,7 +44,7 @@ $did = function ($r) { foreach ([$r['link_hd'] ?? '', $r['link_4k'] ?? ''] as $l
 $SQL = 'SELECT e.*, p.video_mp4 AS pv, p.poster AS pp FROM entregas e LEFT JOIN proyectos p ON p.id = e.proyecto_id WHERE e.cliente_id = ?';
 ?><!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex"><meta name="theme-color" content="#14110F">
 <title>Portal de clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" rel="stylesheet"><link rel="stylesheet" href="../styles.css?v=8"><link rel="stylesheet" href="portal.css?v=9"></head><body>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" rel="stylesheet"><link rel="stylesheet" href="../styles.css?v=13"><link rel="stylesheet" href="portal.css?v=10"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <header class="ph"><a class="brand" href="../" aria-label="blens.ar, inicio"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
 <?php if ($cli): ?><div class="phr"><span class="mut">Portal de clientes</span><?= !empty($_SESSION['vista']) ? '<span class="perr">Vista de administrador</span>' : '' ?><form method="post"><input type="hidden" name="a" value="salir"><input type="hidden" name="t" value="<?= $T ?>"><button class="out">Salir</button></form></div>
@@ -78,4 +78,4 @@ $s = $pdo->prepare($SQL . ' ORDER BY e.id DESC'); $s->execute([$cid]); $es = $s-
 <?php if ($drive($r)): ?><a class="btn" href="<?= $e($drive($r)) ?>" target="_blank" rel="noopener">Abrir en Drive / Descargar</a><?php endif; ?></div></article><?php endforeach; ?></div></main>
 <?php endif; endif; ?>
 <footer class="foot"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span><nav class="social"><a href="../">Web</a><a href="<?= $e($contacto) ?>">Contacto</a></nav><span class="mut">© 2026 blens.ar</span></footer>
-<script src="../assets/player.js?v=8"></script><script src="dfr.js?v=9"></script></body></html>
+<script src="../assets/player.js?v=11"></script><script src="dfr.js?v=10"></script></body></html>

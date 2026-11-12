@@ -1,4 +1,6 @@
 User-agent: *
 Disallow: /admin/
+Disallow: /portal/
+Disallow: /content/
 Allow: /
 Sitemap: https://blens.ar/sitemap.xml

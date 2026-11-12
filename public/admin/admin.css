@@ -25,7 +25,7 @@ input,select,textarea{background:var(--c2);border:1px solid var(--l);color:var(-
 /* proyectos: lista y formulario nuevos */
 code{background:#0d0b0a;padding:.15rem .4rem;border-radius:3px;font-size:.78rem;word-break:break-all}
 .back{color:var(--m);text-decoration:none;font-size:.85rem}.back:hover{color:var(--o)}
-.lh2{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap}.lh2 h1{margin:1.2rem 0}
+.lh2{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap}.lh2 h1,.lh2 h2{margin:1.2rem 0}
 .plist{display:grid;gap:.8rem;margin-top:1rem}
 .plist-showreel{border-left:3px solid var(--o);padding-left:.8rem}
 .plist-portfolio .pi[draggable=true]{cursor:grab;position:relative;padding-left:1.9rem}
@@ -67,3 +67,10 @@ code{background:#0d0b0a;padding:.15rem .4rem;border-radius:3px;font-size:.78rem;
 .prog{flex:1;min-width:180px;height:30px;background:var(--c2);border:1px solid var(--l);border-radius:3px;position:relative;overflow:hidden}
 .prog i{position:absolute;inset:0 auto 0 0;width:0;background:var(--o);transition:width .2s}
 .prog span{position:absolute;inset:0;display:grid;place-items:center;font-size:.8rem;font-weight:600;color:#fff;text-shadow:0 1px 2px #000}
+
+.lh2 .row{margin:0}
+dialog.imp{border:1px solid var(--l);background:var(--c);color:var(--h);border-radius:6px;padding:1.4rem;max-width:640px;width:calc(100% - 2rem)}
+dialog.imp::backdrop{background:rgba(0,0,0,.65)}
+dialog.imp h2{margin:0;font-size:1.1rem}
+dialog.imp form.f{max-width:none;margin:0}
+.ia-f{display:inline}

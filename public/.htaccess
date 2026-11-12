@@ -3,18 +3,22 @@ Options -Indexes -MultiViews
 ErrorDocument 404 /404.html
 ErrorDocument 403 /404.html
 
-# HTTPS y dominio canónico (activar en producción)
-#RewriteEngine On
-#RewriteCond %{HTTPS} off
-#RewriteRule ^ https://blens.ar%{REQUEST_URI} [L,R=301]
+# HTTPS, dominio canónico y sitemap dinámico
+RewriteEngine On
+RewriteCond %{HTTPS} off
+RewriteCond %{HTTP:X-Forwarded-Proto} !https
+RewriteRule ^ https://blens.ar%{REQUEST_URI} [L,R=301]
+RewriteCond %{HTTP_HOST} !^blens\.ar$ [NC]
+RewriteRule ^ https://blens.ar%{REQUEST_URI} [L,R=301]
+RewriteRule ^sitemap\.xml$ sitemap.php [L]
 
 <IfModule mod_headers.c>
   Header always set X-Content-Type-Options "nosniff"
   Header always set X-Frame-Options "DENY"
   Header always set Referrer-Policy "strict-origin-when-cross-origin"
   Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
-  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; media-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'self'; frame-ancestors 'none'"
-  #Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"  # solo con HTTPS
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https://drive.google.com https://*.googleusercontent.com; media-src 'self'; frame-src https://drive.google.com; connect-src 'self'; form-action 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'"
+  Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
 </IfModule>
 
 <IfModule mod_deflate.c>

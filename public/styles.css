@@ -157,7 +157,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--o);outline:0}
 @media(max-width:800px){.about .phone{max-width:300px}}
 
 /* ===== logos de clientes: cada logo queda contenido en su recuadro ===== */
-.logos .lg{position:relative;overflow:hidden;display:block;height:130px;padding:0}
+.logos .lg{position:relative;overflow:hidden;display:block;height:130px;padding:0;max-width:none;margin:0;gap:0}
 .logos .lg img{position:absolute;left:1.4rem;right:1.4rem;top:1rem;bottom:1rem;width:calc(100% - 2.8rem);height:calc(100% - 2rem);max-width:none;max-height:none;object-fit:contain}
 @media(max-width:600px){.logos .lg{height:100px}.logos .lg img{left:1rem;right:1rem;top:.8rem;bottom:.8rem;width:calc(100% - 2rem);height:calc(100% - 1.6rem)}}
 
@@ -178,12 +178,6 @@ input:focus,select:focus,textarea:focus{border-color:var(--o);outline:0}
 .pl{position:absolute;right:.8rem;top:.8rem;z-index:2;width:30px;height:30px;background:var(--o);color:var(--c);display:grid;place-items:center;border-radius:3px;transition:scale .25s}
 .card:hover .pl{scale:1.12}
 @media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr);gap:.8rem}.card.wide{grid-column:span 2}.chip{font-size:.66rem;left:.55rem;top:.55rem}.pl{right:.55rem;top:.55rem;width:26px;height:26px}.meta{padding:.8rem}.meta h3{font-size:.95rem}.meta p{display:none}}
-
-/* selector de calidad del reproductor */
-.cv-q{width:auto;min-width:44px;padding:0 .7rem;font:600 .72rem Sora,sans-serif;white-space:nowrap}
-.cv-menu{position:absolute;right:.7rem;bottom:3.7rem;z-index:6;background:rgba(20,17,15,.97);border:1px solid var(--line);border-radius:4px;padding:.3rem;display:grid;min-width:104px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
-.cv-menu button{background:none;border:0;color:var(--h);font:600 .8rem Sora,sans-serif;padding:.55rem .8rem;text-align:left;cursor:pointer;border-radius:3px}
-.cv-menu button:hover{background:var(--o);color:var(--c)}
 
 /* ===== proyectos: carrusel (4 a la vista en la PC, 2 en el celular) ===== */
 .gwrap{position:relative}

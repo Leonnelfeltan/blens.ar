@@ -132,6 +132,18 @@ if (pform) {
     x.send(new FormData(pform));
   });
 }
+// ---- Autocompletar el título con el nombre del archivo de video ----
+document.querySelectorAll('form').forEach(f => {
+  const file = f.querySelector('input[type=file][name=mp4]');
+  const titulo = f.querySelector('input[name=titulo]');
+  if (!file || !titulo) return;
+  const completar = () => {
+    const fl = file.files && file.files[0];
+    if (!fl || titulo.value.trim() !== '') return;
+    titulo.value = fl.name.replace(/\.[^./\\]+$/, '').trim();
+  };
+  file.addEventListener('change', completar);
+});
 // ---- Portfolio: reordenar arrastrando las tarjetas y guardar el orden en MySQL ----
 const portfolio = document.getElementById('portfolio-list');
 if (portfolio) {
@@ -171,4 +183,15 @@ if (portfolio) {
     e.preventDefault(); guardarOrden();
   });
 }
+document.querySelectorAll('[data-importar]').forEach(b => b.addEventListener('click', () => {
+  const sel = b.getAttribute('data-importar');
+  const dlg = sel ? document.querySelector(sel) : document.getElementById('imp');
+  if (!dlg) return;
+  if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+}));
+document.querySelectorAll('[data-cerrar]').forEach(b => b.addEventListener('click', () => {
+  const dlg = b.closest('dialog');
+  if (!dlg) return;
+  if (dlg.close) dlg.close(); else dlg.removeAttribute('open');
+}));
 if (document.querySelector('[data-proc]')) setTimeout(() => location.reload(), 8000);

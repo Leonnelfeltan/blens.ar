@@ -9,10 +9,12 @@ NO incluye (a propósito):
   - blens-config/config.php  (tiene claves; queda solo en el servidor)
   - public/media/            (tus videos, portadas y logos subidos)
 
-Para usarlo como respaldo del código: guardá este zip.
+Respaldo del código: git push a GitHub. El repositorio NO incluye config.php ni public/media/
+(ver .gitignore); esas dos cosas hay que respaldarlas aparte en el servidor.
+
 Para instalarlo sobre el servidor (solo pisa archivos de código):
   sudo unzip -o ~/blens-completo.zip -d /var/www/
   sudo mkdir -p /var/www/blens-private/cola && sudo chown -R www-data:www-data /var/www/blens-private
 
 Base de datos: el panel nuevo de proyectos necesita estas columnas (correr una sola vez):
-  sudo mysql blens_db -e "ALTER TABLE proyectos ADD COLUMN video_1080 VARCHAR(255) NULL, ADD COLUMN video_480 VARCHAR(255) NULL, ADD COLUMN calidades VARCHAR(40) NULL, ADD COLUMN estado VARCHAR(12) NOT NULL DEFAULT 'listo', ADD COLUMN error_msg VARCHAR(255) NULL, ADD COLUMN fuente_drive VARCHAR(500) NULL, ADD COLUMN cola_src VARCHAR(255) NULL, ADD COLUMN poster_auto TINYINT(1) NOT NULL DEFAULT 0;"
+  sudo mysql blens_web -e "ALTER TABLE proyectos ADD COLUMN video_1080 VARCHAR(255) NULL, ADD COLUMN video_480 VARCHAR(255) NULL, ADD COLUMN calidades VARCHAR(40) NULL, ADD COLUMN estado VARCHAR(12) NOT NULL DEFAULT 'listo', ADD COLUMN error_msg VARCHAR(255) NULL, ADD COLUMN fuente_drive VARCHAR(500) NULL, ADD COLUMN cola_src VARCHAR(255) NULL, ADD COLUMN poster_auto TINYINT(1) NOT NULL DEFAULT 0;"

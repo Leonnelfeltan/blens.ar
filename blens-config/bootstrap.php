@@ -1,5 +1,5 @@
 <?php
-const CLAVE_INICIAL = 'blens123'; // clave que se asigna a los clientes nuevos; la cambian al entrar la primera vez
+const CLAVE_INICIAL = 'blens123'; // clave histórica: se rechaza si alguien intenta elegirla
 // ---- Bloqueo por intentos fallidos de login (5 fallos en 15 min => 15 min de bloqueo, por IP) ----
 const LOGIN_MAX = 5, LOGIN_VENTANA = 900, LOGIN_BLOQUEO = 900;
 function blens_lock_file(string $scope): string {
@@ -15,8 +15,13 @@ function blens_fallo(string $scope): void {
     @file_put_contents($f, json_encode($d), LOCK_EX);
 }
 function blens_ok(string $scope): void { @unlink(blens_lock_file($scope)); }
-// Clave inicial al azar para cada cliente nuevo (sin letras que se confunden)
-function blens_clave_nueva(): string { $a = 'abcdefghjkmnpqrstuvwxyz23456789'; $k = ''; for ($i = 0; $i < 10; $i++) $k .= $a[random_int(0, strlen($a) - 1)]; return $k; }
+// Clave temporal fácil de dictar: tres palabras al azar + dos números.
+function blens_clave_nueva(): string {
+    $adj = ['sol', 'luna', 'mar', 'rio', 'flor', 'paz', 'luz', 'nube', 'monte', 'valle', 'campo', 'fuego', 'tierra', 'cielo', 'viento', 'piedra', 'verde', 'azul', 'rojo', 'blanco', 'negro', 'dulce', 'fresco', 'claro', 'alto', 'bajo', 'rapido', 'suave', 'firme', 'nuevo'];
+    $sus = ['casa', 'mesa', 'silla', 'puerta', 'ventana', 'libro', 'lapiz', 'papel', 'cafe', 'pan', 'queso', 'vino', 'agua', 'fruta', 'perro', 'gato', 'pajaro', 'arbol', 'barco', 'tren', 'auto', 'bici', 'camino', 'puente', 'jardin', 'playa', 'bosque', 'ciudad', 'pueblo', 'tiempo'];
+    $p = fn(array $a): string => $a[random_int(0, count($a) - 1)];
+    return $p($adj) . '-' . $p($sus) . '-' . $p($sus) . random_int(10, 99);
+}
 function blens_cfg(): array { static $c = null; return $c ??= require __DIR__ . '/config.php'; }
 function blens_db(): PDO {
     static $p = null; if ($p) return $p; $c = blens_cfg();

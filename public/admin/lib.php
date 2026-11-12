@@ -28,6 +28,15 @@ function procesar(string $rel): array {
     return [$out, is_file($abs . $jpg) ? $jpg : null];
 }
 
+function lanzar_worker(int $id, string $tipo = 'proyecto', bool $forzar = false): void {
+    $w = realpath(__DIR__ . '/../../blens-config/worker.php');
+    if (!$w) throw new RuntimeException('Falta el procesador de videos (blens-config/worker.php).');
+    $php = trim((string)@shell_exec('command -v php')) ?: '/usr/bin/php';
+    $arg = $tipo === 'entrega' ? ' entrega' : '';
+    if ($tipo === 'entrega' && $forzar) $arg .= ' forzar';
+    exec('setsid nohup ' . escapeshellarg($php) . ' ' . escapeshellarg($w) . ' ' . (int)$id . $arg . ' > /dev/null 2>&1 &');
+}
+
 // Número en formato WhatsApp Argentina (549 + área + número)
 function wa_num(string $tel): ?string {
     $d = preg_replace('/\D+/', '', $tel) ?? ''; if ($d === '') return null;

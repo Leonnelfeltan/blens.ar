@@ -1,3 +1,4 @@
 blens-config/config.php
 public/media/*
 !public/media/.gitkeep
+public/content/
