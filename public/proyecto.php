@@ -9,9 +9,12 @@ try {
 } catch (Throwable $x) { error_log('[blens proyecto] ' . $x->getMessage()); }
 if (!$p) { http_response_code(404); readfile(__DIR__ . '/404.html'); exit; }
 $cats = ['reels' => 'Reels', 'cobertura' => 'Cobertura', 'estrategia' => 'Estrategia'];
-$sub = implode(' · ', array_filter([$p['cliente'], $cats[$p['categoria']] ?? '']));
+$cat = (string)($p['categoria'] ?? '');
+if ($cat === '' || $cat === 'auto') $cat = 'reels';
+$catLabel = $cats[$cat] ?? ucfirst(str_replace('-', ' ', $cat));
+$sub = implode(' · ', array_filter([$p['cliente'], $catLabel]));
 $desc = $p['descripcion'] ?: ($p['servicios'] ?: 'Proyecto audiovisual de blens.ar');
-$video = ($p['video_1080'] ?? null) ?: ($p['video_mp4'] ?? null);
+$video = ($p['video_1080'] ?? null) ?: ($p['video_mp4'] ?? null) ?: ($p['video_480'] ?? null);
 ?><!doctype html>
 <html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title><?= $e($p['titulo']) ?> | blens.ar</title>
@@ -20,8 +23,10 @@ $video = ($p['video_1080'] ?? null) ?: ($p['video_mp4'] ?? null);
 <meta property="og:type" content="article"><meta property="og:site_name" content="blens.ar"><meta property="og:title" content="<?= $e($p['titulo']) ?>"><meta property="og:description" content="<?= $e($desc) ?>">
 <?php if ($p['poster']) echo '<meta property="og:image" content="https://blens.ar/' . $e($p['poster']) . '">'; ?>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=13"></head><body>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" media="print" data-fonts>
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap"></noscript>
+<link rel="stylesheet" href="styles.css?v=14"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <header class="nav solid"><a class="brand" href="./" aria-label="blens.ar, inicio"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
 <button class="burger" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="menu"><span></span><span></span><span></span></button>
@@ -33,7 +38,7 @@ $video = ($p['video_1080'] ?? null) ?: ($p['video_mp4'] ?? null);
   <?php if ($video): ?><div class="cvw pv2"><video playsinline preload="auto" data-auto<?= $p['poster'] ? ' poster="' . $e($p['poster']) . '"' : '' ?>><source src="<?= $e($video) ?>" type="video/mp4"></video></div><?php endif; ?>
   <div class="cols">
     <div>
-      <?php if ($p['cliente']): ?><div class="blk"><h2>Cliente</h2><?= !empty($p['clogo']) ? '<img class="clogo" src="media/logos/' . $e($p['clogo']) . '" alt="">' : '' ?><p><?= $e($p['cliente']) ?></p></div><?php endif; ?>
+      <?php if ($p['cliente']): ?><div class="blk"><h2>Cliente</h2><?= !empty($p['clogo']) ? '<img class="clogo" loading="lazy" src="media/logos/' . $e($p['clogo']) . '" alt="" width="180" height="80">' : '' ?><p><?= $e($p['cliente']) ?></p></div><?php endif; ?>
       <?php if ($p['servicios']): ?><div class="blk"><h2>Qué hicimos</h2><p><?= $e($p['servicios']) ?></p></div><?php endif; ?>
       <?php if ($p['resultado']): ?><div class="blk"><h2>Resultado</h2><p><?= $e($p['resultado']) ?></p></div><?php endif; ?>
     </div>
@@ -41,5 +46,5 @@ $video = ($p['video_1080'] ?? null) ?: ($p['video_mp4'] ?? null);
   </div>
   <div class="cta2"><p>¿Querés algo así para tu empresa?</p><a class="btn" href="./#contacto">Contanos tu proyecto</a></div>
 </main>
-<footer class="foot"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span><span class="mut">© 2026 blens.ar</span></footer>
-<script src="assets/player.js?v=11"></script><script src="assets/nav.js?v=2"></script></body></html>
+<footer class="foot"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span><span class="loc">Posadas, Misiones · Argentina</span><span class="mut">© 2026 blens.ar</span></footer>
+<script src="assets/fonts.js?v=1" defer></script><script src="assets/player.js?v=11" defer></script><script src="assets/nav.js?v=2" defer></script></body></html>

@@ -13,11 +13,19 @@ try {
     }
     $show = null; $list = [];
     foreach ($rows as $r) { if ($r['categoria'] === 'showreel') { $show ??= $r; } else { $list[] = $r; } }
+    $base = ['reels' => 'Reels', 'cobertura' => 'Cobertura', 'estrategia' => 'Estrategia'];
+    $cats = $base;
+    foreach ($list as &$r) {
+        $c = (string)($r['categoria'] ?? '');
+        if ($c === '' || $c === 'auto') $r['categoria'] = $c = 'reels';
+        if (!isset($cats[$c])) $cats[$c] = ucfirst(str_replace('-', ' ', $c));
+    }
+    unset($r);
     $cli = [];
     try { $cli = $db->query("SELECT COALESCE(NULLIF(empresa,''),nombre) AS nombre, logo FROM clientes WHERE logo IS NOT NULL AND logo<>'' AND COALESCE(logo_web,1)=1 ORDER BY activo DESC, empresa, nombre")->fetchAll(); }
     catch (Throwable $x) { try { $cli = $db->query("SELECT COALESCE(NULLIF(empresa,''),nombre) AS nombre, logo FROM clientes WHERE logo IS NOT NULL AND logo<>'' ORDER BY activo DESC, empresa, nombre")->fetchAll(); } catch (Throwable $x2) { } }
     $wa = preg_replace('/\D+/', '', (string)(blens_cfg()['wa_negocio'] ?? '')) ?? '';
-    echo json_encode(['showreel' => $show, 'proyectos' => $list, 'clientes' => $cli, 'wa' => $wa], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['showreel' => $show, 'proyectos' => $list, 'clientes' => $cli, 'categorias' => $cats, 'wa' => $wa], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     error_log('[blens api] ' . $e->getMessage()); http_response_code(500);
     echo '{"showreel":null,"proyectos":[],"clientes":[]}';

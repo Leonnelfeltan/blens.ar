@@ -5,8 +5,16 @@ document.addEventListener('submit', e => {
 document.addEventListener('click', e => { if (e.target.closest('[data-print]')) window.print(); });
 document.querySelectorAll('select.tipo-sel').forEach(sel => {
   const m = sel.closest('form').querySelector('.monto-in');
+  if (!m) return;
   const fill = () => { const v = sel.selectedOptions[0].dataset.m; if (v && v !== '0') m.value = v; };
-  sel.addEventListener('change', fill); fill();
+  sel.addEventListener('change', fill);
+});
+document.querySelectorAll('form').forEach(f => {
+  const pj = f.querySelector('select[name=proyecto_id]');
+  const hd = f.querySelector('input[name=link_hd]');
+  if (!pj || !hd) return;
+  const upd = () => { hd.required = !(pj.value && pj.value !== '0'); };
+  pj.addEventListener('change', upd); upd();
 });
 const todos = document.getElementById('todos');
 if (todos) todos.addEventListener('change', () => document.querySelectorAll('.sel').forEach(c => c.checked = todos.checked));

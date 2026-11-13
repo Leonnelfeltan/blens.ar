@@ -34,4 +34,4 @@ $doc = ['titulo' => 'Detalle de cobro', 'fecha' => date('d/m/Y'), 'estado' => 'P
 <table><tr><th>Fecha</th><th>Detalle</th><th class="n">Cant.</th><th class="n">Precio</th><th class="n">Subtotal</th></tr>
 <?php foreach ($rows as $x): ?><tr><td><?= $e(date('d/m/Y', strtotime($x['fecha']))) ?></td><td><?= $e($x['detalle'] ?: (TIPOS[$x['tipo']] ?? '')) ?></td><td class="n"><?= (int)$x['cantidad'] ?></td><td class="n"><?= $e(peso((int)$x['monto_unit'])) ?></td><td class="n"><?= $e(peso((int)$x['cantidad'] * (int)$x['monto_unit'])) ?></td></tr><?php endforeach; ?></table>
 <p class="tot">Total a pagar: <?= $e(peso($tot)) ?></p>
-<p class="leg">Detalle de importes pendientes de pago. No es un recibo ni una factura: al recibir el pago se emite el recibo.</p><script src="admin.js?v=15"></script></body></html>
+<p class="leg">Detalle de importes pendientes de pago. No es un recibo ni una factura: al recibir el pago se emite el recibo.</p><script src="admin.js?v=16"></script></body></html>

@@ -4,21 +4,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>blens.ar | Contenido audiovisual para empresas</title>
-<meta name="description" content="Videos, reels, cobertura y estrategia de contenido para empresas. Dos miradas, un solo plano.">
+<meta name="description" content="Producción audiovisual en Posadas, Misiones: videos, reels, cobertura y estrategia de contenido para empresas. Dos miradas, un solo plano.">
 <meta name="theme-color" content="#14110F">
+<meta name="geo.region" content="AR-N">
+<meta name="geo.placename" content="Posadas, Misiones">
+<meta name="geo.position" content="-27.3671;-55.8961">
+<meta name="ICBM" content="-27.3671, -55.8961">
 <link rel="canonical" href="https://blens.ar/">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta property="og:type" content="website"><meta property="og:locale" content="es_AR"><meta property="og:site_name" content="blens.ar">
 <meta property="og:title" content="blens.ar | Contenido audiovisual para empresas">
-<meta property="og:description" content="Videos, reels, cobertura y estrategia de contenido para empresas.">
+<meta property="og:description" content="Producción audiovisual en Posadas, Misiones: videos, reels, cobertura y estrategia de contenido para empresas.">
 <meta property="og:url" content="https://blens.ar/"><meta property="og:image" content="https://blens.ar/assets/og.png">
 <meta name="twitter:card" content="summary_large_image">
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"ProfessionalService","name":"blens.ar","url":"https://blens.ar/","logo":"https://blens.ar/assets/og.png","description":"Producción de videos, reels, cobertura y estrategia de contenido para empresas.","areaServed":"AR","email":"hola@blens.ar","sameAs":["https://www.instagram.com/blens.ar","https://www.tiktok.com/@blens.ar"]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"ProfessionalService","name":"blens.ar","url":"https://blens.ar/","logo":"https://blens.ar/assets/og.png","description":"Producción audiovisual en Posadas, Misiones: videos, reels, cobertura y estrategia de contenido para empresas.","address":{"@type":"PostalAddress","addressLocality":"Posadas","addressRegion":"Misiones","addressCountry":"AR"},"areaServed":["AR","Posadas","Misiones"],"email":"hola@blens.ar","sameAs":["https://www.instagram.com/blens.ar","https://www.tiktok.com/@blens.ar"]}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=13">
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" media="print" data-fonts>
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap"></noscript>
+<link rel="stylesheet" href="styles.css?v=16">
 </head>
 <body>
 <a class="skip" href="#proyectos">Ir al contenido</a>
@@ -37,23 +43,25 @@
 
 <main>
 <section class="hero" id="inicio">
-  <video class="bgvid" muted loop playsinline preload="none" data-lazy data-autoplay poster="media/hero-poster.jpg">
-    <source data-src="media/hero.webm" type="video/webm"><source data-src="media/hero.mp4" type="video/mp4">
-  </video>
   <div class="frames" aria-hidden="true"><svg viewBox="-5 -5 140 140"><polygon class="f1" points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon class="f2" points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon class="f3" points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></svg></div>
   <div class="hero-in">
     <h1><span class="ln">Dos miradas</span><span class="ln">para contar</span><span class="ln">tu empresa.</span></h1>
+    <p class="loc">Posadas, Misiones · Argentina</p>
     <p class="lead">Producimos videos, reels y cobertura para empresas que quieren comunicar con seriedad y que los vean.</p>
-    <div class="cta"><a class="btn mag" href="#contacto">Pedir presupuesto</a><a class="link" href="#proyectos">Ver proyectos</a></div>
+    <div class="cta"><a class="btn mag" href="#contacto">Pedir presupuesto</a><a class="link" href="#proyectos">Ver proyectos</a><a class="wa-btn" data-wa href="https://wa.me/5493764588477?text=Hola%20Blens%2C%20quiero%20consultar%20por%20producci%C3%B3n%20de%20video%20para%20mi%20empresa." target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M3 3h18v14H9l-4 4v-4H3z"/></svg><span>Escribinos por WhatsApp</span></a></div>
   </div>
+  <aside class="hero-feature" id="hero-feature" hidden></aside>
 </section>
 
 <section class="sec" id="proyectos">
   <div class="head">
     <h2 class="h2">Proyectos</h2>
-    <div class="filters" role="group" aria-label="Filtrar proyectos">
-      <button class="on" data-f="all">Todos</button><button data-f="reels">Reels</button>
-      <button data-f="cobertura">Cobertura</button><button data-f="estrategia">Estrategia</button>
+    <div class="fwrap">
+      <div class="filters" role="group" aria-label="Filtrar proyectos">
+        <button class="on" data-f="all">Todos</button><button data-f="reels">Reels</button>
+        <button data-f="cobertura">Cobertura</button><button data-f="estrategia">Estrategia</button>
+      </div>
+      <button class="client-chip" id="client-chip" type="button" hidden title="Quitar el filtro por cliente"></button>
     </div>
   </div>
   <div class="gwrap">
@@ -63,6 +71,7 @@
   </div>
     <button class="gnav next" type="button" aria-label="Ver más proyectos" hidden><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   </div>
+  <p class="swipe-hint" id="swipe-hint" hidden>Deslizá para ver más <span aria-hidden="true">→</span></p>
 </section>
 
 <section class="sec" id="clientes" hidden>
@@ -86,12 +95,19 @@
     <div><p class="big">Una mirada técnica detrás de cámara y una presencia que comunica frente a ella.</p>
     <p class="mut">Leonnel se encarga de la edición y la grabación; Brenda es la presencia en cámara. Los guiones los debatimos juntos. Trabajamos con pocos clientes fijos, con trato directo y cuidado en cada pieza.</p>
     <ul class="vals"><li>Eficiencia</li><li>Responsabilidad</li><li>Dedicación</li><li>Diálogo</li><li>Calidad</li></ul></div>
-    <div class="phone"><div class="cvw" id="player">
-    <video id="sr" playsinline preload="none" data-lazy poster="media/showreel-poster.jpg">
-      <source data-src="media/showreel.webm" type="video/webm"><source data-src="media/showreel.mp4" type="video/mp4">
-    </video>
+    <div class="phone" hidden><div class="cvw" id="player">
+    <video id="sr" playsinline preload="none" data-lazy></video>
   </div><img class="phone-frame" src="assets/mockup-iphone.webp" alt="" aria-hidden="true" width="388" height="800" loading="lazy"></div>
   </div>
+</section>
+
+<section class="sec" id="proceso">
+  <h2 class="h2">Cómo trabajamos</h2>
+  <ol class="steps">
+    <li><span class="n">01</span><h3>Reunión y enfoque</h3><p>Definimos objetivo, mensaje y estilo visual antes de prender la cámara.</p></li>
+    <li><span class="n">02</span><h3>Jornada de grabación</h3><p>Producción ágil en locación en Posadas y Misiones, cuidando imagen y sonido.</p></li>
+    <li><span class="n">03</span><h3>Entrega y portal privado</h3><p>Recibís los videos listos para publicar junto con los copys redactados en tu acceso exclusivo de cliente.</p></li>
+  </ol>
 </section>
 
 <section class="sec" id="contacto">
@@ -108,7 +124,10 @@
     <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
     <input type="hidden" name="ts" id="ts">
     <p class="note full">Usamos tus datos solo para responder tu consulta y no los compartimos con terceros.</p>
-    <button class="btn" type="submit">Enviar consulta</button>
+    <div class="form-cta">
+      <button class="btn" type="submit">Enviar consulta</button>
+      <a class="wa-btn" data-wa href="https://wa.me/5493764588477?text=Hola%20Blens%2C%20quiero%20consultar%20por%20producci%C3%B3n%20de%20video%20para%20mi%20empresa." target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M3 3h18v14H9l-4 4v-4H3z"/></svg><span>O escribinos directo por WhatsApp</span></a>
+    </div>
     <p id="status" role="status" aria-live="polite"></p>
   </form>
 </section>
@@ -116,12 +135,13 @@
 
 <footer class="foot"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span>
   <nav class="social" aria-label="Contacto y redes"><a href="mailto:hola@blens.ar">hola@blens.ar</a><a href="https://www.instagram.com/blens.ar" rel="noopener" target="_blank">Instagram</a><a href="https://www.tiktok.com/@blens.ar" rel="noopener" target="_blank">TikTok</a><a href="portal/">Acceso clientes</a></nav>
+  <span class="loc">Posadas, Misiones · Argentina</span>
   <span class="mut">© 2026 blens.ar</span></footer>
 
-<script src="assets/gsap.min.js"></script>
-<script src="assets/ScrollTrigger.min.js"></script>
-<script src="assets/player.js?v=11"></script>
-<script src="assets/nav.js?v=2"></script>
-<script src="main.js?v=13"></script>
+<script src="assets/gsap.min.js" defer></script>
+<script src="assets/ScrollTrigger.min.js" defer></script>
+<script src="assets/player.js?v=11" defer></script>
+<script src="assets/nav.js?v=2" defer></script>
+<script src="main.js?v=16" defer></script>
 </body>
 </html>

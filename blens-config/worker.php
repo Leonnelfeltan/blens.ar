@@ -18,6 +18,25 @@ $pdo = blens_db();
 
 function borrar_pub(?string $rel, string $pub): void { if ($rel && str_starts_with($rel, 'media/uploads/')) @unlink($pub . '/' . $rel); }
 
+function cat_slug_ia(string $s): string {
+    $s = function_exists('mb_strtolower') ? mb_strtolower(trim($s), 'UTF-8') : strtolower(trim($s));
+    $s = strtr($s, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u', 'ñ' => 'n']);
+    $s = preg_replace('/[^a-z0-9]+/', '-', $s) ?? '';
+    $s = trim($s, '-');
+    if ($s === '' || $s === 'auto' || $s === 'showreel') return '';
+    return rtrim(mb_substr($s, 0, 40), '-');
+}
+function lanzar_entrega_ia(PDO $pdo, int $pid): void {
+    try {
+        $q = $pdo->prepare("SELECT id FROM entregas WHERE proyecto_id=? AND (descripcion IS NULL OR descripcion='') ORDER BY id LIMIT 1");
+        $q->execute([$pid]);
+        $eid = (int)($q->fetchColumn() ?: 0);
+        if (!$eid || ai_key() === '') return;
+        $php = PHP_BINARY ?: '/usr/bin/php';
+        exec('setsid nohup ' . escapeshellarg($php) . ' ' . escapeshellarg(__FILE__) . ' ' . $eid . ' entrega > /dev/null 2>&1 &');
+    } catch (Throwable $x) { error_log('[blens worker entrega vinculada] ' . $x->getMessage()); }
+}
+
 // Busca ffmpeg/ffprobe en el PATH, en rutas habituales o en una copia local (blens-private/bin).
 function ff_bin(string $name): string {
     $env = getenv(strtoupper($name) . '_BIN');
@@ -108,7 +127,7 @@ function ai_generar(string $transcripcion, array $ctx, string $key, string $prov
     if (($ctx['tipo'] ?? '') === 'entrega') {
         $pedido = 'A partir de la transcripción del video, escribí un copy listo para publicar en Instagram y TikTok. Devolvé JSON con las claves: "titulo" (título atractivo y breve en español argentino, máximo 120 caracteres, sin repetir el nombre del archivo) y "descripcion" (copy listo para publicar: un gancho inicial de una línea, una bajada breve con el mensaje principal, un cierre con llamado a la acción y entre 5 y 8 hashtags relevantes al final. Usá saltos de línea. No uses comillas innecesarias. Máximo 4000 caracteres).';
     } else {
-        $pedido = 'A partir de la transcripción del video, completá los textos de la página del proyecto. Devolvé JSON con las claves: "titulo" (título atractivo y breve en español argentino, máximo 120 caracteres, sin repetir el nombre del archivo), "descripcion" (texto corto para la tarjeta, máximo 160 caracteres), "servicios" (qué hicimos, máximo 160 caracteres, por ejemplo guion, grabación y edición) y "detalle" (descripción amplia y profesional del proyecto, máximo 4000 caracteres, en 2 o 3 párrafos).';
+        $pedido = 'A partir de la transcripción del video, completá los textos de la página del proyecto. Devolvé JSON con las claves: "titulo" (título atractivo y breve en español argentino, máximo 120 caracteres, sin repetir el nombre del archivo), "descripcion" (texto corto para la tarjeta, máximo 160 caracteres), "servicios" (qué hicimos, máximo 160 caracteres, por ejemplo guion, grabación y edición), "detalle" (descripción amplia y profesional del proyecto, máximo 4000 caracteres, en 2 o 3 párrafos) y "categoria" (una etiqueta breve en minúsculas, sin espacios, que describa el tipo de contenido; por ejemplo: reels, cobertura, estrategia, institucional, evento).';
     }
     $tx = trim($transcripcion);
     $trans = $tx !== '' ? $tx : '(El video no tiene audio o no se pudo transcribir. Generá los textos usando solo el contexto. No inventes datos verificables.)';
@@ -222,9 +241,9 @@ if ($tipo === 'entrega') {
         }
         if (!$forzar && !titulo_provisorio((string)$e['titulo'], $e, $src) && trim((string)($e['descripcion'] ?? '')) !== '') exit(0);
         if (!$src && !empty($e['proyecto_id'])) {
-            $q = $pdo->prepare('SELECT video_1080,video_mp4 FROM proyectos WHERE id=?'); $q->execute([(int)$e['proyecto_id']]);
+            $q = $pdo->prepare('SELECT video_1080,video_mp4,video_480 FROM proyectos WHERE id=?'); $q->execute([(int)$e['proyecto_id']]);
             if ($r = $q->fetch()) {
-                foreach ([(string)($r['video_1080'] ?? ''), (string)($r['video_mp4'] ?? '')] as $rel) {
+                foreach ([(string)($r['video_1080'] ?? ''), (string)($r['video_mp4'] ?? ''), (string)($r['video_480'] ?? '')] as $rel) {
                     if ($rel !== '' && is_file($pub . '/' . $rel)) { $src = $pub . '/' . $rel; break; }
                 }
             }
@@ -299,11 +318,16 @@ if ($tipo === 'ia') {
             if ($provisorio && $titIa !== '') {
                 $pdo->prepare('UPDATE proyectos SET titulo=? WHERE id=? AND titulo=?')->execute([$titIa, $id, (string)$p['titulo']]);
             }
+            $catIa = cat_slug_ia((string)ai_campo($ia, 'categoria', 40));
+            if ($ia && in_array((string)$p['categoria'], ['auto', ''], true) && $catIa !== '') {
+                $pdo->prepare('UPDATE proyectos SET categoria=? WHERE id=?')->execute([$catIa, $id]);
+            }
         }
     } catch (Throwable $x) {
         error_log('[blens worker IA proyecto] ' . $x->getMessage());
     }
     if ($tmp) @unlink($tmp);
+    lanzar_entrega_ia($pdo, $id);
     exit(0);
 }
 
@@ -358,7 +382,8 @@ try {
     // 5) autocompletar textos con IA solo si los campos están vacíos (o el título es provisorio)
     $ia = [];
     $provisorio = titulo_provisorio((string)$p['titulo'], $p, $src);
-    $faltaTexto = $provisorio || trim((string)($p['descripcion'] ?? '')) === '' || trim((string)($p['servicios'] ?? '')) === '' || trim((string)($p['detalle'] ?? '')) === '';
+    $faltaCat = in_array((string)$p['categoria'], ['auto', ''], true);
+    $faltaTexto = $faltaCat || $provisorio || trim((string)($p['descripcion'] ?? '')) === '' || trim((string)($p['servicios'] ?? '')) === '' || trim((string)($p['detalle'] ?? '')) === '';
     if ($faltaTexto && ai_key() !== '') {
         try {
             $ia = ai_textos($f, $ffmpeg, [
@@ -378,10 +403,13 @@ try {
     $pdo->prepare("UPDATE proyectos SET video_mp4=?, video_1080=?, video_480=?, video_webm=NULL, calidades=NULL, poster=COALESCE(?,poster), poster_auto=0, estado='listo', error_msg=NULL, cola_src=NULL, descripcion=IF(descripcion='', ?, descripcion), servicios=IF(servicios='', ?, servicios), detalle=IF(detalle IS NULL OR detalle='', ?, detalle) WHERE id=?")
         ->execute([$main, $hd, $main480, $poster, $dIa, $sIa, $tIa, $id]);
     if ($provisorio && $titIa !== '') $pdo->prepare('UPDATE proyectos SET titulo=? WHERE id=? AND titulo=?')->execute([$titIa, $id, (string)$p['titulo']]);
+    $catIa = cat_slug_ia((string)ai_campo($ia, 'categoria', 40));
+    if ($ia && $faltaCat && $catIa !== '') $pdo->prepare('UPDATE proyectos SET categoria=? WHERE id=?')->execute([$catIa, $id]);
     foreach (['video_mp4', 'video_webm', 'video_1080', 'video_480'] as $k) borrar_pub($p[$k] ?? null, $pub);
     if ($poster) borrar_pub($p['poster'] ?? null, $pub);
     if ($p['cola_src'] && str_starts_with((string)$p['cola_src'], COLA . '/')) @unlink((string)$p['cola_src']);
     limpiar_nombre_original($p, !($provisorio && $titIa === ''));
+    lanzar_entrega_ia($pdo, $id);
 } catch (Throwable $e) {
     foreach ($creados as $f) @unlink($f);
     if ($descargado && $src) @unlink($src);

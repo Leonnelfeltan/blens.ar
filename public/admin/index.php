@@ -9,9 +9,27 @@ header('X-Robots-Tag: noindex'); header('Cache-Control: no-store'); header('X-Fr
 $cfg = blens_cfg(); $pdo = blens_db();
 $faltaMig = false; try { $faltaMig = !$pdo->query("SHOW COLUMNS FROM proyectos LIKE 'video_1080'")->fetch(); } catch (Throwable $x0) { }
 const MIG_CMD = "sudo mysql blens_web -e \"ALTER TABLE proyectos ADD COLUMN video_1080 VARCHAR(255) NULL, ADD COLUMN video_480 VARCHAR(255) NULL, ADD COLUMN calidades VARCHAR(40) NULL, ADD COLUMN estado VARCHAR(12) NOT NULL DEFAULT 'listo', ADD COLUMN error_msg VARCHAR(255) NULL, ADD COLUMN fuente_drive VARCHAR(500) NULL, ADD COLUMN cola_src VARCHAR(255) NULL, ADD COLUMN poster_auto TINYINT(1) NOT NULL DEFAULT 0;\"";
+$faltaCat = false; try { $col = $pdo->query("SHOW COLUMNS FROM proyectos LIKE 'categoria'")->fetch(); $faltaCat = $col && stripos((string)$col['Type'], 'varchar(40)') === false; } catch (Throwable $x0) { }
+const MIG_CAT_CMD = "sudo mysql blens_web -e \"ALTER TABLE proyectos MODIFY categoria VARCHAR(40) NOT NULL DEFAULT 'reels';\"";
 $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 $_SESSION['t'] ??= bin2hex(random_bytes(16));
-$cats = ['reels' => 'Reels', 'cobertura' => 'Cobertura', 'estrategia' => 'Estrategia', 'showreel' => 'Video de presentación (sección Nosotros)'];
+function cat_slug(string $s): string {
+    $s = function_exists('mb_strtolower') ? mb_strtolower(trim($s), 'UTF-8') : strtolower(trim($s));
+    $s = strtr($s, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u', 'ñ' => 'n']);
+    $s = preg_replace('/[^a-z0-9]+/', '-', $s) ?? '';
+    return trim($s, '-');
+}
+function cat_label(string $s): string {
+    $base = ['reels' => 'Reels', 'cobertura' => 'Cobertura', 'estrategia' => 'Estrategia', 'auto' => 'Automática (IA)', 'showreel' => 'Video de presentación (sección Nosotros)'];
+    if (isset($base[$s])) return $base[$s];
+    return ucfirst(str_replace('-', ' ', $s));
+}
+$cats = ['reels' => 'Reels', 'cobertura' => 'Cobertura', 'estrategia' => 'Estrategia', 'auto' => 'Automática (IA)', 'showreel' => 'Video de presentación (sección Nosotros)'];
+try {
+    $extra = $pdo->query("SELECT DISTINCT categoria FROM proyectos WHERE categoria NOT IN ('','reels','cobertura','estrategia','auto','showreel') ORDER BY categoria")->fetchAll(PDO::FETCH_COLUMN);
+    foreach ($extra as $c) { $c = (string)$c; if ($c !== '') $cats[$c] = cat_label($c); }
+} catch (Throwable $x0) { }
+$catsForm = $cats; unset($catsForm['auto']);
 $msg = ''; $post = $_SERVER['REQUEST_METHOD'] === 'POST';
 
 if ($post && !hash_equals($_SESSION['t'], (string)($_POST['t'] ?? ''))) { http_response_code(400); exit('Sesión vencida. Recargá la página.'); }
@@ -133,10 +151,13 @@ if ($post) {
             }
             if ($a === 'importar_carpeta') {
                 if ($faltaMig) throw new RuntimeException('Falta actualizar la base de datos (mirá el aviso rojo en la lista de proyectos).');
+                if ($faltaCat) throw new RuntimeException('Falta ampliar la columna de categorías (mirá el aviso rojo en la lista de proyectos).');
                 $fid = drive_folder_id((string)($_POST['carpeta'] ?? ''));
                 if (!$fid) throw new RuntimeException('Pegá un link válido de carpeta de Google Drive (drive.google.com/drive/folders/…).');
-                $ci = (string)($_POST['categoria'] ?? '');
-                if (!isset($cats[$ci]) || $ci === 'showreel') throw new RuntimeException('Elegí una categoría para los proyectos importados.');
+                $ci = cat_slug((string)($_POST['categoria_nueva'] ?? ''));
+                if ($ci === '') $ci = (string)($_POST['categoria'] ?? '');
+                if ($ci === '' || $ci === 'showreel' || strlen($ci) > 40) throw new RuntimeException('Elegí una categoría para los proyectos importados.');
+                if (!isset($cats[$ci])) $cats[$ci] = cat_label($ci);
                 $clid = (int)($_POST['cliente_id'] ?? 0); $cli = '';
                 if ($clid) { $q0 = $pdo->prepare('SELECT empresa,nombre FROM clientes WHERE id=?'); $q0->execute([$clid]); if ($r0 = $q0->fetch()) $cli = $r0['empresa'] ?: $r0['nombre']; else $clid = 0; }
                 $w = isset($_POST['ancho']) ? 1 : 0;
@@ -169,12 +190,18 @@ if ($post) {
             }
             if ($a === 'save') {
                 if ($faltaMig) throw new RuntimeException('Falta actualizar la base de datos (mirá el aviso rojo en la lista de proyectos).');
+                if ($faltaCat) throw new RuntimeException('Falta ampliar la columna de categorías (mirá el aviso rojo en la lista de proyectos).');
                 $n0 = (string)($_POST['nonce'] ?? '');
                 if ($n0 !== '' && isset($_SESSION['nonces'][$n0])) fin('./?ok=1');
                 if ($n0 !== '') $_SESSION['nonces'][$n0] = 1;
                 $id = (int)($_POST['id'] ?? 0);
                 $t = mb_substr(trim((string)($_POST['titulo'] ?? '')), 0, 120);
-                $c = (string)($_POST['categoria'] ?? ''); if (!isset($cats[$c])) throw new RuntimeException('Elegí una categoría.');
+                $nueva = cat_slug((string)($_POST['categoria_nueva'] ?? ''));
+                if (in_array($nueva, ['auto', 'showreel'], true)) throw new RuntimeException('Ese nombre de categoría está reservado.');
+                $c = $nueva !== '' ? $nueva : (string)($_POST['categoria'] ?? '');
+                if (isset($_POST['categoria_auto'])) $c = 'auto';
+                if ($c === '' || strlen($c) > 40) throw new RuntimeException('Elegí una categoría válida (hasta 40 caracteres).');
+                if (!isset($cats[$c])) $cats[$c] = cat_label($c);
                 $cli = mb_substr(trim((string)($_POST['cliente'] ?? '')), 0, 80); $clid = (int)($_POST['cliente_id'] ?? 0);
                 if ($cli !== '') { $clid = 0; } elseif ($clid) { $q0 = $pdo->prepare('SELECT empresa,nombre FROM clientes WHERE id=?'); $q0->execute([$clid]); if ($r0 = $q0->fetch()) $cli = $r0['empresa'] ?: $r0['nombre']; else $clid = 0; }
                 $d = mb_substr(trim((string)($_POST['descripcion'] ?? '')), 0, 160);
@@ -221,6 +248,21 @@ if ($post) {
                         ->execute([$t, $cli, $c, $d, $w, $o, $v, $pos, $sv, $dt, $rs, $clid ?: null, $nuevo ? 'procesando' : 'listo', $drive, $cola, $pa]);
                     $id = (int)$pdo->lastInsertId();
                 }
+                if ($clid && $id) { $pdo->prepare('UPDATE entregas SET cliente_id=? WHERE proyecto_id=?')->execute([$clid, $id]); }
+                if (isset($_POST['crear_entrega']) && $clid) {
+                    $descEnt = empty($cfg['ai_api_key']) ? $d : '';
+                    $q = $pdo->prepare('SELECT id FROM entregas WHERE proyecto_id=? ORDER BY id LIMIT 1'); $q->execute([$id]);
+                    $eid = (int)($q->fetchColumn() ?: 0);
+                    if (!$eid) {
+                        $pdo->prepare('INSERT INTO entregas (cliente_id,titulo,descripcion,link_hd,link_4k,proyecto_id) VALUES (?,?,?,?,?,?)')
+                            ->execute([$clid, $t, $descEnt, '', '', $id]);
+                        $eid = (int)$pdo->lastInsertId();
+                    } else {
+                        $pdo->prepare("UPDATE entregas SET cliente_id=?, titulo=IF(titulo='',?,titulo), descripcion=IF(descripcion IS NULL OR descripcion='',?,descripcion) WHERE id=?")
+                            ->execute([$clid, $t, $descEnt, $eid]);
+                    }
+                    if (!$nuevo && $eid && !empty($cfg['ai_api_key'])) { try { lanzar($eid, 'entrega'); } catch (Throwable $x3) { } }
+                }
                 if ($nuevo) {
                     try { lanzar($id); }
                     catch (Throwable $x2) { $pdo->prepare("UPDATE proyectos SET estado='error', error_msg=? WHERE id=?")->execute([mb_substr($x2->getMessage(), 0, 250), $id]); throw $x2; }
@@ -259,7 +301,10 @@ if ($edit && !$faltaMig) { $s = $pdo->prepare('SELECT * FROM proyectos WHERE id 
 elseif ($edit) { $s = $pdo->prepare('SELECT * FROM proyectos WHERE id = ?'); $s->execute([$edit]); $p = ($s->fetch() ?: []) + $p; }
 $cls = $pdo->query('SELECT id,empresa,nombre FROM clientes ORDER BY empresa,nombre')->fetchAll();
 $tiene = !empty($p['video_mp4']) || $p['estado'] === 'procesando';
-if ($faltaMig) echo '<p class="err">Falta actualizar la base de datos. En el servidor corré:<br><code>' . $e(MIG_CMD) . '</code></p>'; ?>
+$ent = null;
+if ($p['id']) { try { $q = $pdo->prepare('SELECT id,cliente_id FROM entregas WHERE proyecto_id=? ORDER BY id LIMIT 1'); $q->execute([(int)$p['id']]); $ent = $q->fetch(); } catch (Throwable $x0) { } }
+if ($faltaMig) echo '<p class="err">Falta actualizar la base de datos. En el servidor corré:<br><code>' . $e(MIG_CMD) . '</code></p>';
+if ($faltaCat) echo '<p class="err">Falta ampliar la columna de categorías a 40 caracteres. En el servidor corré:<br><code>' . $e(MIG_CAT_CMD) . '</code></p>'; ?>
 <a class="back" href="./">&larr; Proyectos</a>
 <h1><?= $p['id'] ? 'Editar proyecto' : 'Nuevo proyecto' ?></h1>
 <?php if ($p['estado'] === 'procesando'): ?><p class="ok">⏳ Se está procesando el video. Podés seguir trabajando; en la lista vas a ver cuándo termina.</p><?php elseif ($p['estado'] === 'error'): ?><p class="err">El último video no se pudo procesar: <?= $e($p['error_msg']) ?></p><?php endif; ?>
@@ -288,7 +333,9 @@ if ($faltaMig) echo '<p class="err">Falta actualizar la base de datos. En el ser
     <label><span class="lbl">Cliente (de tu lista) <span class="opt">(opcional)</span></span><select name="cliente_id"><option value="0">— Sin elegir —</option><?php foreach ($cls as $x): ?><option value="<?= (int)$x['id'] ?>"<?= (int)($p['cliente_id'] ?? 0) === (int)$x['id'] ? ' selected' : '' ?>><?= $e($x['empresa'] ?: $x['nombre']) ?></option><?php endforeach; ?></select></label>
     <label><span class="lbl">…o escribí otro cliente <span class="opt">(opcional)</span></span><input name="cliente" value="<?= !empty($p['cliente_id']) ? '' : $e($p['cliente']) ?>" maxlength="80" placeholder="Si no está en la lista"></label>
   </div>
-  <fieldset class="chips"><legend>Categoría <span class="req">* obligatorio</span></legend><?php foreach ($cats as $k => $n): ?><label><input type="radio" name="categoria" value="<?= $e($k) ?>"<?= $p['categoria'] === $k ? ' checked' : '' ?>><span><?= $e($n) ?></span></label><?php endforeach; ?></fieldset>
+  <fieldset class="chips"><legend>Categoría <span class="req">* obligatorio</span></legend><?php foreach ($catsForm as $k => $n): ?><label><input type="radio" name="categoria" value="<?= $e($k) ?>"<?= $p['categoria'] === $k ? ' checked' : '' ?>><span><?= $e($n) ?></span></label><?php endforeach; ?></fieldset>
+  <label><span class="lbl">Nueva categoría <span class="opt">(opcional)</span> (ej: institucional)</span><input name="categoria_nueva" maxlength="40" placeholder="Se agrega como etiqueta nueva"></label>
+  <label class="chk"><input type="checkbox" name="categoria_auto" <?= $p['categoria'] === 'auto' ? 'checked' : '' ?>> Que la IA elija la categoría al procesar el video <span class="opt">(opcional)</span></label>
   <label><span class="lbl">Descripción corta <span class="opt">(opcional)</span> (se ve en la tarjeta)</span><input name="descripcion" value="<?= $e($p['descripcion']) ?>" maxlength="160"></label>
 </section>
 
@@ -303,6 +350,12 @@ if ($faltaMig) echo '<p class="err">Falta actualizar la base de datos. En el ser
   <h2>Publicación</h2>
   <label class="chk"><input type="checkbox" name="visible" <?= $p['visible'] ? 'checked' : '' ?>>Visible en la web <span class="opt">(opcional)</span></label>
   <label class="chk"><input type="checkbox" name="ancho" <?= $p['ancho'] ? 'checked' : '' ?>>Tarjeta ancha (para videos horizontales) <span class="opt">(opcional)</span></label>
+  <?php if ($ent): ?>
+  <p class="mut">Este proyecto ya tiene una entrega en el portal del cliente. <a href="clientes.php?c=<?= (int)$ent['cliente_id'] ?>&e=<?= (int)$ent['id'] ?>">Ver entrega</a></p>
+  <?php else: ?>
+  <label class="chk"><input type="checkbox" name="crear_entrega" <?= (!$p['id'] && !empty($p['cliente_id'])) ? 'checked' : '' ?>> Crear también una entrega en el portal del cliente <span class="opt">(opcional)</span></label>
+  <p class="mut">Se vincula a este proyecto y se completa con IA. Requiere elegir un cliente de la lista.</p>
+  <?php endif; ?>
 </section>
 
 <div class="savebar"><button type="submit" id="gb">Guardar proyecto</button><a class="btn g" href="./">Cancelar</a><div class="prog" id="prog" hidden><i></i><span></span></div></div>
@@ -316,6 +369,7 @@ if ($faltaMig) echo '<p class="err">Falta actualizar la base de datos. En el ser
 
 <?php else:
 if ($faltaMig) echo '<p class="err">Falta actualizar la base de datos. En el servidor corré:<br><code>' . $e(MIG_CMD) . '</code></p>';
+if ($faltaCat) echo '<p class="err">Falta ampliar la columna de categorías a 40 caracteres. En el servidor corré:<br><code>' . $e(MIG_CAT_CMD) . '</code></p>';
 $rows = $pdo->query('SELECT * FROM proyectos ORDER BY orden ASC, id DESC')->fetchAll();
 $show = array_values(array_filter($rows, fn($r) => ($r['categoria'] ?? '') === 'showreel'));
 $port = array_values(array_filter($rows, fn($r) => ($r['categoria'] ?? '') !== 'showreel'));
@@ -352,6 +406,7 @@ $card = function (array $r, bool $drag) use ($cats, $e): void { $est = $r['estad
 <label><span class="lbl">Cliente <span class="opt">(opcional)</span></span><select name="cliente_id"><option value="0">— Sin elegir —</option><?php foreach ($cls as $x): ?><option value="<?= (int)$x['id'] ?>"><?= $e($x['empresa'] ?: $x['nombre']) ?></option><?php endforeach; ?></select></label>
 <label><span class="lbl">Categoría <span class="req">* obligatorio</span></span><select name="categoria"><?php foreach ($catsImp as $k => $n): ?><option value="<?= $e($k) ?>"><?= $e($n) ?></option><?php endforeach; ?></select></label>
 </div>
+<label class="full"><span class="lbl">…o nueva categoría <span class="opt">(opcional)</span></span><input name="categoria_nueva" maxlength="40" placeholder="ej: institucional (reemplaza la del selector)"></label>
 <label class="chk full"><input type="checkbox" name="ancho"> Tarjeta ancha (para videos horizontales) <span class="opt">(opcional)</span></label>
 <div class="row full"><button>Importar videos</button><button type="button" class="g" data-cerrar>Cancelar</button></div>
 </form>
@@ -365,4 +420,4 @@ $card = function (array $r, bool $drag) use ($cats, $e): void { $est = $r['estad
 <div class="plist plist-portfolio" id="portfolio-list" data-t="<?= $e($_SESSION['t']) ?>">
 <?php foreach ($port as $r) $card($r, true); if (!$port) echo '<p class="mut">Todavía no cargaste proyectos del portfolio.</p>'; ?>
 </div>
-<?php endif; endif; ?><script src="admin.js?v=15"></script></body></html>
+<?php endif; endif; ?><script src="admin.js?v=16"></script></body></html>

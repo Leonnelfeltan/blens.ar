@@ -23,9 +23,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($a === 'trabajo') {
             $f = (string)($_POST['fecha'] ?? ''); if (!fecha_ok($f)) throw new RuntimeException('Fecha inválida.');
             $tipo = (string)($_POST['tipo'] ?? 'otro'); if (!isset(TIPOS[$tipo])) $tipo = 'otro';
-            $det = mb_substr(trim((string)($_POST['detalle'] ?? '')), 0, 200); $cant = max(1, min(999, (int)($_POST['cantidad'] ?? 1))); $mon = (int)preg_replace('/\D/', '', (string)($_POST['monto'] ?? '0'));
-            $est = ($_POST['estado'] ?? 'pendiente') === 'cobrado' ? 'cobrado' : 'pendiente'; $med = null; $fpg = null;
-            if ($est === 'cobrado') { $med = (string)($_POST['medio'] ?? ''); if (!isset(MEDIOS[$med])) throw new RuntimeException('Elegí cómo te pagaron.'); $fpg = (string)($_POST['fecha_pago'] ?? '') ?: $f; if (!fecha_ok($fpg)) throw new RuntimeException('Fecha de pago inválida.'); }
+            $det = mb_substr(trim((string)($_POST['detalle'] ?? '')), 0, 200); $cant = max(1, min(999, (int)($_POST['cantidad'] ?? 1))); $cero = isset($_POST['cero']); $mon = $cero ? 0 : (int)preg_replace('/\D/', '', (string)($_POST['monto'] ?? '0'));
+            $est = $cero || ($_POST['estado'] ?? 'pendiente') === 'cobrado' ? 'cobrado' : 'pendiente'; $med = null; $fpg = null;
+            if ($est === 'cobrado') { $med = $cero ? 'otro' : (string)($_POST['medio'] ?? ''); if (!isset(MEDIOS[$med])) { if ($cero) $med = 'otro'; else throw new RuntimeException('Elegí cómo te pagaron.'); } $fpg = (string)($_POST['fecha_pago'] ?? '') ?: $f; if (!fecha_ok($fpg)) throw new RuntimeException('Fecha de pago inválida.'); }
             $ei = (int)($_POST['entrega_id'] ?? 0) ?: null; $pi = (int)($_POST['proyecto_id'] ?? 0) ?: null;
             $pdo->prepare('INSERT INTO trabajos (cliente_id,fecha,tipo,detalle,cantidad,monto_unit,prueba,estado,medio,fecha_pago,entrega_id,proyecto_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')->execute([$c, $f, $tipo, $det, $cant, $mon, $mp, $est, $med, $fpg, $ei, $pi]);
             $_SESSION['flash'] = 'Trabajo registrado.';
@@ -83,11 +83,10 @@ $s = $pdo->prepare("SELECT * FROM trabajos WHERE cliente_id=? AND estado='cobrad
 $s = $pdo->prepare('SELECT * FROM recibos WHERE cliente_id=? ORDER BY id DESC LIMIT 20'); $s->execute([$cl['id']]); $recs = $s->fetchAll(); $tp = 0;
 $tipoOpts = '<option value="video" data-m="' . (int)$cl['tarifa_video'] . '">Video</option><option value="foto" data-m="' . (int)$cl['tarifa_foto'] . '">Foto</option><option value="otro" data-m="0">Otro</option>';
 $det = [];
-$q = $pdo->prepare('SELECT en.id,en.titulo,en.creado,en.proyecto_id FROM entregas en WHERE en.cliente_id=? AND NOT EXISTS (SELECT 1 FROM trabajos t WHERE t.entrega_id = en.id) ORDER BY en.id DESC'); $q->execute([$cl['id']]);
-foreach ($q as $x) $det[] = ['k' => 'entrega', 'id' => (int)$x['id'], 't' => $x['titulo'], 'f' => substr($x['creado'], 0, 10), 'p' => (int)$x['proyecto_id']];
-$vinc = array_filter(array_column($det, 'p'));
+$q = $pdo->prepare('SELECT en.id,en.titulo,en.creado,en.proyecto_id FROM entregas en WHERE en.cliente_id=? AND en.proyecto_id IS NULL AND NOT EXISTS (SELECT 1 FROM trabajos t WHERE t.entrega_id = en.id) ORDER BY en.id DESC'); $q->execute([$cl['id']]);
+foreach ($q as $x) $det[] = ['k' => 'entrega', 'id' => (int)$x['id'], 't' => $x['titulo'], 'f' => substr($x['creado'], 0, 10)];
 $q = $pdo->prepare("SELECT p.id,p.titulo,p.creado FROM proyectos p WHERE p.cliente_id=? AND p.categoria <> 'showreel' AND NOT EXISTS (SELECT 1 FROM trabajos t WHERE t.proyecto_id = p.id) AND NOT EXISTS (SELECT 1 FROM entregas en JOIN trabajos t ON t.entrega_id = en.id WHERE en.proyecto_id = p.id AND en.cliente_id = ?) ORDER BY p.id DESC"); $q->execute([$cl['id'], $cl['id']]);
-foreach ($q as $x) if (!in_array((int)$x['id'], $vinc, true)) $det[] = ['k' => 'proyecto', 'id' => (int)$x['id'], 't' => $x['titulo'], 'f' => substr($x['creado'], 0, 10), 'p' => 0];
+foreach ($q as $x) $det[] = ['k' => 'proyecto', 'id' => (int)$x['id'], 't' => $x['titulo'], 'f' => substr($x['creado'], 0, 10)];
 ?>
 <?= !empty($cl['logo']) ? '<img class="clogo" src="../media/logos/' . $e($cl['logo']) . '" alt="">' : '' ?><h1><?= $e($cl['empresa'] ? $cl['empresa'] . ' · ' . $cl['nombre'] : $cl['nombre']) ?></h1><div class="row"><a class="btn g" href="cobros.php">&larr; Todos</a><a class="btn g" href="clientes.php?c=<?= (int)$cl['id'] ?>">Datos y tarifas</a>
 <?php if ((int)$cl['abono']): ?><form method="post"><input type="hidden" name="a" value="abono_mes"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>"><button>Cargar abono de este mes</button></form><?php endif; ?></div>
@@ -100,15 +99,16 @@ foreach ($q as $x) if (!in_array((int)$x['id'], $vinc, true)) $det[] = ['k' => '
 <label><span class="lbl">Estado <span class="req">* obligatorio</span></span><select name="estado"><option value="pendiente">Pendiente de cobro</option><option value="cobrado">Ya cobrado (queda constancia)</option></select></label>
 <label><span class="lbl">Si ya cobraste: medio <span class="req">* obligatorio si elegís «Ya cobrado»</span></span><select name="medio"><?php foreach (MEDIOS as $k => $n) echo '<option value="' . $k . '">' . $e($n) . '</option>'; ?></select></label>
 <label><span class="lbl">Si ya cobraste: fecha de cobro <span class="req">* obligatorio si elegís «Ya cobrado»</span></span><input type="date" name="fecha_pago"></label>
-<div class="row full"><button>Registrar</button></div></form>
+<div class="row full"><button>Registrar</button><button class="g" name="cero" value="1" formnovalidate>Registrar en $0 (histórico)</button></div></form>
 <h2>Detectados en lo que subiste (<?= count($det) ?>)</h2>
+<p class="mut">Si una entrega y un proyecto son el mismo trabajo, vinculalos desde Clientes para no cobrarlo dos veces.</p>
 <?php if (!$det): ?><p class="mut">No hay entregas ni proyectos de este cliente sin registrar como trabajo.</p><?php endif; ?>
 <?php foreach ($det as $x): ?><form class="f det" method="post"><input type="hidden" name="a" value="trabajo"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>"><input type="hidden" name="fecha" value="<?= $e($x['f']) ?>"><input type="hidden" name="detalle" value="<?= $e($x['t']) ?>"><input type="hidden" name="cantidad" value="1"><input type="hidden" name="<?= $x['k'] === 'entrega' ? 'entrega_id' : 'proyecto_id' ?>" value="<?= (int)$x['id'] ?>">
 <div class="full"><b><?= $e($x['t']) ?></b> <span class="mut"><?= $x['k'] === 'entrega' ? 'Entrega del portal' : 'Proyecto de la web' ?> · <?= $e(date('d/m/Y', strtotime($x['f']))) ?></span></div>
 <label><span class="lbl">Tipo <span class="req">* obligatorio</span></span><select name="tipo" class="tipo-sel"><?= $tipoOpts ?></select></label><label><span class="lbl">Precio ($) <span class="req">* obligatorio</span></span><input name="monto" class="monto-in" inputmode="numeric" required></label>
 <label><span class="lbl">Estado <span class="req">* obligatorio</span></span><select name="estado"><option value="pendiente">Pendiente de cobro</option><option value="cobrado">Ya cobrado</option></select></label>
 <label><span class="lbl">Si ya cobraste: medio <span class="req">* obligatorio si elegís «Ya cobrado»</span></span><select name="medio"><?php foreach (MEDIOS as $k => $n) echo '<option value="' . $k . '">' . $e($n) . '</option>'; ?></select></label>
-<div class="row full"><button>Registrar como trabajo</button></div></form><?php endforeach; ?>
+<div class="row full"><button>Registrar como trabajo</button><button class="g" name="cero" value="1" formnovalidate>Registrar en $0 (histórico)</button></div></form><?php endforeach; ?>
 <h2>Pendientes</h2>
 <?php if (!$pend): ?><p class="mut">No hay trabajos pendientes.</p><?php else: ?>
 <form id="fdel" method="post"><input type="hidden" name="a" value="del_trabajo"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>"></form>
@@ -122,4 +122,4 @@ foreach ($q as $x) if (!in_array((int)$x['id'], $vinc, true)) $det[] = ['k' => '
 <h2>Recibos</h2><table><tr><th>N°</th><th>Fecha</th><th>Período</th><th>Total</th><th></th></tr>
 <?php foreach ($recs as $r): ?><tr><td><?= $e(nro($r)) ?></td><td class="mut"><?= $e(date('d/m/Y', strtotime($r['fecha']))) ?> · <?= $e(MEDIOS[$r['medio']] ?? $r['medio']) ?></td><td><?= $e($r['periodo']) ?></td><td><?= $e(peso((int)$r['total'])) ?></td><td><a class="btn g" href="recibo.php?id=<?= (int)$r['id'] ?>">Ver / imprimir</a></td></tr><?php endforeach; if (!$recs) echo '<tr><td colspan="5" class="mut">Todavía no hay recibos.</td></tr>'; ?></table>
 <h2>Últimos cobrados</h2><table><?php foreach ($cob as $r): ?><tr><td class="mut"><?= $e(date('d/m/Y', strtotime((string)$r['fecha_pago']))) ?></td><td><?= $e($r['detalle'] ?: TIPOS[$r['tipo']]) ?></td><td><?= $e(peso((int)$r['cantidad'] * (int)$r['monto_unit'])) ?></td><td class="mut"><?= $e(MEDIOS[$r['medio']] ?? '') ?></td></tr><?php endforeach; if (!$cob) echo '<tr><td class="mut">Todavía no hay cobros registrados.</td></tr>'; ?></table>
-<?php endif; ?><script src="admin.js?v=15"></script></body></html>
+<?php endif; ?><script src="admin.js?v=16"></script></body></html>

@@ -27,4 +27,4 @@ $doc = ['titulo' => 'Recibo ' . $num, 'fecha' => date('d/m/Y', strtotime($r['fec
 <table><tr><th>Fecha</th><th>Detalle</th><th class="n">Cant.</th><th class="n">Precio</th><th class="n">Subtotal</th></tr>
 <?php foreach ($rows as $x): ?><tr><td><?= $e(date('d/m/Y', strtotime($x['fecha']))) ?></td><td><?= $e($x['detalle'] ?: (TIPOS[$x['tipo']] ?? '')) ?></td><td class="n"><?= (int)$x['cantidad'] ?></td><td class="n"><?= $e(peso((int)$x['monto_unit'])) ?></td><td class="n"><?= $e(peso((int)$x['cantidad'] * (int)$x['monto_unit'])) ?></td></tr><?php endforeach; ?></table>
 <p class="tot">Total: <?= $e(peso((int)$r['total'])) ?></p><p><b>Forma de pago:</b> <?= $e(MEDIOS[$r['medio']] ?? $r['medio']) ?></p>
-<div class="firma">Firma</div><p class="leg">Comprobante interno de pago. No reemplaza una factura.</p><script src="admin.js?v=15"></script></body></html>
+<div class="firma">Firma</div><p class="leg">Comprobante interno de pago. No reemplaza una factura.</p><script src="admin.js?v=16"></script></body></html>
