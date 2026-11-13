@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($a === 'cliente') {
             $n = mb_substr(trim((string)($_POST['nombre'] ?? '')), 0, 80); $u = strtolower(trim((string)($_POST['usuario'] ?? '')));
             $tel = mb_substr(trim((string)($_POST['telefono'] ?? '')), 0, 30); $emp = mb_substr(trim((string)($_POST['empresa'] ?? '')), 0, 100);
-            $tar = fn($k) => ($_POST[$k] ?? '') === '' ? null : (int)preg_replace('/\D/', '', (string)$_POST[$k]); $tv = $tar('tarifa_video'); $tf = $tar('tarifa_foto'); $ab = $tar('abono'); $act = isset($_POST['activo']) ? 1 : 0; $k = (string)($_POST['clave'] ?? ''); $gen = '';
+            $tar = fn($k) => ($_POST[$k] ?? '') === '' ? null : (int)preg_replace('/\D/', '', (string)$_POST[$k]); $tv = $tar('tarifa_video'); $tf = $tar('tarifa_foto'); $act = isset($_POST['activo']) ? 1 : 0; $k = (string)($_POST['clave'] ?? ''); $gen = '';
             if ($n === '' || !preg_match('/^[a-z0-9._@-]{3,60}$/', $u)) throw new RuntimeException('Completá el nombre y un usuario de 3 a 60 caracteres (letras, números, punto, guion o @).');
             if ($k !== '' && mb_strlen($k) < 6) throw new RuntimeException('La clave tiene que tener al menos 6 caracteres.');
             $lg = up('logo', ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/webp' => 'webp'], 5 * 1048576); $lg = $lg ? logo_proc($lg) : null;
@@ -39,10 +39,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($c) { $q0 = $pdo->prepare('SELECT logo FROM clientes WHERE id=?'); $q0->execute([$c]); $oldLogo = $q0->fetchColumn() ?: null; }
             if (!$c) {
                 if ($k === '') { $k = blens_clave_nueva(); $gen = $k; }
-                $pdo->prepare('INSERT INTO clientes (nombre,empresa,usuario,clave_hash,telefono,activo,tarifa_video,tarifa_foto,abono,cambiar_clave,clave_inicial_hasta,logo,logo_web) VALUES (?,?,?,?,?,?,?,?,?,1,DATE_ADD(NOW(), INTERVAL 7 DAY),?,?)')->execute([$n, $emp, $u, password_hash($k, PASSWORD_DEFAULT), $tel, $act, $tv, $tf, $ab, $lg, $lw]);
+                $pdo->prepare('INSERT INTO clientes (nombre,empresa,usuario,clave_hash,telefono,activo,tarifa_video,tarifa_foto,cambiar_clave,clave_inicial_hasta,logo,logo_web) VALUES (?,?,?,?,?,?,?,?,1,DATE_ADD(NOW(), INTERVAL 7 DAY),?,?)')->execute([$n, $emp, $u, password_hash($k, PASSWORD_DEFAULT), $tel, $act, $tv, $tf, $lg, $lw]);
                 $c = (int)$pdo->lastInsertId();
             } else {
-                $pdo->prepare('UPDATE clientes SET nombre=?,empresa=?,usuario=?,telefono=?,activo=?,tarifa_video=?,tarifa_foto=?,abono=?,logo=COALESCE(?,logo),logo_web=? WHERE id=?')->execute([$n, $emp, $u, $tel, $act, $tv, $tf, $ab, $lg, $lw, $c]);
+                $pdo->prepare('UPDATE clientes SET nombre=?,empresa=?,usuario=?,telefono=?,activo=?,tarifa_video=?,tarifa_foto=?,logo=COALESCE(?,logo),logo_web=? WHERE id=?')->execute([$n, $emp, $u, $tel, $act, $tv, $tf, $lg, $lw, $c]);
                 if ($quitar && !$lg) $pdo->prepare('UPDATE clientes SET logo=NULL WHERE id=?')->execute([$c]);
                 if ($oldLogo && ($lg || $quitar)) rmlogo($oldLogo);
                 if ($k !== '') $pdo->prepare('UPDATE clientes SET clave_hash=?,cambiar_clave=1,clave_inicial_hasta=DATE_ADD(NOW(), INTERVAL 7 DAY) WHERE id=?')->execute([password_hash($k, PASSWORD_DEFAULT), $c]);
@@ -163,7 +163,7 @@ $vc = isset($_GET['c']) ? (int)$_GET['c'] : null; $ve = isset($_GET['e']) ? (int
 $list = $cli = $ent = null; $ents = [];
 if ($vc === null) { $list = $pdo->query('SELECT c.*, (SELECT COUNT(*) FROM entregas x WHERE x.cliente_id = c.id) AS n FROM clientes c ORDER BY c.nombre')->fetchAll(); }
 else {
-    $cli = ['id' => 0, 'nombre' => '', 'empresa' => '', 'usuario' => '', 'telefono' => '', 'activo' => 1, 'logo' => null, 'logo_web' => 1, 'tarifa_video' => null, 'tarifa_foto' => null, 'abono' => null, 'plan_nombre' => null, 'plan_monto' => null, 'plan_videos' => null, 'portal_visitas' => 0, 'portal_ultima_visita' => null];
+    $cli = ['id' => 0, 'nombre' => '', 'empresa' => '', 'usuario' => '', 'telefono' => '', 'activo' => 1, 'logo' => null, 'logo_web' => 1, 'tarifa_video' => null, 'tarifa_foto' => null, 'portal_visitas' => 0, 'portal_ultima_visita' => null];
     if ($vc) { $s = $pdo->prepare('SELECT * FROM clientes WHERE id=?'); $s->execute([$vc]); $cli = $s->fetch() ?: $cli; }
     if ($cli['id']) {
         $s = $pdo->prepare('SELECT * FROM entregas WHERE cliente_id=? ORDER BY id DESC'); $s->execute([$cli['id']]); $ents = $s->fetchAll();
@@ -171,7 +171,7 @@ else {
             foreach ($ents as $r) if ((int)$r['id'] === $ve) $ent = $r; }
     }
 }
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=16"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=17"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Proyectos</a><a href="./?v=consultas">Consultas</a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="../portal/" target="_blank" rel="noopener">Ver portal</a></nav>
 <form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
@@ -223,7 +223,6 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
 <label><span class="lbl">Clave <span class="opt">(opcional)</span> <?= $cli['id'] ? '(vacío = no cambiar)' : '(vacío = se genera una clave temporal fácil de dictar)' ?></span><input name="clave" type="text" autocomplete="off" placeholder="mínimo 6 caracteres"></label>
 <label><span class="lbl">Tarifa por video ($) <span class="opt">(opcional)</span></span><input name="tarifa_video" inputmode="numeric" value="<?= $e($cli['tarifa_video'] ?? '') ?>"></label>
 <label><span class="lbl">Tarifa por foto ($) <span class="opt">(opcional)</span></span><input name="tarifa_foto" inputmode="numeric" value="<?= $e($cli['tarifa_foto'] ?? '') ?>"></label>
-<label><span class="lbl">Abono mensual ($) <span class="opt">(opcional)</span></span><input name="abono" inputmode="numeric" value="<?= $e($cli['abono'] ?? '') ?>"></label>
 <label class="full"><span class="lbl">Logo del cliente <span class="opt">(opcional)</span> (PNG, JPG o WebP; mejor con fondo transparente)</span><input type="file" name="logo" accept="image/png,image/jpeg,image/webp"></label>
 <?php if (!empty($cli['logo'])): ?><div class="full"><img class="clogo" src="../media/logos/<?= $e($cli['logo']) ?>" alt=""><label class="chk"><input type="checkbox" name="quitar_logo">Quitar el logo actual <span class="opt">(opcional)</span></label></div><?php endif; ?>
 <label class="chk full"><input type="checkbox" name="logo_web" <?= !empty($cli['logo_web']) ? 'checked' : '' ?>>Mostrar el logo en la página principal <span class="opt">(opcional)</span></label>

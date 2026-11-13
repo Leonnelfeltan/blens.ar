@@ -23,6 +23,39 @@ function blens_clave_nueva(): string {
     return $p($adj) . '-' . $p($sus) . '-' . $p($sus) . random_int(10, 99);
 }
 function blens_cfg(): array { static $c = null; return $c ??= require __DIR__ . '/config.php'; }
+
+// ---- Formato de moneda y ajustes guardados en la base ----
+function peso(int $n): string { return '$ ' . number_format($n, 0, ',', '.'); }
+function ajuste(PDO $pdo, string $clave, string $def = ''): string {
+    try { $s = $pdo->prepare('SELECT valor FROM ajustes WHERE clave=?'); $s->execute([$clave]); $v = $s->fetchColumn(); if ($v !== false && trim((string)$v) !== '') return trim((string)$v); } catch (Throwable $x) { }
+    $c = blens_cfg(); $v = trim((string)($c[$clave] ?? ''));
+    return $v !== '' ? $v : $def;
+}
+function set_ajuste(PDO $pdo, string $clave, string $valor): void {
+    $pdo->prepare('INSERT INTO ajustes (clave,valor) VALUES (?,?) ON DUPLICATE KEY UPDATE valor=VALUES(valor)')->execute([$clave, $valor]);
+}
+
+/* ================= Panel financiero ================= */
+function saldo_cuenta(PDO $pdo): int { return (int)preg_replace('/\D/', '', ajuste($pdo, 'saldo_cuenta', '0')) ?: 0; }
+function tna_cuenta(PDO $pdo): float { $v = (float)str_replace(',', '.', trim(ajuste($pdo, 'tna_cuenta', '0'))); return $v > 0 ? $v : 0.0; }
+function cobrar_mes(PDO $pdo, string $ym): int {
+    $s = $pdo->prepare("SELECT COALESCE(SUM(cantidad*monto_unit),0) FROM trabajos WHERE estado='cobrado' AND fecha_pago IS NOT NULL AND DATE_FORMAT(fecha_pago,'%Y-%m')=?");
+    $s->execute([$ym]); return (int)$s->fetchColumn();
+}
+function gastos_mes(PDO $pdo, string $ym): array {
+    $s = $pdo->prepare("SELECT * FROM gastos WHERE DATE_FORMAT(fecha,'%Y-%m')=? ORDER BY fecha DESC,id DESC");
+    $s->execute([$ym]); return $s->fetchAll();
+}
+function total_gastos_mes(PDO $pdo, string $ym): int {
+    $s = $pdo->prepare("SELECT COALESCE(SUM(monto),0) FROM gastos WHERE DATE_FORMAT(fecha,'%Y-%m')=?");
+    $s->execute([$ym]); return (int)$s->fetchColumn();
+}
+/* Rendimiento estimado de la billetera según la TNA configurada */
+function rend_estimado(int $saldo, float $tna): array {
+    $f = $tna / 100;
+    return ['diario' => (int)round($saldo * $f / 365), 'mensual' => (int)round($saldo * $f), 'anual' => (int)round($saldo * $f * 12)];
+}
+
 // ---- Migración automática: agrega columnas nuevas si faltan (es idempotente y segura) ----
 function blens_migrar(?PDO $p = null): void {
     static $hecho = false; if ($hecho) return; $hecho = true;
@@ -31,13 +64,20 @@ function blens_migrar(?PDO $p = null): void {
         $cols = [];
         foreach ($p->query('SHOW COLUMNS FROM clientes')->fetchAll(PDO::FETCH_ASSOC) as $c) $cols[$c['Field']] = true;
         $nuevas = [
-            'plan_nombre'          => 'VARCHAR(100) NULL',   // nombre del plan mensual del cliente
-            'plan_monto'           => 'INT NULL',            // monto mensual del abono
-            'plan_videos'          => 'INT NULL',            // videos incluidos por mes
             'portal_visitas'       => 'INT NOT NULL DEFAULT 0', // visitas al portal privado
             'portal_ultima_visita' => 'DATETIME NULL',       // última entrada al portal
         ];
         foreach ($nuevas as $col => $def) if (!isset($cols[$col])) $p->exec("ALTER TABLE clientes ADD COLUMN `$col` $def");
+        // Tabla de gastos (registro de salidas de dinero)
+        $p->exec("CREATE TABLE IF NOT EXISTS gastos (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            fecha DATE NOT NULL,
+            concepto VARCHAR(160) NOT NULL,
+            categoria VARCHAR(60) NOT NULL DEFAULT 'general',
+            monto INT NOT NULL DEFAULT 0,
+            creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX g_fecha (fecha)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
     } catch (Throwable $e) { error_log('[blens migrar] ' . $e->getMessage()); }
 }
 function blens_db(): PDO {

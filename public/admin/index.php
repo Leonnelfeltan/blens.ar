@@ -7,6 +7,7 @@ session_start();
 header('X-Robots-Tag: noindex'); header('Cache-Control: no-store'); header('X-Frame-Options: DENY');
 
 $cfg = blens_cfg(); $pdo = blens_db();
+blens_migrar();                                          // migración automática (columnas nuevas y tabla de gastos)
 $faltaMig = false; try { $faltaMig = !$pdo->query("SHOW COLUMNS FROM proyectos LIKE 'video_1080'")->fetch(); } catch (Throwable $x0) { }
 const MIG_CMD = "sudo mysql blens_web -e \"ALTER TABLE proyectos ADD COLUMN video_1080 VARCHAR(255) NULL, ADD COLUMN video_480 VARCHAR(255) NULL, ADD COLUMN calidades VARCHAR(40) NULL, ADD COLUMN estado VARCHAR(12) NOT NULL DEFAULT 'listo', ADD COLUMN error_msg VARCHAR(255) NULL, ADD COLUMN fuente_drive VARCHAR(500) NULL, ADD COLUMN cola_src VARCHAR(255) NULL, ADD COLUMN poster_auto TINYINT(1) NOT NULL DEFAULT 0;\"";
 $faltaCat = false; try { $col = $pdo->query("SHOW COLUMNS FROM proyectos LIKE 'categoria'")->fetch(); $faltaCat = $col && stripos((string)$col['Type'], 'varchar(40)') === false; } catch (Throwable $x0) { }
@@ -132,6 +133,36 @@ if ($post) {
     } elseif (!empty($_SESSION['ok'])) {
         try {
             if ($a === 'logout') { session_destroy(); header('Location: ./'); exit; }
+            if ($a === 'saldo') {
+                $sal = (int)preg_replace('/\D/', '', (string)($_POST['saldo_cuenta'] ?? '0'));
+                $tna = (float)str_replace(',', '.', trim((string)($_POST['tna_cuenta'] ?? '0')));
+                if ($tna < 0 || $tna > 100) throw new RuntimeException('La TNA tiene que estar entre 0 y 100.');
+                set_ajuste($pdo, 'saldo_cuenta', (string)$sal);
+                set_ajuste($pdo, 'tna_cuenta', (string)$tna);
+                fin('./?ok=1#finanzas');
+            }
+            if ($a === 'gasto_add') {
+                $con = mb_substr(trim((string)($_POST['concepto'] ?? '')), 0, 160);
+                $mon = (int)preg_replace('/\D/', '', (string)($_POST['monto'] ?? '0'));
+                $f = (string)($_POST['fecha'] ?? date('Y-m-d'));
+                $dx = DateTime::createFromFormat('Y-m-d', $f);
+                if (!$dx || $dx->format('Y-m-d') !== $f) throw new RuntimeException('Fecha inválida.');
+                if ($con === '') throw new RuntimeException('Escribí el concepto del gasto.');
+                if ($mon <= 0) throw new RuntimeException('El monto tiene que ser mayor a cero.');
+                $cat = mb_substr(trim((string)($_POST['categoria'] ?? 'general')), 0, 60) ?: 'general';
+                $pdo->prepare('INSERT INTO gastos (fecha,concepto,categoria,monto) VALUES (?,?,?,?)')->execute([$f, $con, $cat, $mon]);
+                if (isset($_POST['descontar'])) set_ajuste($pdo, 'saldo_cuenta', (string)max(0, saldo_cuenta($pdo) - $mon));
+                fin('./?ok=1#finanzas');
+            }
+            if ($a === 'gasto_del') {
+                $gid = (int)($_POST['id'] ?? 0);
+                $s = $pdo->prepare('SELECT * FROM gastos WHERE id=?'); $s->execute([$gid]); $g = $s->fetch();
+                if ($g) {
+                    $pdo->prepare('DELETE FROM gastos WHERE id=?')->execute([$gid]);
+                    if (isset($_POST['devolver'])) set_ajuste($pdo, 'saldo_cuenta', (string)(saldo_cuenta($pdo) + (int)$g['monto']));
+                }
+                fin('./?ok=1#finanzas');
+            }
             if ($a === 'toggle') { $pdo->prepare('UPDATE proyectos SET visible = 1 - visible WHERE id = ?')->execute([(int)$_POST['id']]); fin('./?ok=1'); }
             if ($a === 'delete') {
                 $s = $pdo->prepare('SELECT * FROM proyectos WHERE id = ?'); $s->execute([(int)$_POST['id']]);
@@ -274,7 +305,7 @@ if ($post) {
 }
 $auth = !empty($_SESSION['ok']);
 ?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>Panel | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=16"></head><body>
+<title>Panel | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=17"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <?php if (!$auth): ?>
 <form class="login" method="post"><h1 class="lh"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span> · panel</h1>
@@ -287,6 +318,52 @@ $view = $_GET['v'] ?? 'proyectos'; $edit = isset($_GET['e']) ? (int)$_GET['e'] :
 <nav><a href="./">Proyectos</a><a href="?v=consultas">Consultas</a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="../" target="_blank" rel="noopener">Ver web</a></nav>
 <form method="post"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>"><button class="g">Salir</button></form></div>
 <?php if (isset($_GET['ok'])) { $imp = (int)($_GET['imp'] ?? 0); $impErr = (int)($_GET['imp_err'] ?? 0); echo '<p class="ok">' . ($imp > 0 ? 'Se importaron ' . $imp . ' videos a la cola de procesamiento.' : 'Cambios guardados.') . ' Pueden tardar hasta un minuto en verse en la web.' . ($impErr > 0 ? ' ' . $impErr . ' no se pudieron iniciar; revisá la lista.' : '') . '</p>'; } if ($msg) echo '<p class="err">' . $e($msg) . '</p>'; ?>
+<?php
+/* ---------- Dashboard financiero ---------- */
+$MESES = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+$ym = date('Y-m'); $mesTxt = ($MESES[(int)date('n')] ?? '') . ' ' . date('Y');
+$cobMes = cobrar_mes($pdo, $ym); $gasMes = total_gastos_mes($pdo, $ym); $neto = $cobMes - $gasMes;
+$saldo = saldo_cuenta($pdo); $tna = tna_cuenta($pdo); $rend = rend_estimado($saldo, $tna);
+$gastos = gastos_mes($pdo, $ym);
+$tnaTxt = rtrim(rtrim(number_format($tna, 2, '.', ''), '0'), '.');
+?>
+<div class="dash" id="finanzas">
+  <div class="kpis fin">
+    <div class="kpi"><span class="k">Cobrado este mes</span><b><?= $e(peso($cobMes)) ?></b><span class="mut"><?= $e($mesTxt) ?></span></div>
+    <div class="kpi"><span class="k">Gastos este mes</span><b><?= $e(peso($gasMes)) ?></b><span class="mut"><?= count($gastos) ?> gasto(s) registrado(s)</span></div>
+    <div class="kpi"><span class="k">Ganancia neta del mes</span><b class="<?= $neto < 0 ? 'warn' : '' ?>"><?= $e(peso($neto)) ?></b><span class="mut">cobrado menos gastos</span></div>
+    <div class="kpi"><span class="k">Saldo en cuenta</span><b><?= $e(peso($saldo)) ?></b>
+      <?php if ($tna > 0): ?><span class="chip-r">+<?= $e(peso($rend['diario'])) ?> por día · +<?= $e(peso($rend['mensual'])) ?> por mes (TNA <?= $e($tnaTxt) ?>%)</span>
+      <?php else: ?><span class="mut">cargá tu TNA para ver el rendimiento</span><?php endif; ?></div>
+  </div>
+  <details class="accd" <?= isset($_GET['d']) || isset($_GET['g']) ? 'open' : '' ?>><summary>Saldo en cuenta, TNA y gastos del mes</summary>
+    <div class="cols">
+      <div>
+        <h3>Saldo y TNA</h3>
+        <form class="form2 s" method="post"><input type="hidden" name="a" value="saldo"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>">
+          <label><span class="lbl">Saldo actual en cuenta ($)</span><input name="saldo_cuenta" inputmode="numeric" value="<?= $saldo ?: '' ?>" placeholder="0"></label>
+          <label><span class="lbl">TNA de tu app (%)</span><input name="tna_cuenta" inputmode="decimal" value="<?= $tna > 0 ? $e($tnaTxt) : '' ?>" placeholder="32.5"></label>
+          <button>Guardar</button></form>
+        <p class="mut">La TNA es la tasa nominal anual de tu billetera. Con el saldo actual, el rendimiento estimado es de <?= $e(peso($rend['diario'])) ?> por día (<?= $e(peso($rend['mensual'])) ?> por mes y <?= $e(peso($rend['anual'])) ?> por año).</p>
+      </div>
+      <div>
+        <h3>Registrar gasto</h3>
+        <form class="form2" method="post"><input type="hidden" name="a" value="gasto_add"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>">
+          <label><span class="lbl">Concepto</span><input name="concepto" maxlength="160" placeholder="Equipos, viáticos, hosting…" required></label>
+          <label><span class="lbl">Monto ($)</span><input name="monto" inputmode="numeric" placeholder="0" required></label>
+          <label><span class="lbl">Fecha</span><input type="date" name="fecha" value="<?= date('Y-m-d') ?>"></label>
+          <button>Registrar gasto</button>
+          <label class="chk"><input type="checkbox" name="descontar" checked> Descontar el gasto del saldo en cuenta</label></form>
+        <div class="gastos">
+        <?php foreach ($gastos as $g): ?><div class="gasto"><span><b><?= $e($g['concepto']) ?></b><br><span class="mut"><?= $e(date('d/m/Y', strtotime((string)$g['fecha']))) ?> · <?= $e($g['categoria']) ?></span></span>
+          <span><?= $e(peso((int)$g['monto'])) ?>
+          <form method="post"><input type="hidden" name="a" value="gasto_del"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>"><input type="hidden" name="id" value="<?= (int)$g['id'] ?>"><label class="chk" title="Devolver el monto al saldo"><input type="checkbox" name="devolver"> +saldo</label><button title="Eliminar gasto">✕</button></form></span></div>
+        <?php endforeach; if (!$gastos) echo '<p class="mut">Todavía no cargaste gastos este mes.</p>'; ?>
+        </div>
+      </div>
+    </div>
+  </details>
+</div>
 
 <?php if ($view === 'consultas'): $rows = $pdo->query('SELECT * FROM consultas ORDER BY id DESC LIMIT 100')->fetchAll(); ?>
 <h1>Consultas recibidas</h1>
