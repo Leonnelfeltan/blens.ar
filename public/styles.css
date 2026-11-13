@@ -1,4 +1,4 @@
-:root{--c:#14110F;--c2:#1e1a17;--h:#F5F1EA;--o:#FF5A1F;--mut:#a39d93;--line:#322c27}
+:root{--c:#14110F;--c2:#1e1a17;--h:#F5F1EA;--o:#FF5A1F;--accent:#FF5A1F;--mut:#a39d93;--line:#322c27}
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth;overflow-x:hidden}
 body{background:var(--c);color:var(--h);font:300 1rem/1.65 Sora,system-ui,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden;overflow-wrap:break-word}
@@ -217,12 +217,13 @@ input:focus,select:focus,textarea:focus{border-color:var(--o);outline:0}
 .client-chip .x{font-size:1rem;line-height:1}
 
 /* ===== logos de clientes interactivos ===== */
-.logos .lg{border:1px solid transparent;border-radius:4px;cursor:pointer;font:inherit;color:inherit;text-align:center;transition:border-color .25s,transform .25s}
-.logos .lg:hover,.logos .lg:focus-visible{border-color:var(--o);transform:translateY(-2px)}
-.logos .lg:active{transform:none}
-/* monocromo suave por defecto; al pasar el mouse recupera el color original */
-.logos .lg img{filter:grayscale(1) opacity(.75);transition:filter .25s,opacity .25s,transform .25s}
-.logos .lg:hover img,.logos .lg:focus-visible img{filter:grayscale(0) opacity(1);transform:scale(1.04)}
+.logos{width:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;justify-items:stretch}
+.logos .lg{position:relative;overflow:hidden;display:grid;place-items:center;width:100%;height:130px;padding:1.1rem 1.4rem;margin:0;border:1px solid transparent;border-radius:4px;background:var(--h);cursor:pointer;font:inherit;color:inherit;text-align:center;transition:transform .25s cubic-bezier(.22,1,.36,1),border-color .25s ease,box-shadow .25s ease}
+.logos .lg img{position:static;left:auto;right:auto;top:auto;bottom:auto;width:auto;height:auto;max-width:100%;max-height:100%;object-fit:contain;filter:grayscale(.4) saturate(.75) opacity(.85);transition:transform .25s cubic-bezier(.22,1,.36,1),filter .25s ease,opacity .25s ease}
+.logos .lg:hover,.logos .lg:focus-visible{border-color:var(--accent);transform:translateY(-5px) scale(1.04);box-shadow:0 12px 28px rgba(0,0,0,.45)}
+.logos .lg:hover img,.logos .lg:focus-visible img{filter:grayscale(0) saturate(1.1) opacity(1);transform:scale(1.06)}
+.logos .lg:active{transform:translateY(-2px) scale(1.02)}
+@media(max-width:600px){.logos{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}.logos .lg{height:100px;padding:.8rem}}
 
 /* ===== proyectos: preview de video al pasar el mouse ===== */
 .card .hv{z-index:0}

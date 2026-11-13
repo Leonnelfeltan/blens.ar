@@ -23,6 +23,23 @@ function blens_clave_nueva(): string {
     return $p($adj) . '-' . $p($sus) . '-' . $p($sus) . random_int(10, 99);
 }
 function blens_cfg(): array { static $c = null; return $c ??= require __DIR__ . '/config.php'; }
+// ---- Migración automática: agrega columnas nuevas si faltan (es idempotente y segura) ----
+function blens_migrar(?PDO $p = null): void {
+    static $hecho = false; if ($hecho) return; $hecho = true;
+    try {
+        $p ??= blens_db();
+        $cols = [];
+        foreach ($p->query('SHOW COLUMNS FROM clientes')->fetchAll(PDO::FETCH_ASSOC) as $c) $cols[$c['Field']] = true;
+        $nuevas = [
+            'plan_nombre'          => 'VARCHAR(100) NULL',   // nombre del plan mensual del cliente
+            'plan_monto'           => 'INT NULL',            // monto mensual del abono
+            'plan_videos'          => 'INT NULL',            // videos incluidos por mes
+            'portal_visitas'       => 'INT NOT NULL DEFAULT 0', // visitas al portal privado
+            'portal_ultima_visita' => 'DATETIME NULL',       // última entrada al portal
+        ];
+        foreach ($nuevas as $col => $def) if (!isset($cols[$col])) $p->exec("ALTER TABLE clientes ADD COLUMN `$col` $def");
+    } catch (Throwable $e) { error_log('[blens migrar] ' . $e->getMessage()); }
+}
 function blens_db(): PDO {
     static $p = null; if ($p) return $p; $c = blens_cfg();
     return $p = new PDO('mysql:host=' . $c['db_host'] . ';dbname=' . $c['db_name'] . ';charset=utf8mb4', $c['db_user'], $c['db_pass'], [

@@ -274,7 +274,7 @@ if ($post) {
 }
 $auth = !empty($_SESSION['ok']);
 ?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>Panel | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=15"></head><body>
+<title>Panel | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=16"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <?php if (!$auth): ?>
 <form class="login" method="post"><h1 class="lh"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span> · panel</h1>
@@ -290,10 +290,10 @@ $view = $_GET['v'] ?? 'proyectos'; $edit = isset($_GET['e']) ? (int)$_GET['e'] :
 
 <?php if ($view === 'consultas'): $rows = $pdo->query('SELECT * FROM consultas ORDER BY id DESC LIMIT 100')->fetchAll(); ?>
 <h1>Consultas recibidas</h1>
-<table><tr><th>Fecha</th><th>Nombre / empresa</th><th>Servicio</th><th>Mensaje</th></tr>
-<?php foreach ($rows as $r): ?><tr><td class="mut"><?= $e(substr($r['creado'], 0, 16)) ?></td>
-<td><?= $e($r['nombre']) ?><br><span class="mut"><?= $e($r['empresa']) ?></span><br><a href="mailto:<?= $e($r['email']) ?>"><?= $e($r['email']) ?></a><?php if ($r['telefono'] !== '') { $w = wa_link($r['telefono'], $r['nombre'], $r['servicio']); echo '<br>' . $e($r['telefono']) . ' '; echo $w ? '<a class="btn" href="' . $e($w) . '" target="_blank" rel="noopener">WhatsApp</a>' : '<span class="mut">(revisar número)</span>'; } ?></td>
-<td><?= $e($r['servicio']) ?></td><td><?= nl2br($e($r['mensaje'])) ?></td></tr><?php endforeach; if (!$rows) echo '<tr><td colspan="4" class="mut">Todavía no hay consultas.</td></tr>'; ?></table>
+<table class="cards"><tr><th>Fecha</th><th>Nombre / empresa</th><th>Servicio</th><th>Mensaje</th></tr>
+<?php foreach ($rows as $r): ?><tr><td class="mut" data-label="Fecha"><?= $e(substr($r['creado'], 0, 16)) ?></td>
+<td data-label="Contacto"><?= $e($r['nombre']) ?><br><span class="mut"><?= $e($r['empresa']) ?></span><br><a href="mailto:<?= $e($r['email']) ?>"><?= $e($r['email']) ?></a><?php if ($r['telefono'] !== '') { $w = wa_link($r['telefono'], $r['nombre'], $r['servicio']); echo '<br>' . $e($r['telefono']) . ' '; echo $w ? '<a class="btn" href="' . $e($w) . '" target="_blank" rel="noopener">WhatsApp</a>' : '<span class="mut">(revisar número)</span>'; } ?></td>
+<td data-label="Servicio"><?= $e($r['servicio']) ?></td><td data-label="Mensaje"><?= nl2br($e($r['mensaje'])) ?></td></tr><?php endforeach; if (!$rows) echo '<tr><td colspan="4" class="mut">Todavía no hay consultas.</td></tr>'; ?></table>
 
 <?php elseif ($edit !== null):
 $p = ['id' => 0, 'titulo' => '', 'cliente' => '', 'cliente_id' => null, 'categoria' => 'reels', 'descripcion' => '', 'ancho' => 0, 'orden' => 0, 'visible' => 1, 'video_mp4' => '', 'poster' => '', 'servicios' => '', 'detalle' => '', 'resultado' => '', 'estado' => 'listo', 'error_msg' => '', 'calidades' => '', 'fuente_drive' => ''];
@@ -420,4 +420,4 @@ $card = function (array $r, bool $drag) use ($cats, $e): void { $est = $r['estad
 <div class="plist plist-portfolio" id="portfolio-list" data-t="<?= $e($_SESSION['t']) ?>">
 <?php foreach ($port as $r) $card($r, true); if (!$port) echo '<p class="mut">Todavía no cargaste proyectos del portfolio.</p>'; ?>
 </div>
-<?php endif; endif; ?><script src="admin.js?v=16"></script></body></html>
+<?php endif; endif; ?><script src="admin.js?v=17"></script></body></html>

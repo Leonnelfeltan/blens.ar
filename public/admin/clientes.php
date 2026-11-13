@@ -163,7 +163,7 @@ $vc = isset($_GET['c']) ? (int)$_GET['c'] : null; $ve = isset($_GET['e']) ? (int
 $list = $cli = $ent = null; $ents = [];
 if ($vc === null) { $list = $pdo->query('SELECT c.*, (SELECT COUNT(*) FROM entregas x WHERE x.cliente_id = c.id) AS n FROM clientes c ORDER BY c.nombre')->fetchAll(); }
 else {
-    $cli = ['id' => 0, 'nombre' => '', 'empresa' => '', 'usuario' => '', 'telefono' => '', 'activo' => 1, 'logo' => null, 'logo_web' => 1, 'tarifa_video' => null, 'tarifa_foto' => null, 'abono' => null];
+    $cli = ['id' => 0, 'nombre' => '', 'empresa' => '', 'usuario' => '', 'telefono' => '', 'activo' => 1, 'logo' => null, 'logo_web' => 1, 'tarifa_video' => null, 'tarifa_foto' => null, 'abono' => null, 'plan_nombre' => null, 'plan_monto' => null, 'plan_videos' => null, 'portal_visitas' => 0, 'portal_ultima_visita' => null];
     if ($vc) { $s = $pdo->prepare('SELECT * FROM clientes WHERE id=?'); $s->execute([$vc]); $cli = $s->fetch() ?: $cli; }
     if ($cli['id']) {
         $s = $pdo->prepare('SELECT * FROM entregas WHERE cliente_id=? ORDER BY id DESC'); $s->execute([$cli['id']]); $ents = $s->fetchAll();
@@ -171,7 +171,7 @@ else {
             foreach ($ents as $r) if ((int)$r['id'] === $ve) $ent = $r; }
     }
 }
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=15"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=16"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Proyectos</a><a href="./?v=consultas">Consultas</a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="../portal/" target="_blank" rel="noopener">Ver portal</a></nav>
 <form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
@@ -189,8 +189,8 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
 <?php endif; ?>
 <?php if ($list !== null): ?>
 <h1>Clientes</h1><a class="btn" href="?c=0">Agregar cliente</a>
-<table><tr><th>Empresa / contacto</th><th>Usuario</th><th>Entregas</th><th></th></tr>
-<?php foreach ($list as $r): ?><tr class="<?= $r['activo'] ? '' : 'off' ?>"><td><?= !empty($r['logo']) ? '<img class="clogo" src="../media/logos/' . $e($r['logo']) . '" alt="">' : '' ?><?= $e($r['empresa'] ?: $r['nombre']) ?><br><span class="mut"><?= $e($r['empresa'] ? $r['nombre'] : '') ?></span></td><td class="mut"><?= $e($r['usuario']) ?></td><td><?= (int)$r['n'] ?></td><td><a class="btn g" href="?c=<?= (int)$r['id'] ?>">Abrir</a></td></tr><?php endforeach; if (!$list) echo '<tr><td colspan="4" class="mut">Todavía no hay clientes.</td></tr>'; ?></table>
+<table class="cards"><tr><th>Empresa / contacto</th><th>Usuario</th><th>Entregas</th><th>Portal</th><th></th></tr>
+<?php foreach ($list as $r): ?><tr class="<?= $r['activo'] ? '' : 'off' ?>"><td data-label="Cliente"><?= !empty($r['logo']) ? '<img class="clogo" src="../media/logos/' . $e($r['logo']) . '" alt="">' : '' ?><?= $e($r['empresa'] ?: $r['nombre']) ?><br><span class="mut"><?= $e($r['empresa'] ? $r['nombre'] : '') ?></span></td><td class="mut" data-label="Usuario"><?= $e($r['usuario']) ?></td><td data-label="Entregas"><?= (int)$r['n'] ?></td><td class="mut" data-label="Portal"><?= $e(portal_info($r)) ?></td><td data-label=""><a class="btn g" href="?c=<?= (int)$r['id'] ?>">Abrir</a></td></tr><?php endforeach; if (!$list) echo '<tr><td colspan="5" class="mut">Todavía no hay clientes.</td></tr>'; ?></table>
 
 <?php elseif ($ent !== null): ?>
 <h1><?= $e($cli['nombre']) ?> · <?= $ent['id'] ? 'Editar entrega' : 'Nueva entrega' ?></h1>
@@ -213,6 +213,7 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
 
 <?php else: ?>
 <h1><?= $cli['id'] ? $e(($cli['empresa'] ? $cli['empresa'] . ' · ' : '') . $cli['nombre']) : 'Nuevo cliente' ?></h1>
+<?php if ($cli['id']): ?><p class="mut">Portal de clientes: <?= $e(portal_info($cli)) ?>.</p><?php endif; ?>
 <?php if ($cli['id'] && $cli['telefono'] && ($w = wa_url($cli['telefono'], 'Hola ' . explode(' ', trim($cli['nombre']))[0] . ', '))) echo '<p><a class="btn g" href="' . $e($w) . '" target="_blank" rel="noopener">Escribir por WhatsApp</a></p>'; ?>
 <form class="f" method="post" enctype="multipart/form-data"><input type="hidden" name="a" value="cliente"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>">
 <label><span class="lbl">Empresa <span class="opt">(opcional)</span></span><input name="empresa" value="<?= $e($cli['empresa'] ?? '') ?>" maxlength="100"></label>
@@ -240,7 +241,7 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
 <div class="row full"><button>Importar videos</button><button type="button" class="g" data-cerrar>Cancelar</button></div>
 </form>
 </dialog>
-<table><tr><th>Título</th><th>Fecha</th><th>Links</th><th>Copy</th><th></th></tr>
-<?php foreach ($ents as $r): ?><tr><td><?= $e($r['titulo']) ?></td><td class="mut"><?= $e(substr($r['creado'], 0, 10)) ?></td><td><?= $r['link_hd'] ? 'HD ' : '' ?><?= $r['link_4k'] ? '4K' : '' ?></td><td class="mut"><?= trim((string)$r['descripcion']) !== '' ? 'Sí' : '—' ?></td><td><a class="btn g" href="?c=<?= (int)$cli['id'] ?>&e=<?= (int)$r['id'] ?>">Editar</a><?php if (trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== ''): ?><form method="post" class="ia-f"><input type="hidden" name="a" value="ia_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="g">IA</button></form><?php endif; ?></td></tr><?php endforeach; if (!$ents) echo '<tr><td colspan="5" class="mut">Sin entregas todavía.</td></tr>'; ?></table>
+<table class="cards"><tr><th>Título</th><th>Fecha</th><th>Links</th><th>Copy</th><th></th></tr>
+<?php foreach ($ents as $r): ?><tr><td data-label="Título"><?= $e($r['titulo']) ?></td><td class="mut" data-label="Fecha"><?= $e(substr($r['creado'], 0, 10)) ?></td><td data-label="Links"><?= $r['link_hd'] ? 'HD ' : '' ?><?= $r['link_4k'] ? '4K' : '' ?></td><td class="mut" data-label="Copy"><?= trim((string)$r['descripcion']) !== '' ? 'Sí' : '—' ?></td><td data-label=""><a class="btn g" href="?c=<?= (int)$cli['id'] ?>&e=<?= (int)$r['id'] ?>">Editar</a><?php if (trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== ''): ?><form method="post" class="ia-f"><input type="hidden" name="a" value="ia_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="g">IA</button></form><?php endif; ?></td></tr><?php endforeach; if (!$ents) echo '<tr><td colspan="5" class="mut">Sin entregas todavía.</td></tr>'; ?></table>
 <h2>Eliminar cliente</h2><form method="post" class="row"><input type="hidden" name="a" value="del_cliente"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><label class="chk"><input type="checkbox" required>Confirmo: se borran el cliente y todas sus entregas <span class="req">* obligatorio</span></label><button class="r">Eliminar</button></form>
-<?php endif; endif; ?><script src="admin.js?v=16"></script></body></html>
+<?php endif; endif; ?><script src="admin.js?v=17"></script></body></html>

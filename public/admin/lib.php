@@ -1,5 +1,58 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/../../blens-config/bootstrap.php';
+blens_migrar();                                    // migración automática de columnas nuevas (idempotente)
+
+/* ---- Ajustes de cobros (alias / CBU): primero la base, si no, lo que esté en config.php ---- */
+function ajuste(PDO $pdo, string $clave, string $def = ''): string {
+    try { $s = $pdo->prepare('SELECT valor FROM ajustes WHERE clave=?'); $s->execute([$clave]); $v = $s->fetchColumn(); if ($v !== false && trim((string)$v) !== '') return trim((string)$v); } catch (Throwable $x) { }
+    $c = blens_cfg(); $v = trim((string)($c[$clave] ?? ''));
+    return $v !== '' ? $v : $def;
+}
+function set_ajuste(PDO $pdo, string $clave, string $valor): void {
+    $pdo->prepare('INSERT INTO ajustes (clave,valor) VALUES (?,?) ON DUPLICATE KEY UPDATE valor=VALUES(valor)')->execute([$clave, $valor]);
+}
+/* ---- Actividad del portal de un cliente ---- */
+function portal_info(?array $c): string {
+    $v = (int)($c['portal_visitas'] ?? 0); $u = trim((string)($c['portal_ultima_visita'] ?? ''));
+    if ($v <= 0 && $u === '') return 'Nunca ingresó';
+    $t = 'Visto ' . $v . ' ' . ($v === 1 ? 'vez' : 'veces');
+    if ($u !== '') $t .= ' · Último acceso: ' . date('d/m H:i', strtotime($u));
+    return $t;
+}
+/* ---- Datos del plan mensual ---- */
+function plan_de(?array $c): array {
+    return ['nombre' => trim((string)($c['plan_nombre'] ?? '')), 'monto' => (int)($c['plan_monto'] ?? 0), 'videos' => (int)($c['plan_videos'] ?? 0)];
+}
+function videos_del_mes(PDO $pdo, int $cid): int {
+    $s = $pdo->prepare("SELECT COALESCE(SUM(cantidad),0) FROM trabajos WHERE cliente_id=? AND tipo='video' AND fecha>=? AND fecha<=LAST_DAY(?)");
+    $ini = date('Y-m-01'); $s->execute([$cid, $ini, $ini]); return (int)$s->fetchColumn();
+}
+function abono_cargado(PDO $pdo, int $cid): bool {
+    $ini = date('Y-m-01'); $s = $pdo->prepare("SELECT COUNT(*) FROM trabajos WHERE cliente_id=? AND tipo='abono' AND fecha>=? AND fecha<=LAST_DAY(?)");
+    $s->execute([$cid, $ini, $ini]); return (int)$s->fetchColumn() > 0;
+}
+/* ---- Mensaje de resumen para mandar por WhatsApp ---- */
+function resumen_cobro(array $cl, array $pend, int $total, string $alias, string $cbu, int $vm, array $pl): string {
+    $nombre = explode(' ', trim((string)($cl['nombre'] ?? 'cliente')))[0] ?: 'cliente';
+    $empresa = trim((string)($cl['empresa'] ?? ''));
+    $l = [];
+    $l[] = 'Hola ' . $nombre . ($empresa !== '' ? ' (' . $empresa . ')' : '') . ', te escribimos desde blens.ar.';
+    $l[] = '';
+    $l[] = 'Este es el resumen de tus trabajos y las cuotas pendientes al ' . date('d/m/Y') . ':';
+    $l[] = '';
+    if ($pend) { foreach ($pend as $r) { $sub = (int)$r['cantidad'] * (int)$r['monto_unit']; $det = trim((string)$r['detalle']) !== '' ? (string)$r['detalle'] : (TIPOS[$r['tipo']] ?? (string)$r['tipo']); $l[] = '• ' . $det . ' — ' . (int)$r['cantidad'] . ' × ' . peso((int)$r['monto_unit']) . ' = ' . peso($sub); } }
+    else $l[] = '• No tenés trabajos pendientes de pago.';
+    $l[] = '';
+    $l[] = 'Total a pagar: ' . peso($total);
+    if ($pl['videos'] > 0) $l[] = 'Videos de este mes: ' . $vm . ' de ' . $pl['videos'] . ' incluidos en tu plan.';
+    if ($alias !== '') $l[] = 'Podés pagar por alias: ' . $alias;
+    if ($cbu !== '') $l[] = 'CBU: ' . $cbu;
+    if ($alias === '' && $cbu === '') $l[] = 'Consultanos los datos de pago y te los pasamos.';
+    $l[] = '';
+    $l[] = 'Cuando lo pagues, confirmanos y te emitimos el recibo. ¡Gracias!';
+    return implode("\n", $l);
+}
 function up(string $f, array $ok, int $max): ?string {
     if (empty($_FILES[$f]['name'])) return null;
     $u = $_FILES[$f];

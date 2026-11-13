@@ -15,3 +15,11 @@ td.n,th.n{text-align:right}.tot{font-size:1.2rem;font-weight:700;text-align:righ
 .blogo{height:46px;width:auto;display:block;margin:0 0 .5rem auto}
 .toast{position:fixed;left:50%;bottom:1.2rem;transform:translateX(-50%);background:#14110F;color:#F5F1EA;border-left:5px solid #FF5A1F;padding:.8rem 1.1rem;max-width:90vw;opacity:0;pointer-events:none;transition:opacity .2s;z-index:99;font:600 14px system-ui,sans-serif}.toast.on{opacity:1}
 @media print{.toast{display:none}}
+@media(max-width:600px){
+  body{padding:1rem .8rem}
+  .rh{flex-direction:column;gap:.5rem}.rt{text-align:left}.blogo{margin:0 0 .5rem}
+  table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
+  .acc button,.acc a,.acc form{flex:1 1 140px}
+  .acc form{margin:0}
+  .firma{width:100%}
+}

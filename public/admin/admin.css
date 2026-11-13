@@ -12,7 +12,7 @@ form.f{display:grid;grid-template-columns:1fr 1fr;gap:1rem;max-width:720px}.f la
 input,select,textarea{background:var(--c2);border:1px solid var(--l);color:var(--h);padding:.6rem;border-radius:2px;font:inherit;width:100%}
 .chk{display:flex!important;align-items:center;gap:.5rem}.chk input{width:auto}.row{display:flex;gap:.5rem;flex-wrap:wrap}
 .login{max-width:340px;margin:12vh auto;display:grid;gap:1rem}
-@media(max-width:700px){form.f{grid-template-columns:1fr}th:nth-child(4),td:nth-child(4){display:none}}
+@media(max-width:700px){form.f{grid-template-columns:1fr}table:not(.cards) th:nth-child(4),table:not(.cards) td:nth-child(4){display:none}}
 .row{margin:1.2rem 0;align-items:center}.row form{margin:0}form.f{margin-bottom:1.8rem}h2{margin-top:2.2rem}.f .row.full{margin:.6rem 0 0}
 .clogo{max-height:46px;max-width:150px;width:auto;height:auto;display:block;background:#F5F1EA;padding:.3rem .6rem;border-radius:4px;margin-bottom:.5rem}
 .sprite{position:absolute;width:0;height:0}.mark{width:26px;height:26px;flex:none}.brand{display:flex;align-items:center;gap:.6rem;text-decoration:none;font-weight:600}.lh{display:flex;align-items:center;gap:.6rem}form.det{border:1px solid var(--l);padding:1rem;background:var(--c2);margin-bottom:1rem}
@@ -74,3 +74,55 @@ dialog.imp::backdrop{background:rgba(0,0,0,.65)}
 dialog.imp h2{margin:0;font-size:1.1rem}
 dialog.imp form.f{max-width:none;margin:0}
 .ia-f{display:inline}
+
+/* ===== abono mensual / resumen por WhatsApp ===== */
+.plan{display:grid;grid-template-columns:1fr auto;gap:1rem;align-items:center;background:var(--c2);border:1px solid var(--l);border-left:6px solid var(--o);border-radius:6px;padding:1rem 1.2rem;margin:1rem 0}
+.plan-l{display:grid;gap:.35rem;min-width:0}
+.plan-l b{font-size:1.05rem}
+.plan-r{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;justify-content:flex-end}
+.pbar{height:8px;max-width:340px;background:var(--c);border:1px solid var(--l);border-radius:5px;overflow:hidden}
+.pbar i{display:block;height:100%;background:var(--o);transition:width .3s}
+.ok2{color:#9ed39e;font-size:.85rem}
+.prev{margin:.8rem 0}
+.prev summary{cursor:pointer;color:var(--m);font-size:.85rem}
+.msj{white-space:pre-wrap;background:var(--c2);border:1px solid var(--l);border-radius:4px;padding:.8rem;font:13px/1.55 ui-monospace,Consolas,monospace;margin-top:.5rem;overflow-x:auto}
+
+/* ===== panel 100% responsive en celular (vertical) ===== */
+body{overflow-x:hidden}
+.btn,button{max-width:100%}
+@media(max-width:768px){
+  body{padding:.9rem}
+  .top{gap:.6rem;padding-bottom:.7rem}
+  .top nav{margin-left:0;width:100%;order:3;overflow-x:auto;gap:.9rem;padding-bottom:.2rem;-webkit-overflow-scrolling:touch}
+  .top nav a{white-space:nowrap;font-size:.9rem;padding:.3rem 0}
+  .top form{margin-left:auto}
+  form.f{grid-template-columns:1fr;max-width:none}
+  .two{grid-template-columns:1fr}
+  .pf,.pc{max-width:100%}
+  .row>.btn,.row>button,.row>form{flex:1 1 140px;min-width:0}
+  .row>form .btn,.row>form button{width:100%}
+  .lh2{align-items:flex-start}
+  .pc{grid-template-columns:1fr;padding:1rem}
+  .prog{min-width:120px}
+  .acc-card{max-width:none}
+  .acc-card dd{font-size:1rem}
+  dialog.imp{width:calc(100% - 1rem);padding:1rem}
+  table:not(.cards){display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table:not(.cards) td,table:not(.cards) th{white-space:normal}
+}
+@media(max-width:768px){
+  /* tablas como tarjetas apilables (Clientes, Cobros, Consultas, Entregas) */
+  table.cards{display:block}
+  table.cards tr{display:block;background:var(--c2);border:1px solid var(--l);border-radius:6px;margin-bottom:.8rem;padding:.2rem .3rem}
+  table.cards tr:first-child{display:none}
+  table.cards td{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;border-bottom:1px solid var(--l);padding:.55rem .5rem;text-align:right}
+  table.cards td:last-child{border-bottom:0}
+  table.cards td::before{content:attr(data-label);color:var(--m);font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;text-align:left;flex:none}
+  table.cards td[data-label=""]::before{content:none}
+  table.cards td .clogo{margin:0 0 .4rem auto}
+  table.cards td form{margin:0}
+  table.cards td a.btn,table.cards td button{white-space:nowrap}
+  .plan{grid-template-columns:1fr}
+  .plan-r{justify-content:flex-start}
+  .pbar{max-width:none}
+}

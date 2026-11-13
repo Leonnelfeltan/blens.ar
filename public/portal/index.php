@@ -18,6 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($ok && $c['cambiar_clave'] && $c['clave_inicial_hasta'] && strtotime((string)$c['clave_inicial_hasta']) < time()) { usleep(900000); $msg = 'Tu clave inicial venció. Escribinos y la renovamos.'; }
         elseif ($ok) {
             blens_ok('portal'); session_regenerate_id(true); $_SESSION['cid'] = (int)$c['id']; $_SESSION['t'] = bin2hex(random_bytes(16));
+            unset($_SESSION['visita_ok']);   // la próxima carga cuenta como una visita nueva al portal
             if ($c['cambiar_clave']) $_SESSION['forzar'] = 1; else unset($_SESSION['forzar']);
             header('Location: ./'); exit;
         } else { blens_fallo('portal'); usleep(900000); $msg = 'Usuario o clave incorrectos.'; }
@@ -35,6 +36,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 $cid = (int)($_SESSION['cid'] ?? 0); $T = $e($_SESSION['t']); $cli = null; $forzar = !empty($_SESSION['forzar']);
 if ($cid) { $s = $pdo->prepare('SELECT nombre,empresa,logo FROM clientes WHERE id=? AND (activo=1 OR ?=1)'); $s->execute([$cid, empty($_SESSION['vista']) ? 0 : 1]); $cli = $s->fetch(); if (!$cli) { session_destroy(); header('Location: ./'); exit; } }
+// ---- Actividad del portal: una visita por sesión (no por recarga) ----
+if ($cid && empty($_SESSION['vista']) && empty($_SESSION['visita_ok'])) {
+    $_SESSION['visita_ok'] = 1;
+    try { blens_migrar($pdo); $pdo->prepare('UPDATE clientes SET portal_visitas=portal_visitas+1, portal_ultima_visita=NOW() WHERE id=?')->execute([$cid]); }
+    catch (Throwable $x) { error_log('[blens portal] ' . $x->getMessage()); }
+}
 $wa = preg_replace('/\D+/', '', (string)(blens_cfg()['wa_negocio'] ?? ''));
 $contacto = $wa ? 'https://wa.me/' . $wa . '?text=' . rawurlencode('Hola, quiero coordinar un plan con blens.ar') : '../#contacto';
 $drive = fn($r) => $r['link_hd'] ?: $r['link_4k'];
@@ -48,7 +55,7 @@ $SQL = 'SELECT e.*, COALESCE(p.video_1080, p.video_mp4, p.video_480) AS pv, p.po
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" media="print" data-fonts>
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap"></noscript>
-<link rel="stylesheet" href="../styles.css?v=14"><link rel="stylesheet" href="portal.css?v=10"></head><body>
+<link rel="stylesheet" href="../styles.css?v=17"><link rel="stylesheet" href="portal.css?v=10"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <header class="ph"><a class="brand" href="../" aria-label="blens.ar, inicio"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
 <?php if ($cli): ?><div class="phr"><span class="mut">Portal de clientes</span><?= !empty($_SESSION['vista']) ? '<span class="perr">Vista de administrador</span>' : '' ?><form method="post"><input type="hidden" name="a" value="salir"><input type="hidden" name="t" value="<?= $T ?>"><button class="out">Salir</button></form></div>
