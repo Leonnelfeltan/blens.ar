@@ -5,7 +5,7 @@ session_name('blens_cliente');
 session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict', 'secure' => !empty($_SERVER['HTTPS'])]);
 session_start();
 header('X-Robots-Tag: noindex'); header('Cache-Control: no-store'); header('X-Frame-Options: DENY');
-$pdo = blens_db(); $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
+$pdo = blens_db(); blens_migrar($pdo); $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 $_SESSION['t'] ??= bin2hex(random_bytes(16)); $msg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!hash_equals($_SESSION['t'], (string)($_POST['t'] ?? ''))) { http_response_code(400); exit('Sesión vencida. Recargá la página.'); }
@@ -34,8 +34,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
-$cid = (int)($_SESSION['cid'] ?? 0); $T = $e($_SESSION['t']); $cli = null; $forzar = !empty($_SESSION['forzar']);
-if ($cid) { $s = $pdo->prepare('SELECT nombre,empresa,logo FROM clientes WHERE id=? AND (activo=1 OR ?=1)'); $s->execute([$cid, empty($_SESSION['vista']) ? 0 : 1]); $cli = $s->fetch(); if (!$cli) { session_destroy(); header('Location: ./'); exit; } }
+$cid = (int)($_SESSION['cid'] ?? 0); $T = $e($_SESSION['t']); $cli = null; $forzar = !empty($_SESSION['forzar']); $vista = !empty($_SESSION['vista']);
+if ($cid) { $s = $pdo->prepare('SELECT nombre,empresa,logo FROM clientes WHERE id=? AND (activo=1 OR ?=1)'); $s->execute([$cid, $vista ? 1 : 0]); $cli = $s->fetch(); if (!$cli) { session_destroy(); header('Location: ./'); exit; } }
+// ---- Feedback del cliente sobre una entrega (aprobar o pedir ajuste) ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array((string)($_POST['a'] ?? ''), ['aprobar', 'ajuste'], true)) {
+    $accion = (string)$_POST['a'];
+    $eid = (int)($_POST['e'] ?? 0);
+    $com = mb_substr(trim((string)($_POST['comentario'] ?? '')), 0, 1000);
+    if (!$cid || $vista || $eid <= 0) { http_response_code(403); exit('Acceso denegado.'); }
+    $q = $pdo->prepare('SELECT id,titulo FROM entregas WHERE id=? AND cliente_id=?'); $q->execute([$eid, $cid]); $enFb = $q->fetch();
+    if (!$enFb) { http_response_code(404); exit('Entrega inexistente.'); }
+    if ($accion === 'ajuste' && $com === '') {
+        $_SESSION['pflash'] = 'Escribí qué ajuste necesitás antes de enviar.';
+        header('Location: ./?e=' . $eid); exit;
+    }
+    try {
+        if ($accion === 'aprobar') {
+            $pdo->prepare("UPDATE entregas SET estado_cliente='aprobado', comentario_cliente=NULL, comentario_fecha=NOW() WHERE id=? AND cliente_id=?")->execute([$eid, $cid]);
+        } else {
+            $pdo->prepare("UPDATE entregas SET estado_cliente='ajuste', comentario_cliente=?, comentario_fecha=NOW() WHERE id=? AND cliente_id=?")->execute([$com, $eid, $cid]);
+        }
+        $qc = $pdo->prepare('SELECT nombre,empresa FROM clientes WHERE id=?'); $qc->execute([$cid]); $cf = $qc->fetch() ?: [];
+        $empresa = trim((string)($cf['empresa'] ?? '')) ?: trim((string)($cf['nombre'] ?? '')) ?: 'Cliente';
+        $cuerpo = 'Empresa: ' . $empresa . "\n" . 'Video: ' . (string)$enFb['titulo'] . "\n\n"
+            . ($accion === 'aprobar' ? 'Aprobó la entrega.' : 'Pidió un ajuste: ' . $com);
+        blens_ntfy('Feedback de cliente · blens.ar', $cuerpo, 'high', 'speech_balloon', ['view, Abrir panel, https://blens.ar/admin/']);
+        $_SESSION['pflash'] = $accion === 'aprobar' ? '¡Gracias! Registramos tu aprobación.' : 'Recibimos tu pedido de ajuste.';
+    } catch (Throwable $x) {
+        error_log('[blens portal feedback] ' . $x->getMessage());
+        $_SESSION['pflash'] = 'No pudimos guardar tu respuesta. Probá de nuevo en un momento.';
+    }
+    header('Location: ./?e=' . $eid); exit;
+}
+$pflash = (string)($_SESSION['pflash'] ?? ''); unset($_SESSION['pflash']);
 // ---- Actividad del portal: una visita por sesión (no por recarga) ----
 if ($cid && empty($_SESSION['vista']) && empty($_SESSION['visita_ok'])) {
     $_SESSION['visita_ok'] = 1;
@@ -49,17 +80,32 @@ $vid = fn($r) => $r['preview'] ? 'media.php?e=' . (int)$r['id'] . '&t=v' : ($r['
 $pst = fn($r) => $r['poster'] ? 'media.php?e=' . (int)$r['id'] . '&t=p' : ($r['pp'] ? '../' . $r['pp'] : '');
 $did = function ($r) { foreach ([$r['link_hd'] ?? '', $r['link_4k'] ?? ''] as $l) { if (preg_match('~^https://drive\.google\.com/(?:file/(?:u/\d+/)?d/|open\?id=|uc\?(?:[^#]*&)?id=)([A-Za-z0-9_-]{10,})~', (string)$l, $m)) return $m[1]; } return ''; };
 $SQL = 'SELECT e.*, COALESCE(p.video_1080, p.video_mp4, p.video_480) AS pv, p.poster AS pp FROM entregas e LEFT JOIN proyectos p ON p.id = e.proyecto_id WHERE e.cliente_id = ?';
+$fb = function (array $r) use ($e, $T, $vista): string {
+    $est = (string)($r['estado_cliente'] ?? 'pendiente'); $com = trim((string)($r['comentario_cliente'] ?? '')); $id = (int)$r['id'];
+    $h = '<div class="fb" id="fb-' . $id . '">';
+    if ($est === 'aprobado') $h .= '<p class="fb-badge ok">Aprobado por el cliente</p>';
+    elseif ($est === 'ajuste') $h .= '<p class="fb-badge adj">Pidió ajuste: "' . $e($com) . '"</p>';
+    else $h .= '<p class="fb-badge pend">Esperando tu respuesta</p>';
+    if (!$vista) {
+        $h .= '<div class="fb-acts">'
+            . '<form method="post"><input type="hidden" name="a" value="aprobar"><input type="hidden" name="t" value="' . $T . '"><input type="hidden" name="e" value="' . $id . '"><button class="fb-btn ok" type="submit">Aprobar entrega</button></form>'
+            . '<details class="fb-adj"><summary class="fb-btn adj">Pedir ajuste</summary><form method="post"><input type="hidden" name="a" value="ajuste"><input type="hidden" name="t" value="' . $T . '"><input type="hidden" name="e" value="' . $id . '"><label>¿Qué querés ajustar?<textarea name="comentario" rows="3" maxlength="1000" required placeholder="Contanos brevemente qué cambio necesitás…"></textarea></label><button class="fb-btn adj" type="submit">Enviar pedido</button></form></details>'
+            . '</div>';
+    }
+    return $h . '</div>';
+};
 ?><!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex"><meta name="theme-color" content="#14110F">
 <title>Portal de clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" media="print" data-fonts>
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap"></noscript>
-<link rel="stylesheet" href="../styles.css?v=18"><link rel="stylesheet" href="portal.css?v=10"></head><body>
+<link rel="stylesheet" href="../styles.css?v=18"><link rel="stylesheet" href="portal.css?v=11"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <header class="ph"><a class="brand" href="../" aria-label="blens.ar, inicio"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
-<?php if ($cli): ?><div class="phr"><span class="mut">Portal de clientes</span><?= !empty($_SESSION['vista']) ? '<span class="perr">Vista de administrador</span>' : '' ?><form method="post"><input type="hidden" name="a" value="salir"><input type="hidden" name="t" value="<?= $T ?>"><button class="out">Salir</button></form></div>
+<?php if ($cli): ?><div class="phr"><span class="mut">Portal de clientes</span><?= $vista ? '<span class="perr">Vista de administrador</span>' : '' ?><form method="post"><input type="hidden" name="a" value="salir"><input type="hidden" name="t" value="<?= $T ?>"><button class="out">Salir</button></form></div>
 <?php else: ?><a class="link" href="../">Volver a la web</a><?php endif; ?></header>
+<?php if ($pflash): ?><p class="pflash"><?= $e($pflash) ?></p><?php endif; ?>
 <?php if (!$cli): ?>
 <main class="lgbox"><form class="lgf" method="post"><h1 class="lgh">Acceso clientes</h1>
 <?php if ($msg) echo '<p class="perr">' . $e($msg) . '</p>'; ?>
@@ -79,14 +125,15 @@ if ($en): ?>
 <main class="pt"><div class="pd"><div><?php if ($vid($en)): ?><div class="cvw"><video playsinline preload="auto" data-auto<?= $pst($en) ? ' poster="' . $e($pst($en)) . '"' : '' ?>><source src="<?= $e($vid($en)) ?>" type="video/mp4"></video></div><p class="mut sm">Vista previa del proyecto.</p><?php elseif ($df = $did($en)): ?><div class="cvw dfr" data-did="<?= $e($df) ?>"><iframe src="https://drive.google.com/file/d/<?= $e($df) ?>/preview" allow="autoplay; fullscreen" allowfullscreen loading="lazy" title="Vista previa"></iframe></div><p class="mut sm">Vista previa desde Google Drive.</p><?php endif; ?></div>
 <div><a class="back" href="./">&larr; Mis entregas</a><h1><?= $e($en['titulo']) ?></h1><p class="sub"><?= $e(substr($en['creado'], 0, 10)) ?></p>
 <?php if (trim((string)$en['descripcion']) !== ''): ?><div class="copy"><?= nl2br($e($en['descripcion'])) ?></div><?php endif; ?>
-<?php if ($drive($en)): ?><a class="btn" href="<?= $e($drive($en)) ?>" target="_blank" rel="noopener">Abrir en Drive / Descargar</a><p class="mut sm">El archivo final está en la mejor calidad, en Google Drive.</p><?php else: ?><p class="mut">El archivo final todavía no está disponible.</p><?php endif; ?></div></div></main>
+<?php if ($drive($en)): ?><a class="btn" href="<?= $e($drive($en)) ?>" target="_blank" rel="noopener">Abrir en Drive / Descargar</a><p class="mut sm">El archivo final está en la mejor calidad, en Google Drive.</p><?php else: ?><p class="mut">El archivo final todavía no está disponible.</p><?php endif; ?>
+<?= $fb($en) ?></div></div></main>
 <?php else:
 $s = $pdo->prepare($SQL . ' ORDER BY e.id DESC'); $s->execute([$cid]); $es = $s->fetchAll(); ?>
 <main class="pt"><?= $cli['logo'] ? '<img class="clogo" loading="lazy" src="../media/logos/' . $e($cli['logo']) . '" alt="" width="180" height="80">' : '' ?><h1>Hola, <?= $e(explode(' ', trim($cli['nombre']))[0]) ?></h1><p class="sub"><?= $cli['empresa'] ? $e($cli['empresa']) . ' · ' : '' ?>Tus entregas (<?= count($es) ?>)</p>
 <?php if (!$es) echo '<p class="mut">Todavía no hay entregas cargadas.</p>'; ?>
 <div class="pg"><?php foreach ($es as $r): ?><article class="pc"><a class="pc-img" href="?e=<?= (int)$r['id'] ?>" aria-label="Ver <?= $e($r['titulo']) ?>"><?= $pst($r) ? '<img src="' . $e($pst($r)) . '" alt="" loading="lazy" width="800" height="500">' : ($did($r) ? '<img src="https://drive.google.com/thumbnail?id=' . $e($did($r)) . '&amp;sz=w800" alt="" loading="lazy" width="800" height="500" referrerpolicy="no-referrer">' : '') ?><span class="pc-date"><?= $e(substr($r['creado'], 0, 10)) ?></span></a>
 <div class="pc-body"><h3><a href="?e=<?= (int)$r['id'] ?>"><?= $e($r['titulo']) ?></a></h3><?php if (trim((string)$r['descripcion']) !== '') echo '<p class="pc-desc">' . $e($r['descripcion']) . '</p>'; ?>
-<?php if ($drive($r)): ?><a class="btn" href="<?= $e($drive($r)) ?>" target="_blank" rel="noopener">Abrir en Drive / Descargar</a><?php endif; ?></div></article><?php endforeach; ?></div></main>
+<?php if ($drive($r)): ?><a class="btn" href="<?= $e($drive($r)) ?>" target="_blank" rel="noopener">Abrir en Drive / Descargar</a><?php endif; ?></div><?= $fb($r) ?></article><?php endforeach; ?></div></main>
 <?php endif; endif; ?>
 <footer class="foot"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span><span class="loc">Posadas, Misiones · Argentina</span><nav class="social"><a href="../">Web</a><a href="<?= $e($contacto) ?>">Contacto</a></nav><span class="mut">© 2026 blens.ar</span></footer>
 <script src="../assets/fonts.js?v=1" defer></script><script src="../assets/player.js?v=11" defer></script><script src="dfr.js?v=10" defer></script></body></html>

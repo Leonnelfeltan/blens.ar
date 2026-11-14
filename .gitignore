@@ -1,4 +1,7 @@
 blens-config/config.php
+blens-config/comprobantes/*
+!blens-config/comprobantes/.gitkeep
+!blens-config/comprobantes/.htaccess
 public/media/*
 !public/media/.gitkeep
 public/content/

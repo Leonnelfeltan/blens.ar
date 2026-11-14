@@ -27,7 +27,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $est = $cero || ($_POST['estado'] ?? 'pendiente') === 'cobrado' ? 'cobrado' : 'pendiente'; $med = null; $fpg = null;
             if ($est === 'cobrado') { $med = $cero ? 'otro' : (string)($_POST['medio'] ?? ''); if (!isset(MEDIOS[$med])) { if ($cero) $med = 'otro'; else throw new RuntimeException('Elegí cómo te pagaron.'); } $fpg = (string)($_POST['fecha_pago'] ?? '') ?: $f; if (!fecha_ok($fpg)) throw new RuntimeException('Fecha de pago inválida.'); }
             $ei = (int)($_POST['entrega_id'] ?? 0) ?: null; $pi = (int)($_POST['proyecto_id'] ?? 0) ?: null;
-            $pdo->prepare('INSERT INTO trabajos (cliente_id,fecha,tipo,detalle,cantidad,monto_unit,prueba,estado,medio,fecha_pago,entrega_id,proyecto_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')->execute([$c, $f, $tipo, $det, $cant, $mon, $mp, $est, $med, $fpg, $ei, $pi]);
+            $comp = comprobante_subir();
+            $pdo->prepare('INSERT INTO trabajos (cliente_id,fecha,tipo,detalle,cantidad,monto_unit,prueba,estado,medio,fecha_pago,entrega_id,proyecto_id,comprobante) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')->execute([$c, $f, $tipo, $det, $cant, $mon, $mp, $est, $med, $fpg, $ei, $pi, $comp]);
             $_SESSION['flash'] = 'Trabajo registrado.';
         } elseif ($a === 'cobro_rapido') {
             $det = mb_substr(trim((string)($_POST['concepto'] ?? '')), 0, 200); $mon = (int)preg_replace('/\D/', '', (string)($_POST['monto'] ?? '0'));
@@ -35,16 +36,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($mon <= 0) throw new RuntimeException('El monto tiene que ser mayor a cero.');
             $est = ($_POST['estado'] ?? 'pendiente') === 'cobrado' ? 'cobrado' : 'pendiente'; $med = null; $fpg = null;
             if ($est === 'cobrado') { $med = (string)($_POST['medio'] ?? 'transferencia'); if (!isset(MEDIOS[$med])) $med = 'transferencia'; $fpg = (string)($_POST['fecha_pago'] ?? '') ?: date('Y-m-d'); if (!fecha_ok($fpg)) throw new RuntimeException('Fecha de pago inválida.'); }
-            $pdo->prepare('INSERT INTO trabajos (cliente_id,fecha,tipo,detalle,cantidad,monto_unit,prueba,estado,medio,fecha_pago) VALUES (?,?,?,?,1,?,?,?,?,?)')->execute([$c, date('Y-m-d'), 'otro', $det, $mon, $mp, $est, $med, $fpg]);
-            $_SESSION['flash'] = 'Cobro registrado.';
+            $comp = comprobante_subir();
+            $pdo->prepare('INSERT INTO trabajos (cliente_id,fecha,tipo,detalle,cantidad,monto_unit,prueba,estado,medio,fecha_pago,comprobante) VALUES (?,?,?,?,1,?,?,?,?,?,?)')->execute([$c, date('Y-m-d'), 'otro', $det, $mon, $mp, $est, $med, $fpg, $comp]);
+            if ($est === 'cobrado' && isset($_POST['sumar_saldo'])) {
+                set_ajuste($pdo, 'saldo_cuenta', (string)(saldo_cuenta($pdo) + $mon));
+                set_ajuste($pdo, 'tna_ultima_fecha', date('Y-m-d'));   // el importe nuevo empieza a rendir desde hoy
+                $_SESSION['flash'] = 'Cobro registrado y suma ' . peso($mon) . ' al saldo en cuenta.';
+            } else $_SESSION['flash'] = 'Cobro registrado.';
         } elseif ($a === 'marcar_cobrado') {
             $id = (int)($_POST['id'] ?? 0);
             $s = $pdo->prepare("SELECT * FROM trabajos WHERE id=? AND cliente_id=? AND estado='pendiente' AND recibo_id IS NULL"); $s->execute([$id, $c]);
-            if (!$s->fetch()) throw new RuntimeException('Ese trabajo ya no está pendiente.');
+            if (!$tr = $s->fetch()) throw new RuntimeException('Ese trabajo ya no está pendiente.');
             $med = (string)($_POST['medio'] ?? 'transferencia'); if (!isset(MEDIOS[$med])) $med = 'transferencia';
             $fpg = (string)($_POST['fecha_pago'] ?? '') ?: date('Y-m-d'); if (!fecha_ok($fpg)) throw new RuntimeException('Fecha de pago inválida.');
-            $pdo->prepare("UPDATE trabajos SET estado='cobrado',medio=?,fecha_pago=? WHERE id=?")->execute([$med, $fpg, $id]);
-            $_SESSION['flash'] = 'Marcado como cobrado.';
+            $comp = comprobante_subir();
+            $pdo->prepare("UPDATE trabajos SET estado='cobrado',medio=?,fecha_pago=?,comprobante=COALESCE(?,comprobante) WHERE id=?")->execute([$med, $fpg, $comp, $id]);
+            if ($comp) comprobante_borrar((string)($tr['comprobante'] ?? ''));
+            $mon = (int)$tr['cantidad'] * (int)$tr['monto_unit'];
+            if (isset($_POST['sumar_saldo'])) {
+                set_ajuste($pdo, 'saldo_cuenta', (string)(saldo_cuenta($pdo) + $mon));
+                set_ajuste($pdo, 'tna_ultima_fecha', date('Y-m-d'));
+                $_SESSION['flash'] = 'Marcado como cobrado. Se suman ' . peso($mon) . ' al saldo en cuenta.';
+            } else $_SESSION['flash'] = 'Marcado como cobrado.';
         } elseif ($a === 'cobro_cfg') {
             $tel = mb_substr(trim((string)($_POST['telefono'] ?? '')), 0, 30);
             $pdo->prepare('UPDATE clientes SET telefono=? WHERE id=?')->execute([$tel, $c]);
@@ -52,7 +65,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             set_ajuste($pdo, 'cbu_cobro', mb_substr(trim((string)($_POST['cbu_cobro'] ?? '')), 0, 60));
             $_SESSION['flash'] = 'Datos de cobro guardados.';
         } elseif ($a === 'del_trabajo') {
-            $pdo->prepare('DELETE FROM trabajos WHERE id=? AND cliente_id=? AND recibo_id IS NULL')->execute([(int)($_POST['id'] ?? 0), $c]); $_SESSION['flash'] = 'Trabajo quitado.';
+            $tid = (int)($_POST['id'] ?? 0);
+            $s = $pdo->prepare('SELECT comprobante FROM trabajos WHERE id=? AND cliente_id=? AND recibo_id IS NULL'); $s->execute([$tid, $c]); $comp = $s->fetchColumn();
+            $pdo->prepare('DELETE FROM trabajos WHERE id=? AND cliente_id=? AND recibo_id IS NULL')->execute([$tid, $c]);
+            if ($comp) comprobante_borrar((string)$comp);
+            $_SESSION['flash'] = 'Trabajo quitado.';
         } elseif ($a === 'cobrar') {
             $ids = array_values(array_filter(array_map('intval', (array)($_POST['ids'] ?? []))));
             if (!$ids) throw new RuntimeException('Elegí al menos un trabajo pendiente.');
@@ -81,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 $vc = isset($_GET['c']) ? (int)$_GET['c'] : null; $T = $e($_SESSION['t']); $cl = null;
 if ($vc) { $s = $pdo->prepare('SELECT * FROM clientes WHERE id=?'); $s->execute([$vc]); $cl = $s->fetch() ?: null; }
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Cobros | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=17"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Cobros | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=19"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Proyectos</a><a href="./?v=consultas">Consultas</a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a></nav>
 <form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
@@ -127,12 +144,14 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
   </details>
   <?php if ($waCli): ?><details class="prev"><summary>Ver el mensaje que se va a mandar</summary><pre class="msj"><?= $e($resumen) ?></pre></details><?php endif; ?>
 </div>
-<form class="quick" method="post"><input type="hidden" name="a" value="cobro_rapido"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>">
+<form class="quick" method="post" enctype="multipart/form-data"><input type="hidden" name="a" value="cobro_rapido"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>">
 <label><span class="lbl">Concepto</span><input name="concepto" maxlength="200" placeholder="Reel de producto" required></label>
 <label><span class="lbl">Monto ($)</span><input name="monto" inputmode="numeric" placeholder="0" required></label>
-<label><span class="lbl">Estado</span><select name="estado"><option value="pendiente">Pendiente</option><option value="cobrado">Cobrado</option></select></label>
+<label><span class="lbl">Estado</span><select name="estado" data-estado><option value="pendiente">Pendiente</option><option value="cobrado">Cobrado</option></select></label>
 <label><span class="lbl">Medio</span><select name="medio"><?php foreach (MEDIOS as $k => $n) echo '<option value="' . $k . '">' . $e($n) . '</option>'; ?></select></label>
-<button>Cargar cobro</button></form>
+<button>Cargar cobro</button>
+<label class="full"><span class="lbl">Comprobante <span class="opt">(opcional, máximo 8 MB)</span></span><input type="file" name="comprobante" accept=".jpg,.jpeg,.png,.webp,.pdf"></label>
+<label class="chk full"><input type="checkbox" name="sumar_saldo" value="1" checked data-sumar> Sumar al saldo en cuenta</label></form>
 <h2>Movimientos</h2>
 <?php if (!$movs): ?><p class="mut">Todavía no hay movimientos para este cliente.</p><?php else: ?>
 <form id="fdel" method="post"><input type="hidden" name="a" value="del_trabajo"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>"></form>
@@ -146,9 +165,12 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
   </div>
   <div class="mv-r">
     <b class="<?= $cob ? 'ok-t' : 'warn-t' ?>"><?= $e(peso($sub)) ?></b>
+    <?php if (!empty($r['comprobante'])) echo comprobante_boton('cobro', (int)$r['id']); ?>
     <?php if (!$cob): ?>
-    <form class="mv-a" method="post"><input type="hidden" name="a" value="marcar_cobrado"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
+    <form class="mv-a" method="post" enctype="multipart/form-data"><input type="hidden" name="a" value="marcar_cobrado"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
       <select name="medio" aria-label="Medio de pago"><?php foreach (MEDIOS as $k => $n) echo '<option value="' . $k . '">' . $e($n) . '</option>'; ?></select>
+      <label class="chk" title="Sumar el importe al saldo en cuenta"><input type="checkbox" name="sumar_saldo" value="1" checked> +saldo</label>
+      <label class="up-min" title="Adjuntar comprobante (máximo 8 MB)"><input type="file" name="comprobante" accept=".jpg,.jpeg,.png,.webp,.pdf"> Comprobante</label>
       <button class="g">Marcar cobrado</button>
       <button class="g" form="fdel" name="id" value="<?= (int)$r['id'] ?>" title="Quitar este movimiento">Quitar</button>
     </form>
@@ -170,7 +192,7 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
 <div class="row full"><button type="submit" formaction="ticket.php" formnovalidate>Armar ticket de cobro</button><button class="g">Marcar como cobrado y generar recibo</button></div></div></form><?php endif; ?>
 </details>
 <details class="accd"><summary>Registrar trabajo con detalle (tipo, cantidad y fecha)</summary>
-<form class="f" method="post"><input type="hidden" name="a" value="trabajo"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>">
+<form class="f" method="post" enctype="multipart/form-data"><input type="hidden" name="a" value="trabajo"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>">
 <label><span class="lbl">Fecha <span class="req">* obligatorio</span></span><input type="date" name="fecha" value="<?= date('Y-m-d') ?>" required></label>
 <label><span class="lbl">Tipo <span class="req">* obligatorio</span></span><select name="tipo" class="tipo-sel"><option value="video" data-m="<?= (int)$cl['tarifa_video'] ?>">Video</option><option value="foto" data-m="<?= (int)$cl['tarifa_foto'] ?>">Foto</option><option value="otro" data-m="0">Otro</option></select></label>
 <label class="full"><span class="lbl">Detalle <span class="opt">(opcional)</span> (ej: reel de la propiedad de Av. Corrientes)</span><input name="detalle" maxlength="200"></label>
@@ -178,6 +200,7 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
 <label><span class="lbl">Estado <span class="req">* obligatorio</span></span><select name="estado"><option value="pendiente">Pendiente de cobro</option><option value="cobrado">Ya cobrado (queda constancia)</option></select></label>
 <label><span class="lbl">Si ya cobraste: medio <span class="req">* obligatorio si elegís «Ya cobrado»</span></span><select name="medio"><?php foreach (MEDIOS as $k => $n) echo '<option value="' . $k . '">' . $e($n) . '</option>'; ?></select></label>
 <label><span class="lbl">Si ya cobraste: fecha de cobro <span class="req">* obligatorio si elegís «Ya cobrado»</span></span><input type="date" name="fecha_pago"></label>
+<label class="full"><span class="lbl">Comprobante <span class="opt">(opcional, máximo 8 MB)</span></span><input type="file" name="comprobante" accept=".jpg,.jpeg,.png,.webp,.pdf"></label>
 <div class="row full"><button>Registrar</button><button class="g" name="cero" value="1" formnovalidate>Registrar en $0 (histórico)</button></div></form>
 </details>
 <h2>Detectados en lo que subiste (<?= count($det) ?>)</h2>
@@ -191,4 +214,4 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
 <div class="row full"><button>Registrar como trabajo</button><button class="g" name="cero" value="1" formnovalidate>Registrar en $0 (histórico)</button></div></form><?php endforeach; ?>
 <h2>Recibos</h2><table class="cards"><tr><th>N°</th><th>Fecha</th><th>Período</th><th>Total</th><th></th></tr>
 <?php foreach ($recs as $r): ?><tr><td data-label="N°"><?= $e(nro($r)) ?></td><td class="mut" data-label="Fecha"><?= $e(date('d/m/Y', strtotime($r['fecha']))) ?> · <?= $e(MEDIOS[$r['medio']] ?? $r['medio']) ?></td><td data-label="Período"><?= $e($r['periodo']) ?></td><td data-label="Total"><?= $e(peso((int)$r['total'])) ?></td><td data-label=""><a class="btn g" href="recibo.php?id=<?= (int)$r['id'] ?>">Ver / imprimir</a></td></tr><?php endforeach; if (!$recs) echo '<tr><td colspan="5" class="mut">Todavía no hay recibos.</td></tr>'; ?></table>
-<?php endif; ?><script src="admin.js?v=17"></script></body></html>
+<?php endif; ?><script src="admin.js?v=18"></script></body></html>

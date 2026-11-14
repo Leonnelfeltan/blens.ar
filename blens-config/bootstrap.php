@@ -1,5 +1,6 @@
 <?php
 const CLAVE_INICIAL = 'blens123'; // clave histórica: se rechaza si alguien intenta elegirla
+const COMPROBANTES_DIR = __DIR__ . '/comprobantes'; // privado, fuera de public/
 // ---- Bloqueo por intentos fallidos de login (5 fallos en 15 min => 15 min de bloqueo, por IP) ----
 const LOGIN_MAX = 5, LOGIN_VENTANA = 900, LOGIN_BLOQUEO = 900;
 function blens_lock_file(string $scope): string {
@@ -50,10 +51,71 @@ function total_gastos_mes(PDO $pdo, string $ym): int {
     $s = $pdo->prepare("SELECT COALESCE(SUM(monto),0) FROM gastos WHERE DATE_FORMAT(fecha,'%Y-%m')=?");
     $s->execute([$ym]); return (int)$s->fetchColumn();
 }
-/* Rendimiento estimado de la billetera según la TNA configurada */
+/* Rendimiento estimado de la billetera según la TNA configurada (interés simple anual) */
 function rend_estimado(int $saldo, float $tna): array {
     $f = $tna / 100;
-    return ['diario' => (int)round($saldo * $f / 365), 'mensual' => (int)round($saldo * $f), 'anual' => (int)round($saldo * $f * 12)];
+    return [
+        'anual'  => (int)round($saldo * $f),
+        'mensual' => (int)round($saldo * $f / 12),
+        'diario' => (int)round($saldo * $f / 365),
+    ];
+}
+
+/* ---- Notificaciones push con ntfy.sh ---- */
+function blens_ntfy(string $titulo, string $mensaje, string $prioridad = 'default', string $tags = '', array $acciones = []): void {
+    try {
+        $url = trim((string)(blens_cfg()['ntfy_url'] ?? ''));
+        if ($url === '') return;                                   // sin destino configurado: no se hace nada
+        if (!function_exists('curl_init')) return;
+        $limpio = fn(string $s): string => str_replace(["\r", "\n"], ' ', trim($s));
+        $hdr = ['Title: ' . $limpio($titulo)];
+        if ($prioridad !== '') $hdr[] = 'Priority: ' . $limpio($prioridad);
+        if ($tags !== '') $hdr[] = 'Tags: ' . $limpio($tags);
+        $acc = [];
+        foreach ($acciones as $a) {
+            if (is_array($a)) $a = implode(', ', array_map(fn($x) => (string)$x, $a));
+            $a = $limpio((string)$a);
+            if ($a !== '') $acc[] = $a;
+        }
+        if ($acc) $hdr[] = 'Actions: ' . implode('; ', $acc);
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $mensaje,
+            CURLOPT_HTTPHEADER => $hdr,
+            CURLOPT_TIMEOUT => 2,
+            CURLOPT_CONNECTTIMEOUT => 1,
+        ]);
+        $res = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err = curl_error($ch);
+        curl_close($ch);
+        if ($res === false || ($code >= 400)) error_log('[blens ntfy] ' . ($err !== '' ? $err : 'HTTP ' . $code));
+    } catch (Throwable $x) { error_log('[blens ntfy] ' . $x->getMessage()); }
+}
+/* Normaliza un teléfono a formato de WhatsApp (549 + número) */
+function blens_wa_num(string $tel): ?string {
+    $d = preg_replace('/\D+/', '', $tel) ?? '';
+    if ($d === '') return null;
+    if (str_starts_with($d, '00')) $d = substr($d, 2);
+    if (str_starts_with($d, '54')) return str_starts_with($d, '549') ? $d : '549' . substr($d, 2);
+    $d = ltrim($d, '0');
+    return strlen($d) === 10 ? '549' . $d : null;
+}
+/* Aviso push de una consulta nueva de la web */
+function blens_ntfy_consulta(array $c): void {
+    $nombre = trim((string)($c['nombre'] ?? ''));
+    $empresa = trim((string)($c['empresa'] ?? ''));
+    $servicio = trim((string)($c['servicio'] ?? ''));
+    $mensaje = trim((string)($c['mensaje'] ?? ''));
+    $cuerpo = "Nombre: " . ($nombre !== '' ? $nombre : '-') . "\n"
+        . "Empresa: " . ($empresa !== '' ? $empresa : '-') . "\n"
+        . "Servicio: " . ($servicio !== '' ? $servicio : '-') . "\n\n" . $mensaje;
+    $acciones = ['view, Ver consultas, https://blens.ar/admin/consultas.php'];
+    $n = blens_wa_num((string)($c['telefono'] ?? ''));
+    if ($n) $acciones[] = 'view, WhatsApp, https://wa.me/' . $n . '?text=' . rawurlencode('Hola ' . explode(' ', $nombre)[0] . ', te escribimos de blens.ar por tu consulta.');
+    blens_ntfy('Nueva consulta · blens.ar', $cuerpo, 'high', 'incoming_envelope', $acciones);
 }
 
 // ---- Migración automática: agrega columnas nuevas si faltan (es idempotente y segura) ----
@@ -68,6 +130,18 @@ function blens_migrar(?PDO $p = null): void {
             'portal_ultima_visita' => 'DATETIME NULL',       // última entrada al portal
         ];
         foreach ($nuevas as $col => $def) if (!isset($cols[$col])) $p->exec("ALTER TABLE clientes ADD COLUMN `$col` $def");
+        // Feedback del cliente sobre las entregas del portal
+        $colsE = [];
+        foreach ($p->query('SHOW COLUMNS FROM entregas')->fetchAll(PDO::FETCH_ASSOC) as $c) $colsE[$c['Field']] = true;
+        $nuevasE = [
+            'estado_cliente'     => "VARCHAR(20) NOT NULL DEFAULT 'pendiente'",
+            'comentario_cliente' => 'TEXT NULL',
+            'comentario_fecha'   => 'DATETIME NULL',
+        ];
+        foreach ($nuevasE as $col => $def) if (!isset($colsE[$col])) $p->exec("ALTER TABLE entregas ADD COLUMN `$col` $def");
+        // Adjuntos de comprobantes: siempre fuera de /public
+        if (!is_dir(COMPROBANTES_DIR)) @mkdir(COMPROBANTES_DIR, 0750, true);
+        @chmod(COMPROBANTES_DIR, 0750);
         // Tabla de gastos (registro de salidas de dinero)
         $p->exec("CREATE TABLE IF NOT EXISTS gastos (
             id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -75,9 +149,16 @@ function blens_migrar(?PDO $p = null): void {
             concepto VARCHAR(160) NOT NULL,
             categoria VARCHAR(60) NOT NULL DEFAULT 'general',
             monto INT NOT NULL DEFAULT 0,
+            comprobante VARCHAR(255) NULL,
             creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             INDEX g_fecha (fecha)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        // Comprobantes opcionales en cobros (trabajos) y gastos, también para bases existentes
+        foreach (['trabajos', 'gastos'] as $tabla) {
+            $colsT = [];
+            foreach ($p->query("SHOW COLUMNS FROM `$tabla`")->fetchAll(PDO::FETCH_ASSOC) as $c) $colsT[$c['Field']] = true;
+            if (!isset($colsT['comprobante'])) $p->exec("ALTER TABLE `$tabla` ADD COLUMN comprobante VARCHAR(255) NULL");
+        }
     } catch (Throwable $e) { error_log('[blens migrar] ' . $e->getMessage()); }
 }
 function blens_db(): PDO {

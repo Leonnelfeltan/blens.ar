@@ -26,3 +26,23 @@ body{min-height:100vh}
 .lgf{display:grid;gap:1rem}.lgh{font-size:1.8rem;font-weight:800;letter-spacing:-.03em}.sm{font-size:.85rem}.pd h1{margin-top:.8rem}.pd .sub{margin-bottom:0}.pd .sm{margin-top:.6rem}
 
 .pd .cvw.dfr{position:relative;width:100%;aspect-ratio:9/16;max-height:85vh;background:#000}.cvw.dfr iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+
+/* Feedback del cliente: aprobar o pedir ajuste */
+.fb{display:grid;gap:.65rem;border-top:1px solid var(--line);padding-top:.9rem;margin-top:1rem}
+.pc .fb{padding:0 1rem 1rem;margin-top:0}
+.fb-badge{width:fit-content;font-size:.78rem;font-weight:600;padding:.3rem .65rem;border-radius:99px;border:1px solid var(--line);color:var(--mut)}
+.fb-badge.ok{background:rgba(46,160,67,.16);border-color:rgba(46,160,67,.5);color:#8fdc9a}
+.fb-badge.adj{background:rgba(255,90,31,.12);border-color:rgba(255,90,31,.45);color:var(--o)}
+.fb-acts{display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-start}
+.fb-acts form{margin:0}
+.fb-btn{display:inline-block;background:var(--o);color:var(--c);border:0;border-radius:2px;padding:.6rem .9rem;font:600 .9rem Sora,sans-serif;cursor:pointer;text-decoration:none}
+.fb-btn.ok{background:#2ea043;color:#fff}
+.fb-btn.adj{background:none;border:1px solid var(--o);color:var(--o)}
+.fb-adj{flex:1 1 100%}
+.fb-adj summary{display:inline-block;list-style:none}
+.fb-adj summary::-webkit-details-marker{display:none}
+.fb-adj form{display:grid;gap:.6rem;margin-top:.7rem}
+.fb-adj label{display:grid;gap:.35rem;font-size:.85rem;color:var(--mut)}
+.fb-adj textarea{width:100%;background:var(--c2);border:1px solid var(--line);color:var(--h);font:inherit;padding:.7rem;border-radius:2px;resize:vertical}
+.fb-adj .fb-btn{justify-self:start}
+.pflash{max-width:1100px;margin:1rem auto 0;padding:.75rem 1rem;background:rgba(46,160,67,.14);border:1px solid rgba(46,160,67,.45);color:#9ed39e;font-weight:600}

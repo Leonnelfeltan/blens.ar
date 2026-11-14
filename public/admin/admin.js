@@ -203,3 +203,13 @@ document.querySelectorAll('[data-cerrar]').forEach(b => b.addEventListener('clic
   if (dlg.close) dlg.close(); else dlg.removeAttribute('open');
 }));
 if (document.querySelector('[data-proc]')) setTimeout(() => location.reload(), 8000);
+
+// ---- Cobros: habilitar el saldo solo cuando el cobro está cobrado ----
+const cobroEstado = document.querySelector('[data-estado]');
+const cobroSumar = document.querySelector('[data-sumar]');
+if (cobroEstado && cobroSumar) {
+  const updCobro = () => { const esCob = cobroEstado.value === 'cobrado'; cobroSumar.disabled = !esCob; cobroSumar.checked = esCob; };
+  cobroEstado.addEventListener('change', updCobro); updCobro();
+}
+// ---- Dashboard: cambiar de mes al elegir otro ----
+document.querySelectorAll('.msel input[type=month]').forEach(inp => inp.addEventListener('change', () => { if (inp.form) inp.form.submit(); }));

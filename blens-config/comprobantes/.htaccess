@@ -1,0 +1,7 @@
+# Carpeta privada: los comprobantes se sirven solo desde ver_comprobante.php
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Deny from all
+</IfModule>

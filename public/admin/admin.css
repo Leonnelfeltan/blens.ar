@@ -101,6 +101,8 @@ dialog.imp form.f{max-width:none;margin:0}
 .quick{display:grid;grid-template-columns:2.2fr 1fr 1fr 1fr auto;gap:.6rem;align-items:end;background:var(--c2);border:1px solid var(--l);border-left:6px solid var(--o);border-radius:8px;padding:1rem;margin-bottom:1.4rem}
 .quick label{display:grid;gap:.3rem;color:var(--m);font-size:.82rem;min-width:0}
 .quick input,.quick select{width:100%}
+.quick .chk{grid-column:1/-1;font-size:.85rem;color:var(--m)}
+.quick .chk input:disabled{opacity:.5}
 .mvs{display:grid;gap:.6rem;margin-top:.8rem}
 .mv{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;background:var(--c2);border:1px solid var(--l);border-radius:8px;padding:.8rem 1rem}
 .mv-l{display:grid;gap:.25rem;min-width:0;flex:1 1 260px}
@@ -121,6 +123,10 @@ details.accd[open]>summary{margin-bottom:.8rem;color:var(--o)}
 
 /* ===== Dashboard financiero ===== */
 .dash{margin:1.4rem 0 2rem}
+.msel{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;background:var(--c2);border:1px solid var(--l);border-left:6px solid var(--o);border-radius:8px;padding:.7rem 1rem;margin-bottom:1rem}
+.msel .k{color:var(--m);font-size:.76rem;letter-spacing:.1em;text-transform:uppercase}
+.msel input[type=month]{padding:.35rem .5rem;font:inherit;background:var(--c);color:var(--h);border:1px solid var(--l);border-radius:6px;max-width:170px}
+.msel .mut{font-size:.8rem}
 .kpis.fin{grid-template-columns:repeat(4,1fr)}
 .kpi.fin b{font-size:1.35rem}
 .kpi .chip-r{display:inline-block;margin-top:.3rem;font-size:.72rem;font-weight:600;padding:.2rem .5rem;border-radius:99px;background:rgba(255,90,31,.12);color:var(--o);border:1px solid rgba(255,90,31,.4)}
@@ -188,3 +194,11 @@ body{overflow-x:hidden}
   .form2 button,.form2.s button{grid-column:1/-1}
 }
 @media(max-width:480px){.kpis,.kpis.fin{grid-template-columns:1fr}}
+
+/* ===== Comprobantes y feedback de clientes ===== */
+.ic{width:15px;height:15px;vertical-align:-2px;margin-right:.35rem;flex:none}
+.cb{display:inline-flex;align-items:center;white-space:nowrap}
+.quick .full,.form2 .full{grid-column:1/-1}
+.mv-a .up-min{display:flex;align-items:center;gap:.35rem;font-size:.78rem;color:var(--m);white-space:nowrap}
+.mv-a .up-min input{width:auto;max-width:150px;padding:.25rem;font-size:.75rem}
+.b.adj{background:rgba(255,90,31,.14);color:#ffb36b;border:1px solid rgba(255,90,31,.45)}

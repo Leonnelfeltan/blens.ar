@@ -3,6 +3,33 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../blens-config/bootstrap.php';
 blens_migrar();                                    // migración automática de columnas nuevas (idempotente)
 
+/* ---- Acreditación diaria de intereses (estilo Naranja X) ----
+   Es idempotente: se puede ejecutar muchas veces por día y nunca duplica intereses.
+   Guarda en 'ajustes': tna_ultima_fecha (Y-m-d), tna_ganado_mes (acumulado del mes) y tna_mes_actual (Y-m). */
+function blens_acreditar_tna(?PDO $pdo = null): void {
+    try {
+        $pdo ??= blens_db();
+        $hoy = date('Y-m-d'); $mes = date('Y-m');
+        $saldo = saldo_cuenta($pdo); $tna = tna_cuenta($pdo);
+        $ult = trim((string)ajuste($pdo, 'tna_ultima_fecha', ''));
+        $mesAct = trim((string)ajuste($pdo, 'tna_mes_actual', ''));
+        $ganado = (float)str_replace(',', '.', (string)ajuste($pdo, 'tna_ganado_mes', '0'));
+        $cambioMes = ($mesAct !== $mes);
+        if ($cambioMes) { $ganado = 0.0; set_ajuste($pdo, 'tna_mes_actual', $mes); set_ajuste($pdo, 'tna_ganado_mes', '0'); }  // mes nuevo: se reinicia el acumulado
+        if ($ult === '') { set_ajuste($pdo, 'tna_ultima_fecha', $hoy); return; }   // primera vez: arranca desde hoy
+        if ($hoy <= $ult) return;                                        // ya acreditado hasta hoy
+        if ($saldo <= 0 || $tna <= 0) { set_ajuste($pdo, 'tna_ultima_fecha', $hoy); return; }
+        $dias = (int)floor((strtotime($hoy) - strtotime($ult)) / 86400);
+        if ($dias > 31) $dias = 31;                                      // tope: si el panel estuvo mucho tiempo sin abrirse
+        if ($dias < 1) { set_ajuste($pdo, 'tna_ultima_fecha', $hoy); return; }
+        $f = $tna / 100 / 365;
+        for ($i = 0; $i < $dias; $i++) { $interes = $saldo * $f; $saldo += $interes; $ganado += $interes; }
+        set_ajuste($pdo, 'saldo_cuenta', (string)round($saldo));
+        set_ajuste($pdo, 'tna_ganado_mes', (string)round($ganado, 2));
+        set_ajuste($pdo, 'tna_ultima_fecha', $hoy);
+    } catch (Throwable $x) { error_log('[blens tna] ' . $x->getMessage()); }
+}
+
 /* ---- Actividad del portal de un cliente ---- */
 function portal_info(?array $c): string {
     $v = (int)($c['portal_visitas'] ?? 0); $u = trim((string)($c['portal_ultima_visita'] ?? ''));
@@ -45,6 +72,44 @@ function up(string $f, array $ok, int $max): ?string {
     return "media/uploads/$name";
 }
 function rmf(?string $p): void { if ($p && str_starts_with($p, 'media/uploads/')) @unlink(__DIR__ . '/../' . $p); }
+
+/* ---- Comprobantes de cobros y gastos (guardados fuera de /public) ---- */
+const COMPROBANTE_MAX = 8 * 1048576;
+const COMPROBANTE_MIMES = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'application/pdf' => 'pdf'];
+function comprobante_dir(): string {
+    if (!is_dir(COMPROBANTES_DIR)) @mkdir(COMPROBANTES_DIR, 0750, true);
+    return COMPROBANTES_DIR;
+}
+function comprobante_subir(string $campo = 'comprobante'): ?string {
+    if (empty($_FILES[$campo]['name'])) return null;
+    $u = $_FILES[$campo];
+    if (($u['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) return null;
+    if ($u['error'] !== UPLOAD_ERR_OK) throw new RuntimeException('No se pudo subir el comprobante (código ' . (int)$u['error'] . ').');
+    if ((int)$u['size'] <= 0) throw new RuntimeException('El comprobante está vacío.');
+    if ((int)$u['size'] > COMPROBANTE_MAX) throw new RuntimeException('El comprobante supera el máximo de 8 MB.');
+    $ext = strtolower(pathinfo((string)$u['name'], PATHINFO_EXTENSION));
+    $permitidas = ['jpg' => ['image/jpeg'], 'jpeg' => ['image/jpeg'], 'png' => ['image/png'], 'webp' => ['image/webp'], 'pdf' => ['application/pdf']];
+    if (!isset($permitidas[$ext])) throw new RuntimeException('Formato no permitido. Subí una imagen JPG, PNG o WebP, o un PDF.');
+    $mime = (new finfo(FILEINFO_MIME_TYPE))->file((string)$u['tmp_name']);
+    if (!isset(COMPROBANTE_MIMES[$mime])) throw new RuntimeException('El archivo no es una imagen o PDF válido (' . $mime . ').');
+    if (!in_array($mime, $permitidas[$ext], true)) throw new RuntimeException('La extensión del archivo no coincide con su contenido real.');
+    $dest = comprobante_dir() . '/' . bin2hex(random_bytes(12)) . '.' . COMPROBANTE_MIMES[$mime];
+    if (!move_uploaded_file($u['tmp_name'], $dest)) throw new RuntimeException('No se pudo guardar el comprobante.');
+    @chmod($dest, 0640);
+    return basename($dest);
+}
+function comprobante_borrar(?string $nombre): void {
+    if (!$nombre) return;
+    $nombre = basename($nombre);
+    if ($nombre === '' || $nombre === '.' || $nombre === '..') return;
+    $p = comprobante_dir() . '/' . $nombre;
+    if (is_file($p)) @unlink($p);
+}
+function comprobante_boton(string $tipo, int $id): string {
+    $tipo = $tipo === 'gasto' ? 'gasto' : 'cobro';
+    $svg = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h7l4 4v12H8z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M15 4v4h4" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
+    return '<a class="btn g cb" href="ver_comprobante.php?tipo=' . $tipo . '&amp;id=' . $id . '" target="_blank" rel="noopener">' . $svg . 'Ver comprobante</a>';
+}
 
 const VIDEO_PX = 720; // lado corto del video final (720 = 720p)
 function procesar(string $rel): array {

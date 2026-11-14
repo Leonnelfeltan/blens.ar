@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/../../blens-config/bootstrap.php';
+require __DIR__ . '/lib.php';
 require __DIR__ . '/drive.php';
 session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict', 'secure' => !empty($_SERVER['HTTPS'])]);
 session_start();
@@ -8,6 +9,7 @@ header('X-Robots-Tag: noindex'); header('Cache-Control: no-store'); header('X-Fr
 
 $cfg = blens_cfg(); $pdo = blens_db();
 blens_migrar();                                          // migración automática (columnas nuevas y tabla de gastos)
+if (!empty($_SESSION['ok'])) blens_acreditar_tna($pdo);  // acreditación diaria de intereses (idempotente)
 $faltaMig = false; try { $faltaMig = !$pdo->query("SHOW COLUMNS FROM proyectos LIKE 'video_1080'")->fetch(); } catch (Throwable $x0) { }
 const MIG_CMD = "sudo mysql blens_web -e \"ALTER TABLE proyectos ADD COLUMN video_1080 VARCHAR(255) NULL, ADD COLUMN video_480 VARCHAR(255) NULL, ADD COLUMN calidades VARCHAR(40) NULL, ADD COLUMN estado VARCHAR(12) NOT NULL DEFAULT 'listo', ADD COLUMN error_msg VARCHAR(255) NULL, ADD COLUMN fuente_drive VARCHAR(500) NULL, ADD COLUMN cola_src VARCHAR(255) NULL, ADD COLUMN poster_auto TINYINT(1) NOT NULL DEFAULT 0;\"";
 $faltaCat = false; try { $col = $pdo->query("SHOW COLUMNS FROM proyectos LIKE 'categoria'")->fetch(); $faltaCat = $col && stripos((string)$col['Type'], 'varchar(40)') === false; } catch (Throwable $x0) { }
@@ -34,20 +36,6 @@ $catsForm = $cats; unset($catsForm['auto']);
 $msg = ''; $post = $_SERVER['REQUEST_METHOD'] === 'POST';
 
 if ($post && !hash_equals($_SESSION['t'], (string)($_POST['t'] ?? ''))) { http_response_code(400); exit('Sesión vencida. Recargá la página.'); }
-
-function up(string $f, array $ok, int $max): ?string {
-    if (empty($_FILES[$f]['name'])) return null;
-    $u = $_FILES[$f];
-    if ($u['error'] !== UPLOAD_ERR_OK) throw new RuntimeException("No se pudo subir «$f» (código {$u['error']}). Si es un video grande, revisá los límites de PHP (README).");
-    if ($u['size'] > $max) throw new RuntimeException("«$f» supera el tamaño máximo permitido.");
-    $mime = (new finfo(FILEINFO_MIME_TYPE))->file($u['tmp_name']);
-    if (!isset($ok[$mime])) throw new RuntimeException("Formato no permitido en «$f» ($mime).");
-    $dir = __DIR__ . '/../media/uploads'; if (!is_dir($dir)) mkdir($dir, 0755, true);
-    $name = bin2hex(random_bytes(8)) . '.' . $ok[$mime];
-    if (!move_uploaded_file($u['tmp_name'], "$dir/$name")) throw new RuntimeException('No se pudo guardar el archivo.');
-    return "media/uploads/$name";
-}
-function rmf(?string $p): void { if ($p && str_starts_with($p, 'media/uploads/')) @unlink(__DIR__ . '/../' . $p); }
 
 const COLA = '/var/www/blens-private/cola';
 function fin(string $to): never {
@@ -89,19 +77,6 @@ function borrar_archivos(array $r): void {
     $ds = drive_sidecar((string)($r['fuente_drive'] ?? '')); if ($ds) @unlink($ds);
 }
 
-const VIDEO_PX = 720; // lado corto del video final (720 = 720p)
-function procesar(string $rel): array {
-    if (!function_exists('exec') || trim((string)@shell_exec('command -v ffmpeg')) === '') throw new RuntimeException('Falta ffmpeg en el servidor (sudo apt install ffmpeg).');
-    ignore_user_abort(true); set_time_limit(0);
-    $src = __DIR__ . '/../' . $rel; $base = bin2hex(random_bytes(8));
-    $out = "media/uploads/$base.mp4"; $jpg = "media/uploads/$base.jpg"; $abs = __DIR__ . '/../';
-    $px = VIDEO_PX; $vf = "scale='if(gt(iw,ih),-2,min($px,iw))':'if(gt(iw,ih),min($px,ih),-2)'";
-    exec('nice -n 10 ffmpeg -v error -y -i ' . escapeshellarg($src) . ' -map 0:v:0 -map 0:a:0? -sn -dn -vf ' . escapeshellarg($vf) . ' -c:v libx264 -preset veryfast -threads 0 -crf 25 -pix_fmt yuv420p -movflags +faststart -c:a aac -b:a 96k ' . escapeshellarg($abs . $out) . ' 2>&1', $o, $rc);
-    if ($rc !== 0 || !is_file($abs . $out)) { rmf($rel); throw new RuntimeException('No se pudo convertir el video: ' . mb_substr(implode(' ', $o), 0, 200)); }
-    foreach ([1, 0] as $t) { exec('ffmpeg -v error -y -ss ' . $t . ' -i ' . escapeshellarg($abs . $out) . ' -frames:v 1 -vf scale=800:-2 -q:v 4 ' . escapeshellarg($abs . $jpg) . ' 2>&1'); if (is_file($abs . $jpg)) break; }
-    rmf($rel);
-    return [$out, is_file($abs . $jpg) ? $jpg : null];
-}
 // Convierte el teléfono (como lo escriba el cliente) al formato de WhatsApp Argentina: 549 + área + número
 function wa_link(string $tel, string $nombre, string $servicio): ?string {
     $d = preg_replace('/\D+/', '', $tel) ?? ''; if ($d === '') return null;
@@ -139,6 +114,7 @@ if ($post) {
                 if ($tna < 0 || $tna > 100) throw new RuntimeException('La TNA tiene que estar entre 0 y 100.');
                 set_ajuste($pdo, 'saldo_cuenta', (string)$sal);
                 set_ajuste($pdo, 'tna_cuenta', (string)$tna);
+                set_ajuste($pdo, 'tna_ultima_fecha', date('Y-m-d'));   // el saldo nuevo empieza a rendir desde hoy
                 fin('./?ok=1#finanzas');
             }
             if ($a === 'gasto_add') {
@@ -150,7 +126,8 @@ if ($post) {
                 if ($con === '') throw new RuntimeException('Escribí el concepto del gasto.');
                 if ($mon <= 0) throw new RuntimeException('El monto tiene que ser mayor a cero.');
                 $cat = mb_substr(trim((string)($_POST['categoria'] ?? 'general')), 0, 60) ?: 'general';
-                $pdo->prepare('INSERT INTO gastos (fecha,concepto,categoria,monto) VALUES (?,?,?,?)')->execute([$f, $con, $cat, $mon]);
+                $comp = comprobante_subir();
+                $pdo->prepare('INSERT INTO gastos (fecha,concepto,categoria,monto,comprobante) VALUES (?,?,?,?,?)')->execute([$f, $con, $cat, $mon, $comp]);
                 if (isset($_POST['descontar'])) set_ajuste($pdo, 'saldo_cuenta', (string)max(0, saldo_cuenta($pdo) - $mon));
                 fin('./?ok=1#finanzas');
             }
@@ -159,9 +136,15 @@ if ($post) {
                 $s = $pdo->prepare('SELECT * FROM gastos WHERE id=?'); $s->execute([$gid]); $g = $s->fetch();
                 if ($g) {
                     $pdo->prepare('DELETE FROM gastos WHERE id=?')->execute([$gid]);
+                    comprobante_borrar((string)($g['comprobante'] ?? ''));
                     if (isset($_POST['devolver'])) set_ajuste($pdo, 'saldo_cuenta', (string)(saldo_cuenta($pdo) + (int)$g['monto']));
                 }
                 fin('./?ok=1#finanzas');
+            }
+            if ($a === 'ajuste_resuelto') {
+                $eid = (int)($_POST['entrega_id'] ?? 0); $pid = (int)($_POST['proyecto_id'] ?? 0);
+                $pdo->prepare("UPDATE entregas SET estado_cliente='pendiente', comentario_cliente=NULL, comentario_fecha=NULL WHERE id=?")->execute([$eid]);
+                fin($pid ? './?e=' . $pid . '#feedback' : './?ok=1');
             }
             if ($a === 'toggle') { $pdo->prepare('UPDATE proyectos SET visible = 1 - visible WHERE id = ?')->execute([(int)$_POST['id']]); fin('./?ok=1'); }
             if ($a === 'delete') {
@@ -305,7 +288,7 @@ if ($post) {
 }
 $auth = !empty($_SESSION['ok']);
 ?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>Panel | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=17"></head><body>
+<title>Panel | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=19"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <?php if (!$auth): ?>
 <form class="login" method="post"><h1 class="lh"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span> · panel</h1>
@@ -321,22 +304,41 @@ $view = $_GET['v'] ?? 'proyectos'; $edit = isset($_GET['e']) ? (int)$_GET['e'] :
 <?php
 /* ---------- Dashboard financiero ---------- */
 $MESES = [1 => 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-$ym = date('Y-m'); $mesTxt = ($MESES[(int)date('n')] ?? '') . ' ' . date('Y');
+// mes elegido (GET ?mes=YYYY-MM); por defecto el mes actual
+$ym = (string)($_GET['mes'] ?? '');
+if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $ym)) $ym = date('Y-m');
+$ymPrev = date('Y-m', strtotime($ym . '-01 -1 month'));
+$ymNext = date('Y-m', strtotime($ym . '-01 +1 month'));
+$mesTxt = ($MESES[(int)substr($ym, 5, 2)] ?? '') . ' ' . substr($ym, 0, 4);
+$esMesActual = ($ym === date('Y-m'));
 $cobMes = cobrar_mes($pdo, $ym); $gasMes = total_gastos_mes($pdo, $ym); $neto = $cobMes - $gasMes;
 $saldo = saldo_cuenta($pdo); $tna = tna_cuenta($pdo); $rend = rend_estimado($saldo, $tna);
 $gastos = gastos_mes($pdo, $ym);
 $tnaTxt = rtrim(rtrim(number_format($tna, 2, '.', ''), '0'), '.');
+$rendidoMes = (float)str_replace(',', '.', (string)ajuste($pdo, 'tna_ganado_mes', '0'));
+$urlMes = fn(string $m): string => './?' . ($view !== 'proyectos' ? 'v=' . rawurlencode($view) . '&' : '') . 'mes=' . $m . '#finanzas';
 ?>
 <div class="dash" id="finanzas">
+  <form class="msel" method="get" action="./">
+    <?php if ($view !== 'proyectos'): ?><input type="hidden" name="v" value="<?= $e($view) ?>"><?php endif; ?>
+    <span class="k">Mes del dashboard</span>
+    <a class="btn g" href="<?= $e($urlMes($ymPrev)) ?>" title="Mes anterior">‹ Anterior</a>
+    <input type="month" name="mes" value="<?= $e($ym) ?>">
+    <button type="submit">Ver mes</button>
+    <a class="btn g" href="<?= $e($urlMes($ymNext)) ?>" title="Mes siguiente">Siguiente ›</a>
+    <?php if (!$esMesActual): ?><a class="btn g" href="<?= $e($urlMes(date('Y-m'))) ?>">Mes actual</a><?php endif; ?>
+    <span class="mut"><?= $esMesActual ? 'Estás viendo el mes actual' : 'Estás viendo ' . $e($mesTxt) ?></span>
+  </form>
   <div class="kpis fin">
-    <div class="kpi"><span class="k">Cobrado este mes</span><b><?= $e(peso($cobMes)) ?></b><span class="mut"><?= $e($mesTxt) ?></span></div>
-    <div class="kpi"><span class="k">Gastos este mes</span><b><?= $e(peso($gasMes)) ?></b><span class="mut"><?= count($gastos) ?> gasto(s) registrado(s)</span></div>
-    <div class="kpi"><span class="k">Ganancia neta del mes</span><b class="<?= $neto < 0 ? 'warn' : '' ?>"><?= $e(peso($neto)) ?></b><span class="mut">cobrado menos gastos</span></div>
+    <div class="kpi"><span class="k">Cobrado en <?= $e($mesTxt) ?></span><b><?= $e(peso($cobMes)) ?></b><span class="mut"><?= $e($mesTxt) ?></span></div>
+    <div class="kpi"><span class="k">Gastos en <?= $e($mesTxt) ?></span><b><?= $e(peso($gasMes)) ?></b><span class="mut"><?= count($gastos) ?> gasto(s) registrado(s)</span></div>
+    <div class="kpi"><span class="k">Ganancia neta de <?= $e($mesTxt) ?></span><b class="<?= $neto < 0 ? 'warn' : '' ?>"><?= $e(peso($neto)) ?></b><span class="mut">cobrado menos gastos</span></div>
     <div class="kpi"><span class="k">Saldo en cuenta</span><b><?= $e(peso($saldo)) ?></b>
-      <?php if ($tna > 0): ?><span class="chip-r">+<?= $e(peso($rend['diario'])) ?> por día · +<?= $e(peso($rend['mensual'])) ?> por mes (TNA <?= $e($tnaTxt) ?>%)</span>
+      <?php if ($tna > 0): ?><span class="chip-r">+<?= $e(peso($rend['diario'])) ?>/día · ~<?= $e(peso($rend['mensual'])) ?>/mes (TNA <?= $e($tnaTxt) ?>%)</span>
+        <span class="mut">Rendido en el mes: +<?= $e(peso((int)round($rendidoMes))) ?></span>
       <?php else: ?><span class="mut">cargá tu TNA para ver el rendimiento</span><?php endif; ?></div>
   </div>
-  <details class="accd" <?= isset($_GET['d']) || isset($_GET['g']) ? 'open' : '' ?>><summary>Saldo en cuenta, TNA y gastos del mes</summary>
+  <details class="accd" <?= isset($_GET['d']) || isset($_GET['g']) ? 'open' : '' ?>><summary>Saldo en cuenta, TNA y gastos de <?= $e($mesTxt) ?></summary>
     <div class="cols">
       <div>
         <h3>Saldo y TNA</h3>
@@ -348,15 +350,17 @@ $tnaTxt = rtrim(rtrim(number_format($tna, 2, '.', ''), '0'), '.');
       </div>
       <div>
         <h3>Registrar gasto</h3>
-        <form class="form2" method="post"><input type="hidden" name="a" value="gasto_add"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>">
+        <form class="form2" method="post" enctype="multipart/form-data"><input type="hidden" name="a" value="gasto_add"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>">
           <label><span class="lbl">Concepto</span><input name="concepto" maxlength="160" placeholder="Equipos, viáticos, hosting…" required></label>
           <label><span class="lbl">Monto ($)</span><input name="monto" inputmode="numeric" placeholder="0" required></label>
           <label><span class="lbl">Fecha</span><input type="date" name="fecha" value="<?= date('Y-m-d') ?>"></label>
+          <label class="full"><span class="lbl">Comprobante <span class="opt">(opcional, máximo 8 MB)</span></span><input type="file" name="comprobante" accept=".jpg,.jpeg,.png,.webp,.pdf"></label>
           <button>Registrar gasto</button>
           <label class="chk"><input type="checkbox" name="descontar" checked> Descontar el gasto del saldo en cuenta</label></form>
         <div class="gastos">
         <?php foreach ($gastos as $g): ?><div class="gasto"><span><b><?= $e($g['concepto']) ?></b><br><span class="mut"><?= $e(date('d/m/Y', strtotime((string)$g['fecha']))) ?> · <?= $e($g['categoria']) ?></span></span>
           <span><?= $e(peso((int)$g['monto'])) ?>
+          <?php if (!empty($g['comprobante'])) echo comprobante_boton('gasto', (int)$g['id']); ?>
           <form method="post"><input type="hidden" name="a" value="gasto_del"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>"><input type="hidden" name="id" value="<?= (int)$g['id'] ?>"><label class="chk" title="Devolver el monto al saldo"><input type="checkbox" name="devolver"> +saldo</label><button title="Eliminar gasto">✕</button></form></span></div>
         <?php endforeach; if (!$gastos) echo '<p class="mut">Todavía no cargaste gastos este mes.</p>'; ?>
         </div>
@@ -379,7 +383,7 @@ elseif ($edit) { $s = $pdo->prepare('SELECT * FROM proyectos WHERE id = ?'); $s-
 $cls = $pdo->query('SELECT id,empresa,nombre FROM clientes ORDER BY empresa,nombre')->fetchAll();
 $tiene = !empty($p['video_mp4']) || $p['estado'] === 'procesando';
 $ent = null;
-if ($p['id']) { try { $q = $pdo->prepare('SELECT id,cliente_id FROM entregas WHERE proyecto_id=? ORDER BY id LIMIT 1'); $q->execute([(int)$p['id']]); $ent = $q->fetch(); } catch (Throwable $x0) { } }
+if ($p['id']) { try { $q = $pdo->prepare('SELECT id,cliente_id,estado_cliente,comentario_cliente,comentario_fecha FROM entregas WHERE proyecto_id=? ORDER BY id LIMIT 1'); $q->execute([(int)$p['id']]); $ent = $q->fetch(); } catch (Throwable $x0) { } }
 if ($faltaMig) echo '<p class="err">Falta actualizar la base de datos. En el servidor corré:<br><code>' . $e(MIG_CMD) . '</code></p>';
 if ($faltaCat) echo '<p class="err">Falta ampliar la columna de categorías a 40 caracteres. En el servidor corré:<br><code>' . $e(MIG_CAT_CMD) . '</code></p>'; ?>
 <a class="back" href="./">&larr; Proyectos</a>
@@ -423,12 +427,17 @@ if ($faltaCat) echo '<p class="err">Falta ampliar la columna de categorías a 40
   <label><span class="lbl">Resultado <span class="opt">(opcional)</span> (ej: 12 consultas en el primer mes)</span><input name="resultado" value="<?= $e($p['resultado'] ?? '') ?>" maxlength="200"></label>
 </section>
 
-<section class="pc">
+<section class="pc" id="feedback">
   <h2>Publicación</h2>
   <label class="chk"><input type="checkbox" name="visible" <?= $p['visible'] ? 'checked' : '' ?>>Visible en la web <span class="opt">(opcional)</span></label>
   <label class="chk"><input type="checkbox" name="ancho" <?= $p['ancho'] ? 'checked' : '' ?>>Tarjeta ancha (para videos horizontales) <span class="opt">(opcional)</span></label>
   <?php if ($ent): ?>
   <p class="mut">Este proyecto ya tiene una entrega en el portal del cliente. <a href="clientes.php?c=<?= (int)$ent['cliente_id'] ?>&e=<?= (int)$ent['id'] ?>">Ver entrega</a></p>
+  <?php $fbe = (string)($ent['estado_cliente'] ?? 'pendiente'); $fbc = trim((string)($ent['comentario_cliente'] ?? '')); ?>
+  <?php if ($fbe === 'aprobado'): ?><p><span class="b ok2">Aprobado por el cliente</span></p>
+  <?php elseif ($fbe === 'ajuste'): ?><p><span class="b adj">Pidió ajuste: "<?= $e($fbc) ?>"</span></p>
+    <form method="post"><input type="hidden" name="a" value="ajuste_resuelto"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>"><input type="hidden" name="entrega_id" value="<?= (int)$ent['id'] ?>"><input type="hidden" name="proyecto_id" value="<?= (int)$p['id'] ?>"><button class="g">Marcar ajuste resuelto</button></form>
+  <?php else: ?><p class="mut">El cliente todavía no respondió sobre esta entrega.</p><?php endif; ?>
   <?php else: ?>
   <label class="chk"><input type="checkbox" name="crear_entrega" <?= (!$p['id'] && !empty($p['cliente_id'])) ? 'checked' : '' ?>> Crear también una entrega en el portal del cliente <span class="opt">(opcional)</span></label>
   <p class="mut">Se vincula a este proyecto y se completa con IA. Requiere elegir un cliente de la lista.</p>
@@ -452,7 +461,14 @@ $show = array_values(array_filter($rows, fn($r) => ($r['categoria'] ?? '') === '
 $port = array_values(array_filter($rows, fn($r) => ($r['categoria'] ?? '') !== 'showreel'));
 $cls = $pdo->query('SELECT id,empresa,nombre FROM clientes ORDER BY empresa,nombre')->fetchAll();
 $catsImp = $cats; unset($catsImp['showreel']);
-$card = function (array $r, bool $drag) use ($cats, $e): void { $est = $r['estado'] ?? 'listo'; ?>
+$fbs = [];
+try {
+    foreach ($pdo->query("SELECT id,proyecto_id,estado_cliente,comentario_cliente FROM entregas WHERE proyecto_id IS NOT NULL AND estado_cliente IN ('aprobado','ajuste') ORDER BY id DESC")->fetchAll() as $fb) {
+        $fpid = (int)$fb['proyecto_id'];
+        if (!isset($fbs[$fpid])) $fbs[$fpid] = $fb;
+    }
+} catch (Throwable $x0) { }
+$card = function (array $r, bool $drag) use ($cats, $e, $fbs): void { $est = $r['estado'] ?? 'listo'; $fb = $fbs[(int)$r['id']] ?? null; ?>
 <article class="pi <?= $r['visible'] ? '' : 'off' ?>"<?= $drag ? ' draggable="true" data-id="' . (int)$r['id'] . '" title="Arrastrá para cambiar el orden"' : '' ?>>
   <div class="th"><?= $r['poster'] ? '<img src="../' . $e($r['poster']) . '" alt="">' : '<div></div>' ?></div>
   <div class="in"><b><?= $e($r['titulo']) ?></b><span class="mut"><?= $e(trim(($r['cliente'] ? $r['cliente'] . ' · ' : '') . ($cats[$r['categoria']] ?? $r['categoria']))) ?></span>
@@ -460,6 +476,8 @@ $card = function (array $r, bool $drag) use ($cats, $e): void { $est = $r['estad
       <?php if ($est === 'procesando'): ?><span class="b proc" data-proc>⏳ Procesando…</span>
       <?php elseif ($est === 'error'): ?><span class="b err2">Error al procesar</span>
       <?php else: ?><span class="b ok2">Listo</span><?php endif; ?>
+      <?php if ($fb && $fb['estado_cliente'] === 'aprobado'): ?><span class="b ok2">Aprobado</span>
+      <?php elseif ($fb && $fb['estado_cliente'] === 'ajuste'): ?><span class="b adj">Pidió ajuste: "<?= $e(mb_substr(trim((string)$fb['comentario_cliente']), 0, 70)) ?>"</span><?php endif; ?>
       <?php if (!empty($r['video_1080'])): ?><span class="b">1080p</span><?php endif; ?>
       <?php if (!$r['visible']): ?><span class="b">Oculto</span><?php endif; ?>
     </div>
@@ -467,6 +485,7 @@ $card = function (array $r, bool $drag) use ($cats, $e): void { $est = $r['estad
   </div>
   <div class="ac"><a class="btn g" href="?e=<?= (int)$r['id'] ?>">Editar</a>
     <form method="post"><input type="hidden" name="a" value="toggle"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="g"><?= $r['visible'] ? 'Ocultar' : 'Mostrar' ?></button></form>
+    <?php if ($fb && $fb['estado_cliente'] === 'ajuste'): ?><form method="post"><input type="hidden" name="a" value="ajuste_resuelto"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>"><input type="hidden" name="entrega_id" value="<?= (int)$fb['id'] ?>"><input type="hidden" name="proyecto_id" value="<?= (int)$r['id'] ?>"><button class="g">Marcar ajuste resuelto</button></form><?php endif; ?>
     <?php if ($est === 'error' && ($r['cola_src'] || $r['fuente_drive'])): ?><form method="post"><input type="hidden" name="a" value="reintentar"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button>Reintentar</button></form><?php endif; ?>
   </div>
 </article>
@@ -497,4 +516,4 @@ $card = function (array $r, bool $drag) use ($cats, $e): void { $est = $r['estad
 <div class="plist plist-portfolio" id="portfolio-list" data-t="<?= $e($_SESSION['t']) ?>">
 <?php foreach ($port as $r) $card($r, true); if (!$port) echo '<p class="mut">Todavía no cargaste proyectos del portfolio.</p>'; ?>
 </div>
-<?php endif; endif; ?><script src="admin.js?v=17"></script></body></html>
+<?php endif; endif; ?><script src="admin.js?v=18"></script></body></html>
