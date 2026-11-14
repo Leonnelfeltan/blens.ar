@@ -140,8 +140,8 @@ function blens_migrar(?PDO $p = null): void {
         ];
         foreach ($nuevasE as $col => $def) if (!isset($colsE[$col])) $p->exec("ALTER TABLE entregas ADD COLUMN `$col` $def");
         // Adjuntos de comprobantes: siempre fuera de /public
-        if (!is_dir(COMPROBANTES_DIR)) @mkdir(COMPROBANTES_DIR, 0750, true);
-        @chmod(COMPROBANTES_DIR, 0750);
+        if (!is_dir(COMPROBANTES_DIR)) @mkdir(COMPROBANTES_DIR, 02770, true);
+        @chmod(COMPROBANTES_DIR, 02770);
         // Tabla de gastos (registro de salidas de dinero)
         $p->exec("CREATE TABLE IF NOT EXISTS gastos (
             id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,

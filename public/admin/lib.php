@@ -77,7 +77,7 @@ function rmf(?string $p): void { if ($p && str_starts_with($p, 'media/uploads/')
 const COMPROBANTE_MAX = 8 * 1048576;
 const COMPROBANTE_MIMES = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'application/pdf' => 'pdf'];
 function comprobante_dir(): string {
-    if (!is_dir(COMPROBANTES_DIR)) @mkdir(COMPROBANTES_DIR, 0750, true);
+    if (!is_dir(COMPROBANTES_DIR)) { @mkdir(COMPROBANTES_DIR, 02770, true); @chmod(COMPROBANTES_DIR, 02770); }
     return COMPROBANTES_DIR;
 }
 function comprobante_subir(string $campo = 'comprobante'): ?string {
@@ -93,7 +93,9 @@ function comprobante_subir(string $campo = 'comprobante'): ?string {
     $mime = (new finfo(FILEINFO_MIME_TYPE))->file((string)$u['tmp_name']);
     if (!isset(COMPROBANTE_MIMES[$mime])) throw new RuntimeException('El archivo no es una imagen o PDF válido (' . $mime . ').');
     if (!in_array($mime, $permitidas[$ext], true)) throw new RuntimeException('La extensión del archivo no coincide con su contenido real.');
-    $dest = comprobante_dir() . '/' . bin2hex(random_bytes(12)) . '.' . COMPROBANTE_MIMES[$mime];
+    $dir = comprobante_dir();
+    if (!is_writable($dir)) throw new RuntimeException('La carpeta privada de comprobantes no tiene permisos de escritura.');
+    $dest = $dir . '/' . bin2hex(random_bytes(12)) . '.' . COMPROBANTE_MIMES[$mime];
     if (!move_uploaded_file($u['tmp_name'], $dest)) throw new RuntimeException('No se pudo guardar el comprobante.');
     @chmod($dest, 0640);
     return basename($dest);
