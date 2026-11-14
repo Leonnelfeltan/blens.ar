@@ -8,6 +8,7 @@ session_start();
 header('X-Robots-Tag: noindex'); header('Cache-Control: no-store'); header('X-Frame-Options: DENY');
 if (empty($_SESSION['ok'])) { header('Location: ./'); exit; }
 $pdo = blens_db();
+$agN = agenda_pendientes($pdo);
 $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 $msg = $_SESSION['flash'] ?? ''; unset($_SESSION['flash']);
 $acc = $_SESSION['acceso'] ?? null; unset($_SESSION['acceso']);
@@ -171,9 +172,9 @@ else {
             foreach ($ents as $r) if ((int)$r['id'] === $ve) $ent = $r; }
     }
 }
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=19"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=20"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
-<div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Proyectos</a><a href="./?v=consultas">Consultas</a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="../portal/" target="_blank" rel="noopener">Ver portal</a></nav>
+<div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Proyectos</a><a href="./?v=consultas">Consultas</a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a><a href="../portal/" target="_blank" rel="noopener">Ver portal</a></nav>
 <form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
 <?php if (isset($_GET['avisar']) && $cli && $cli['telefono']) { $s2 = $pdo->prepare('SELECT titulo FROM entregas WHERE id=? AND cliente_id=?'); $s2->execute([(int)$_GET['avisar'], $cli['id']]); if ($t2 = $s2->fetchColumn()) { $w = wa_url($cli['telefono'], 'Hola ' . explode(' ', trim($cli['nombre']))[0] . ', ya tenés una nueva entrega disponible en tu portal: «' . $t2 . '». Ingresá acá: ' . (blens_cfg()['sitio'] ?? 'https://blens.ar') . '/portal/'); if ($w) echo '<p class="ok">¿Avisamos al cliente? <a class="btn" href="' . $e($w) . '" target="_blank" rel="noopener">Enviar aviso por WhatsApp</a></p>'; } } ?>
 <?php if ($msg) echo '<p class="' . (str_contains($msg, 'guardad') || str_contains($msg, 'eliminad') ? 'ok' : 'err') . '">' . $e($msg) . '</p>'; ?>
@@ -243,4 +244,4 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
 <table class="cards"><tr><th>Título</th><th>Fecha</th><th>Links</th><th>Copy</th><th></th></tr>
 <?php foreach ($ents as $r): ?><tr><td data-label="Título"><?= $e($r['titulo']) ?></td><td class="mut" data-label="Fecha"><?= $e(substr($r['creado'], 0, 10)) ?></td><td data-label="Links"><?= $r['link_hd'] ? 'HD ' : '' ?><?= $r['link_4k'] ? '4K' : '' ?></td><td class="mut" data-label="Copy"><?= trim((string)$r['descripcion']) !== '' ? 'Sí' : '—' ?></td><td data-label=""><a class="btn g" href="?c=<?= (int)$cli['id'] ?>&e=<?= (int)$r['id'] ?>">Editar</a><?php if (trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== ''): ?><form method="post" class="ia-f"><input type="hidden" name="a" value="ia_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="g">IA</button></form><?php endif; ?></td></tr><?php endforeach; if (!$ents) echo '<tr><td colspan="5" class="mut">Sin entregas todavía.</td></tr>'; ?></table>
 <h2>Eliminar cliente</h2><form method="post" class="row"><input type="hidden" name="a" value="del_cliente"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><label class="chk"><input type="checkbox" required>Confirmo: se borran el cliente y todas sus entregas <span class="req">* obligatorio</span></label><button class="r">Eliminar</button></form>
-<?php endif; endif; ?><script src="admin.js?v=18"></script></body></html>
+<?php endif; endif; ?><script src="admin.js?v=19"></script></body></html>

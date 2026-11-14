@@ -9,6 +9,7 @@ header('X-Robots-Tag: noindex'); header('Cache-Control: no-store'); header('X-Fr
 
 $cfg = blens_cfg(); $pdo = blens_db();
 blens_migrar();                                          // migración automática (columnas nuevas y tabla de gastos)
+$agN = agenda_pendientes($pdo);
 if (!empty($_SESSION['ok'])) blens_acreditar_tna($pdo);  // acreditación diaria de intereses (idempotente)
 $faltaMig = false; try { $faltaMig = !$pdo->query("SHOW COLUMNS FROM proyectos LIKE 'video_1080'")->fetch(); } catch (Throwable $x0) { }
 const MIG_CMD = "sudo mysql blens_web -e \"ALTER TABLE proyectos ADD COLUMN video_1080 VARCHAR(255) NULL, ADD COLUMN video_480 VARCHAR(255) NULL, ADD COLUMN calidades VARCHAR(40) NULL, ADD COLUMN estado VARCHAR(12) NOT NULL DEFAULT 'listo', ADD COLUMN error_msg VARCHAR(255) NULL, ADD COLUMN fuente_drive VARCHAR(500) NULL, ADD COLUMN cola_src VARCHAR(255) NULL, ADD COLUMN poster_auto TINYINT(1) NOT NULL DEFAULT 0;\"";
@@ -288,7 +289,7 @@ if ($post) {
 }
 $auth = !empty($_SESSION['ok']);
 ?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>Panel | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=19"></head><body>
+<title>Panel | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=20"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <?php if (!$auth): ?>
 <form class="login" method="post"><h1 class="lh"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span> · panel</h1>
@@ -298,7 +299,7 @@ $auth = !empty($_SESSION['ok']);
 <?php else:
 $view = $_GET['v'] ?? 'proyectos'; $edit = isset($_GET['e']) ? (int)$_GET['e'] : null; ?>
 <div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
-<nav><a href="./">Proyectos</a><a href="?v=consultas">Consultas</a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="../" target="_blank" rel="noopener">Ver web</a></nav>
+<nav><a href="./">Proyectos</a><a href="?v=consultas">Consultas</a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a><a href="../" target="_blank" rel="noopener">Ver web</a></nav>
 <form method="post"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>"><button class="g">Salir</button></form></div>
 <?php if (isset($_GET['ok'])) { $imp = (int)($_GET['imp'] ?? 0); $impErr = (int)($_GET['imp_err'] ?? 0); echo '<p class="ok">' . ($imp > 0 ? 'Se importaron ' . $imp . ' videos a la cola de procesamiento.' : 'Cambios guardados.') . ' Pueden tardar hasta un minuto en verse en la web.' . ($impErr > 0 ? ' ' . $impErr . ' no se pudieron iniciar; revisá la lista.' : '') . '</p>'; } if ($msg) echo '<p class="err">' . $e($msg) . '</p>'; ?>
 <?php
@@ -516,4 +517,4 @@ $card = function (array $r, bool $drag) use ($cats, $e, $fbs): void { $est = $r[
 <div class="plist plist-portfolio" id="portfolio-list" data-t="<?= $e($_SESSION['t']) ?>">
 <?php foreach ($port as $r) $card($r, true); if (!$port) echo '<p class="mut">Todavía no cargaste proyectos del portfolio.</p>'; ?>
 </div>
-<?php endif; endif; ?><script src="admin.js?v=18"></script></body></html>
+<?php endif; endif; ?><script src="admin.js?v=19"></script></body></html>

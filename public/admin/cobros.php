@@ -6,7 +6,7 @@ session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict', 'secure' 
 session_start();
 header('X-Robots-Tag: noindex'); header('Cache-Control: no-store'); header('X-Frame-Options: DENY');
 if (empty($_SESSION['ok'])) { header('Location: ./'); exit; }
-$pdo = blens_db(); $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
+$pdo = blens_db(); $agN = agenda_pendientes($pdo); $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 if (!$pdo->query("SHOW TABLES LIKE 'trabajos'")->fetch()) exit('Faltan las tablas de cobros. En el servidor corré: sudo mysql < /tmp/nuevo/blens-config/migracion-cobros.sql');
 if (!$pdo->query("SHOW TABLES LIKE 'ajustes'")->fetch()) exit('Falta actualizar la base. En el servidor corré: sudo mysql < /tmp/nuevo/blens-config/migracion-4.sql');
 if (!$pdo->query("SHOW COLUMNS FROM trabajos LIKE 'entrega_id'")->fetch()) exit('Falta actualizar la base. En el servidor corré: sudo mysql < /tmp/nuevo/blens-config/migracion-5.sql');
@@ -98,9 +98,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 $vc = isset($_GET['c']) ? (int)$_GET['c'] : null; $T = $e($_SESSION['t']); $cl = null;
 if ($vc) { $s = $pdo->prepare('SELECT * FROM clientes WHERE id=?'); $s->execute([$vc]); $cl = $s->fetch() ?: null; }
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Cobros | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=19"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Cobros | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=20"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
-<div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Proyectos</a><a href="./?v=consultas">Consultas</a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a></nav>
+<div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Proyectos</a><a href="./?v=consultas">Consultas</a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a></nav>
 <form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
 <?php if ($ok) echo '<p class="ok">' . $e($ok) . '</p>'; if ($err) echo '<p class="err">' . $e($err) . '</p>'; ?>
 <div class="<?= $mp ? 'ok' : 'err' ?>"><b>Modo prueba: <?= $mp ? 'ACTIVADO' : 'DESACTIVADO' ?>.</b> <?= $mp ? 'Los trabajos y recibos que cargues quedan marcados como PRUEBA, no ocupan la numeración real y se pueden borrar.' : 'Lo que cargues ahora se guarda de verdad.' ?>
@@ -214,4 +214,4 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
 <div class="row full"><button>Registrar como trabajo</button><button class="g" name="cero" value="1" formnovalidate>Registrar en $0 (histórico)</button></div></form><?php endforeach; ?>
 <h2>Recibos</h2><table class="cards"><tr><th>N°</th><th>Fecha</th><th>Período</th><th>Total</th><th></th></tr>
 <?php foreach ($recs as $r): ?><tr><td data-label="N°"><?= $e(nro($r)) ?></td><td class="mut" data-label="Fecha"><?= $e(date('d/m/Y', strtotime($r['fecha']))) ?> · <?= $e(MEDIOS[$r['medio']] ?? $r['medio']) ?></td><td data-label="Período"><?= $e($r['periodo']) ?></td><td data-label="Total"><?= $e(peso((int)$r['total'])) ?></td><td data-label=""><a class="btn g" href="recibo.php?id=<?= (int)$r['id'] ?>">Ver / imprimir</a></td></tr><?php endforeach; if (!$recs) echo '<tr><td colspan="5" class="mut">Todavía no hay recibos.</td></tr>'; ?></table>
-<?php endif; ?><script src="admin.js?v=18"></script></body></html>
+<?php endif; ?><script src="admin.js?v=19"></script></body></html>

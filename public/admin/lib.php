@@ -113,6 +113,59 @@ function comprobante_boton(string $tipo, int $id): string {
     return '<a class="btn g cb" href="ver_comprobante.php?tipo=' . $tipo . '&amp;id=' . $id . '" target="_blank" rel="noopener">' . $svg . 'Ver comprobante</a>';
 }
 
+/* ---- Agenda de rodajes, entregas y reuniones ---- */
+const AGENDA_TIPOS = ['rodaje' => 'Rodaje', 'entrega' => 'Entrega', 'reunion' => 'Reunión'];
+function agenda_pendientes(PDO $pdo): int {
+    try {
+        return (int)$pdo->query("SELECT COUNT(*) FROM agenda WHERE completado=0 AND fecha BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 3 DAY)")->fetchColumn();
+    } catch (Throwable $x) { return 0; }
+}
+
+/* ---- Presupuestos rápidos ---- */
+function presu_money(float $n): string {
+    $n = round($n, 2);
+    $dec = abs($n - round($n)) < 0.005 ? 0 : 2;
+    return '$ ' . number_format($n, $dec, ',', '.');
+}
+function presu_cant(float $n): string {
+    return abs($n - round($n)) < 0.0001 ? (string)(int)round($n) : rtrim(rtrim(number_format($n, 2, ',', '.'), '0'), ',');
+}
+function presu_items(?string $json): array {
+    $a = json_decode((string)$json, true);
+    if (!is_array($a)) return [];
+    $out = [];
+    foreach ($a as $it) {
+        if (!is_array($it)) continue;
+        $d = trim((string)($it['d'] ?? $it['descripcion'] ?? ''));
+        $c = (float)($it['c'] ?? $it['cantidad'] ?? 0);
+        $p = (float)($it['p'] ?? $it['precio'] ?? 0);
+        if ($d === '' || $c <= 0) continue;
+        $out[] = ['d' => $d, 'c' => $c, 'p' => $p, 's' => round($c * $p, 2)];
+    }
+    return $out;
+}
+function presu_total(array $items): float {
+    $t = 0.0;
+    foreach ($items as $it) $t += (float)($it['s'] ?? ((float)($it['c'] ?? 0) * (float)($it['p'] ?? 0)));
+    return round($t, 2);
+}
+function presu_wa_texto(array $p): string {
+    $items = presu_items((string)($p['items_json'] ?? ''));
+    $nombre = trim((string)($p['cliente_nombre'] ?? ''));
+    $pila = $nombre !== '' ? explode(' ', $nombre)[0] : '';
+    $l = [];
+    $l[] = 'Hola' . ($pila !== '' ? ' ' . $pila : '') . ', te paso el presupuesto ' . (string)($p['numero'] ?? '') . ' de blens.ar:';
+    $l[] = '';
+    foreach ($items as $it) $l[] = '• ' . $it['d'] . ' — ' . presu_cant((float)$it['c']) . ' × ' . presu_money((float)$it['p']) . ' = ' . presu_money((float)$it['s']);
+    $l[] = '';
+    $l[] = 'Total: ' . presu_money(presu_total($items));
+    $l[] = 'Validez: ' . (int)($p['validez_dias'] ?? 15) . ' días';
+    if (trim((string)($p['notas'] ?? '')) !== '') { $l[] = ''; $l[] = trim((string)$p['notas']); }
+    $l[] = '';
+    $l[] = 'Quedo atento. ¡Gracias!';
+    return implode("\n", $l);
+}
+
 const VIDEO_PX = 720; // lado corto del video final (720 = 720p)
 function procesar(string $rel): array {
     if (!function_exists('exec') || trim((string)@shell_exec('command -v ffmpeg')) === '') throw new RuntimeException('Falta ffmpeg en el servidor (sudo apt install ffmpeg).');

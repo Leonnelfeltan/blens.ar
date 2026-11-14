@@ -213,3 +213,47 @@ if (cobroEstado && cobroSumar) {
 }
 // ---- Dashboard: cambiar de mes al elegir otro ----
 document.querySelectorAll('.msel input[type=month]').forEach(inp => inp.addEventListener('change', () => { if (inp.form) inp.form.submit(); }));
+
+// ---- Presupuestos: filas dinámicas, subtotales y total ----
+const presuForm = document.getElementById('presu-form');
+if (presuForm) {
+  const wrap = document.getElementById('presu-items');
+  const tpl = document.getElementById('presu-item-template');
+  const add = document.getElementById('presu-add');
+  let next = 1;
+  const money = n => { const v = Math.round((Number(n) || 0) * 100) / 100; return '$ ' + v.toLocaleString('es-AR', { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 }); };
+  const upd = row => {
+    const c = parseFloat(row.querySelector('input[name*="[c]"]').value) || 0;
+    const p = parseFloat(row.querySelector('input[name*="[p]"]').value) || 0;
+    const s = Math.round(c * p * 100) / 100;
+    const el = row.querySelector('[data-presu-subtotal]');
+    if (el) el.textContent = money(s);
+    return s;
+  };
+  const total = () => {
+    let t = 0;
+    wrap.querySelectorAll('.presu-item').forEach(r => { t += upd(r); });
+    const el = presuForm.querySelector('[data-presu-total]');
+    if (el) el.textContent = money(t);
+  };
+  if (add) add.addEventListener('click', () => {
+    if (!tpl) return;
+    wrap.insertAdjacentHTML('beforeend', tpl.innerHTML.replace(/__i__/g, String(next++)));
+    total();
+  });
+  wrap.addEventListener('input', e => { if (e.target.matches('input')) total(); });
+  wrap.addEventListener('click', e => {
+    const b = e.target.closest('.presu-del');
+    if (!b) return;
+    const row = b.closest('.presu-item');
+    if (wrap.querySelectorAll('.presu-item').length <= 1) {
+      row.querySelectorAll('input').forEach(i => {
+        if (i.name.includes('[d]')) i.value = '';
+        else if (i.name.includes('[c]')) i.value = '1';
+        else if (i.name.includes('[p]')) i.value = '';
+      });
+    } else row.remove();
+    total();
+  });
+  total();
+}

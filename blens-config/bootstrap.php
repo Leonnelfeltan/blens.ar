@@ -153,6 +153,39 @@ function blens_migrar(?PDO $p = null): void {
             creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             INDEX g_fecha (fecha)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        // Agenda de rodajes, entregas y reuniones
+        $p->exec("CREATE TABLE IF NOT EXISTS agenda (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            cliente_id INT UNSIGNED NULL,
+            tipo ENUM('rodaje','entrega','reunion') NOT NULL DEFAULT 'rodaje',
+            titulo VARCHAR(160) NOT NULL,
+            fecha DATE NOT NULL,
+            hora TIME NULL,
+            lugar_nota VARCHAR(255) NULL,
+            completado TINYINT(1) NOT NULL DEFAULT 0,
+            creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX a_fecha (fecha, completado),
+            INDEX a_cliente (cliente_id),
+            CONSTRAINT fk_agenda_cliente FOREIGN KEY (cliente_id) REFERENCES clientes (id) ON DELETE SET NULL
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        // Presupuestos rápidos (items_json guarda las filas del detalle)
+        $p->exec("CREATE TABLE IF NOT EXISTS presupuestos (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            numero VARCHAR(20) NOT NULL DEFAULT '',
+            cliente_nombre VARCHAR(120) NOT NULL,
+            empresa VARCHAR(120) NOT NULL DEFAULT '',
+            telefono VARCHAR(30) NOT NULL DEFAULT '',
+            items_json TEXT NOT NULL,
+            total DECIMAL(12,2) NOT NULL DEFAULT 0,
+            validez_dias INT NOT NULL DEFAULT 15,
+            notas TEXT NULL,
+            estado VARCHAR(20) NOT NULL DEFAULT 'enviado',
+            creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            trabajo_id INT UNSIGNED NULL,
+            INDEX p_numero (numero),
+            INDEX p_estado (estado),
+            INDEX p_trabajo (trabajo_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         // Comprobantes opcionales en cobros (trabajos) y gastos, también para bases existentes
         foreach (['trabajos', 'gastos'] as $tabla) {
             $colsT = [];
