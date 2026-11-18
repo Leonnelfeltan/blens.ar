@@ -2,7 +2,6 @@
 declare(strict_types=1);
 require __DIR__ . '/../../blens-config/bootstrap.php';
 require __DIR__ . '/lib.php';
-session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict', 'secure' => !empty($_SERVER['HTTPS'])]);
 session_start();
 header('X-Robots-Tag: noindex'); header('Cache-Control: no-store'); header('X-Frame-Options: DENY');
 if (empty($_SESSION['ok'])) { header('Location: ./'); exit; }
@@ -102,10 +101,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 $vc = isset($_GET['c']) ? (int)$_GET['c'] : (isset($_GET['cliente']) ? (int)$_GET['cliente'] : null); $T = $e($_SESSION['t']); $cl = null;
 if ($vc) { $s = $pdo->prepare('SELECT * FROM clientes WHERE id=?'); $s->execute([$vc]); $cl = $s->fetch() ?: null; }
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Cobros | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=28"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Cobros | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=29"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Inicio</a><a href="consultas.php">Consultas<?php if ($consN > 0): ?><span class="nav-badge soft"><?= $consN ?></span><?php endif; ?></a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a></nav>
-<form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
+<div class="pwa-wrap" data-pwa-wrap hidden><button type="button" class="pwa-install" data-pwa-install>Instalar app</button><span class="pwa-hint" data-pwa-hint hidden>Tocá Compartir y luego “Agregar a inicio”.</span></div><form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
 <?php if ($ok) echo '<p class="ok">' . $e($ok) . '</p>'; if ($err) echo '<p class="err">' . $e($err) . '</p>'; ?>
 <?php if (!$cl): $ql = $pdo->prepare("SELECT c.id,c.empresa,c.nombre, COALESCE(SUM(CASE WHEN t.estado='pendiente' THEN t.cantidad*t.monto_unit END),0) AS pend, COALESCE(SUM(CASE WHEN t.estado='cobrado' THEN t.cantidad*t.monto_unit END),0) AS cobrado, COUNT(t.id) AS ntrab FROM clientes c LEFT JOIN trabajos t ON t.cliente_id=c.id AND t.prueba=? GROUP BY c.id ORDER BY c.empresa,c.nombre"); $ql->execute([$mp]); $rows = $ql->fetchAll(); $tp = $tc = 0.0; ?>
 <h1>Cobros</h1><table class="cards"><tr><th>Cliente</th><th>Trabajos</th><th>Pendiente</th><th>Cobrado</th><th></th></tr>
@@ -228,4 +227,4 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
 </details>
 <h2>Recibos</h2><table class="cards"><tr><th>N°</th><th>Fecha</th><th>Período</th><th>Total</th><th></th></tr>
 <?php foreach ($recs as $r): ?><tr><td data-label="N°"><?= $e(nro($r)) ?></td><td class="mut" data-label="Fecha"><?= $e(date('d/m/Y', strtotime($r['fecha']))) ?> · <?= $e(MEDIOS[$r['medio']] ?? $r['medio']) ?></td><td data-label="Período"><?= $e($r['periodo']) ?></td><td data-label="Total"><?= $e(peso((float)$r['total'])) ?></td><td data-label=""><a class="btn g" href="recibo.php?id=<?= (int)$r['id'] ?>">Ver / imprimir</a></td></tr><?php endforeach; if (!$recs) echo '<tr><td colspan="5" class="mut">Todavía no hay recibos.</td></tr>'; ?></table>
-<?php endif; ?><script src="admin.js?v=24"></script></body></html>
+<?php endif; ?><script src="admin.js?v=25"></script></body></html>

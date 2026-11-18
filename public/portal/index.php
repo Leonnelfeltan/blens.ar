@@ -2,7 +2,6 @@
 declare(strict_types=1);
 require __DIR__ . '/../../blens-config/bootstrap.php';
 session_name('blens_cliente');
-session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict', 'secure' => !empty($_SERVER['HTTPS'])]);
 session_start();
 header('X-Robots-Tag: noindex'); header('Cache-Control: no-store'); header('X-Frame-Options: DENY');
 $pdo = blens_db(); blens_migrar($pdo); $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
@@ -11,7 +10,7 @@ $_SESSION['t'] ??= bin2hex(random_bytes(16)); $msg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!hash_equals($_SESSION['t'], (string)($_POST['t'] ?? ''))) { http_response_code(400); exit('Sesión vencida. Recargá la página.'); }
     $a = $_POST['a'] ?? '';
-    if ($a === 'salir') { session_destroy(); header('Location: ./'); exit; }
+    if ($a === 'salir') { blens_session_expire(); header('Location: ./'); exit; }
     if ($a === 'entrar' && ($w = blens_bloqueado('portal'))) { $msg = 'Demasiados intentos. Probá de nuevo en ' . (int)ceil($w / 60) . ' min.'; }
     elseif ($a === 'entrar') {
         $s = $pdo->prepare('SELECT id,clave_hash,cambiar_clave,clave_inicial_hasta FROM clientes WHERE usuario=? AND activo=1'); $s->execute([strtolower(trim((string)($_POST['u'] ?? '')))]); $c = $s->fetch();
@@ -36,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 $cid = (int)($_SESSION['cid'] ?? 0); $T = $e($_SESSION['t']); $cli = null; $forzar = !empty($_SESSION['forzar']); $vista = !empty($_SESSION['vista']);
-if ($cid) { $s = $pdo->prepare('SELECT nombre,empresa,logo FROM clientes WHERE id=? AND (activo=1 OR ?=1)'); $s->execute([$cid, $vista ? 1 : 0]); $cli = $s->fetch(); if (!$cli) { session_destroy(); header('Location: ./'); exit; } }
+if ($cid) { $s = $pdo->prepare('SELECT nombre,empresa,logo FROM clientes WHERE id=? AND (activo=1 OR ?=1)'); $s->execute([$cid, $vista ? 1 : 0]); $cli = $s->fetch(); if (!$cli) { blens_session_expire(); header('Location: ./'); exit; } }
 // ---- Feedback del cliente sobre una entrega (pedir ajuste) ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['a'] ?? '') === 'ajuste') {
     $eid = (int)($_POST['e'] ?? 0);
@@ -91,13 +90,13 @@ $fb = function (array $r) use ($e, $T, $vista): string {
     }
     return $h . '</div>';
 };
-?><!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex"><meta name="theme-color" content="#14110F">
-<title>Portal de clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+?><!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex"><meta name="theme-color" content="#0b0b0b">
+<title>Portal de clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" media="print" data-fonts>
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap"></noscript>
-<link rel="stylesheet" href="../styles.css?v=18"><link rel="stylesheet" href="portal.css?v=12"></head><body>
+<link rel="stylesheet" href="../styles.css?v=18"><link rel="stylesheet" href="portal.css?v=13"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol><symbol id="photos" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m4 17 5-5 3.5 3.5L16 12l4 4"/></symbol></svg>
 <header class="ph"><a class="brand" href="../" aria-label="blens.ar, inicio"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
 <?php if ($cli): ?><div class="phr"><span class="mut">Portal de clientes</span><?= $vista ? '<span class="perr">Vista de administrador</span>' : '' ?><form method="post"><input type="hidden" name="a" value="salir"><input type="hidden" name="t" value="<?= $T ?>"><button class="out">Salir</button></form></div>
@@ -146,5 +145,6 @@ $esView = $ft === 'todos' ? $es : array_values(array_filter($es, fn($r) => $tipo
 <div class="pc-body"><span class="pc-tipo tipo-<?= $tf ?>"><?= $tf === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span><h3><a href="?e=<?= (int)$r['id'] ?>"><?= $e($r['titulo']) ?></a></h3><?php if (trim((string)$r['descripcion']) !== '') echo '<p class="pc-desc">' . $e($r['descripcion']) . '</p>'; ?>
 <?php if ($drive($r)): ?><a class="btn" href="<?= $e($drive($r)) ?>" target="_blank" rel="<?= $tf === 'fotos' ? 'noopener noreferrer' : 'noopener' ?>"><?= $tf === 'fotos' ? 'Ver y descargar fotos (Drive)' : 'Abrir en Drive / Descargar' ?></a><?php endif; ?></div><?= $fb($r) ?></article><?php endforeach; ?></div></main>
 <?php endif; endif; ?>
+<aside class="pwa-tip" data-pwa-tip hidden><span data-pwa-msg>Instalá el portal en tu celular para entrar más rápido.</span><button type="button" class="pwa-tip-btn" data-pwa-install hidden>Instalar app</button><button type="button" class="pwa-tip-close" data-pwa-close aria-label="Cerrar">×</button></aside>
 <footer class="foot"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span><span class="loc">Posadas, Misiones · Argentina</span><nav class="social"><a href="../">Web</a><a href="<?= $e($contacto) ?>">Contacto</a></nav><span class="mut">© 2026 blens.ar</span></footer>
-<script src="../assets/fonts.js?v=1" defer></script><script src="../assets/player.js?v=12" defer></script><script src="dfr.js?v=10" defer></script></body></html>
+<script src="../assets/fonts.js?v=1" defer></script><script src="../assets/player.js?v=12" defer></script><script src="dfr.js?v=11" defer></script></body></html>

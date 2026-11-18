@@ -3,7 +3,6 @@ declare(strict_types=1);
 require __DIR__ . '/../../blens-config/bootstrap.php';
 require __DIR__ . '/lib.php';
 require __DIR__ . '/drive.php';
-session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict', 'secure' => !empty($_SERVER['HTTPS'])]);
 session_start();
 header('X-Robots-Tag: noindex'); header('Cache-Control: no-store'); header('X-Frame-Options: DENY');
 
@@ -94,7 +93,7 @@ if ($post) {
         }
     } elseif (!empty($_SESSION['ok'])) {
         try {
-            if ($a === 'logout') { session_destroy(); header('Location: ./'); exit; }
+            if ($a === 'logout') { blens_session_expire(); header('Location: ./'); exit; }
             if ($a === 'saldo') {
                 $sal = round((float)str_replace(',', '.', trim((string)($_POST['saldo_cuenta'] ?? '0'))), 2);
                 $tna = (float)str_replace(',', '.', trim((string)($_POST['tna_cuenta'] ?? '0')));
@@ -275,7 +274,7 @@ if ($post) {
 }
 $auth = !empty($_SESSION['ok']);
 ?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>Panel | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=28"></head><body>
+<title>Panel | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=29"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <?php if (!$auth): ?>
 <form class="login" method="post"><h1 class="lh"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span> · panel</h1>
@@ -286,7 +285,7 @@ $auth = !empty($_SESSION['ok']);
 $view = $_GET['v'] ?? 'proyectos'; $edit = isset($_GET['e']) ? (int)$_GET['e'] : null; ?>
 <div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
 <nav><a href="./">Inicio</a><a href="consultas.php">Consultas<?php if ($consN > 0): ?><span class="nav-badge soft"><?= $consN ?></span><?php endif; ?></a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros<?php if ($cobN > 0): ?><span class="nav-badge soft"><?= $cobN ?></span><?php endif; ?></a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a><a href="../" target="_blank" rel="noopener">Ver web</a></nav>
-<form method="post"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>"><button class="g">Salir</button></form></div>
+<div class="pwa-wrap" data-pwa-wrap hidden><button type="button" class="pwa-install" data-pwa-install>Instalar app</button><span class="pwa-hint" data-pwa-hint hidden>Tocá Compartir y luego “Agregar a inicio”.</span></div><form method="post"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>"><button class="g">Salir</button></form></div>
 <?php if (isset($_GET['ok'])) { $imp = (int)($_GET['imp'] ?? 0); $impErr = (int)($_GET['imp_err'] ?? 0); echo '<p class="ok">' . ($imp > 0 ? 'Se importaron ' . $imp . ' videos a la cola de procesamiento.' : 'Cambios guardados.') . ' Pueden tardar hasta un minuto en verse en la web.' . ($impErr > 0 ? ' ' . $impErr . ' no se pudieron iniciar; revisá la lista.' : '') . '</p>'; } if ($msg) echo '<p class="err">' . $e($msg) . '</p>'; ?>
 <?php
 /* ---------- Dashboard financiero ---------- */
@@ -522,4 +521,4 @@ $card = function (array $r, bool $drag) use ($cats, $e, $fbs): void { $est = $r[
 </div>
 <p class="mut" id="portfolio-empty" hidden>No hay proyectos con ese filtro.</p>
 <?php if (!$port) echo '<p class="mut">Todavía no cargaste proyectos del portfolio.</p>'; ?>
-<?php endif; endif; ?><script src="admin.js?v=24"></script></body></html>
+<?php endif; endif; ?><script src="admin.js?v=25"></script></body></html>

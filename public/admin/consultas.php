@@ -2,7 +2,6 @@
 declare(strict_types=1);
 require __DIR__ . '/../../blens-config/bootstrap.php';
 require __DIR__ . '/lib.php';
-session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict', 'secure' => !empty($_SERVER['HTTPS'])]);
 session_start();
 header('X-Robots-Tag: noindex'); header('Cache-Control: no-store'); header('X-Frame-Options: DENY');
 if (empty($_SESSION['ok'])) { header('Location: ./'); exit; }
@@ -25,10 +24,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 $q = $f === 'pendientes' ? 'SELECT * FROM consultas WHERE respondida=0 ORDER BY id DESC LIMIT 300' : 'SELECT * FROM consultas ORDER BY id DESC LIMIT 300';
 $rows = $pdo->query($q)->fetchAll();
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Consultas | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=28"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Consultas | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=29"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Inicio</a><a class="on" href="consultas.php">Consultas<?php if ($consN > 0): ?><span class="nav-badge soft"><?= $consN ?></span><?php endif; ?></a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a><a href="../" target="_blank" rel="noopener">Ver web</a></nav>
-<form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
+<div class="pwa-wrap" data-pwa-wrap hidden><button type="button" class="pwa-install" data-pwa-install>Instalar app</button><span class="pwa-hint" data-pwa-hint hidden>Tocá Compartir y luego “Agregar a inicio”.</span></div><form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
 <?php if ($msg) echo '<p class="ok">' . $e($msg) . '</p>'; ?>
 <div class="lh2"><h1>Consultas recibidas</h1><span class="mut"><?= $consN ?> pendiente(s) · <?= count($rows) ?> en esta vista</span></div>
 <div class="row"><a class="pill <?= $f === 'pendientes' ? 'on' : '' ?>" href="?f=pendientes">Pendientes</a><a class="pill <?= $f === 'todas' ? 'on' : '' ?>" href="?f=todas">Todas</a></div>
@@ -53,4 +52,4 @@ $rows = $pdo->query($q)->fetchAll();
 <label class="full"><span class="lbl">Recordatorio de saldo <span class="opt">(usá {nombre}, {monto})</span></span><textarea name="plantillas[cobro]" rows="3" maxlength="1000" required><?= $e($plantillas['cobro']) ?></textarea></label>
 <div class="row full"><button>Guardar plantillas</button></div></form>
 </details>
-<script src="admin.js?v=24"></script></body></html>
+<script src="admin.js?v=25"></script></body></html>

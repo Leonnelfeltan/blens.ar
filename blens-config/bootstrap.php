@@ -26,6 +26,38 @@ function blens_clave_nueva(): string {
 }
 function blens_cfg(): array { static $c = null; return $c ??= require __DIR__ . '/config.php'; }
 
+const SESION_DIAS = 60, SESION_LIFETIME = 5184000;
+if (PHP_SAPI !== 'cli') {
+    $dirSesiones = __DIR__ . '/sessions';
+    if (!is_dir($dirSesiones)) @mkdir($dirSesiones, 0700, true);
+    if (is_dir($dirSesiones)) session_save_path($dirSesiones);
+    ini_set('session.gc_maxlifetime', (string)SESION_LIFETIME);
+    ini_set('session.cookie_lifetime', (string)SESION_LIFETIME);
+    session_set_cookie_params([
+        'lifetime' => SESION_LIFETIME,
+        'path' => '/',
+        'secure' => true,
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+}
+function blens_session_expire(): void {
+    $nombre = session_name();
+    $p = session_get_cookie_params();
+    $_SESSION = [];
+    if (ini_get('session.use_cookies')) {
+        setcookie($nombre, '', [
+            'expires' => time() - 42000,
+            'path' => ($p['path'] ?? '') !== '' ? $p['path'] : '/',
+            'domain' => $p['domain'] ?? '',
+            'secure' => $p['secure'] ?? true,
+            'httponly' => $p['httponly'] ?? true,
+            'samesite' => $p['samesite'] ?? 'Lax',
+        ]);
+    }
+    session_destroy();
+}
+
 // ---- Formato de moneda y ajustes guardados en la base ----
 function peso(float $n): string {
     $n = round($n, 2);

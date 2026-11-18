@@ -1,7 +1,6 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/../../blens-config/bootstrap.php';
-session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict', 'secure' => !empty($_SERVER['HTTPS'])]);
 session_start();
 header('X-Robots-Tag: noindex');
 header('Cache-Control: no-store, private');

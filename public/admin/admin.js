@@ -371,3 +371,40 @@ if (presuForm) {
   });
   total();
 }
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/admin/sw.js', { scope: '/admin/' }).catch(() => {}));
+}
+(function () {
+  const wrap = document.querySelector('[data-pwa-wrap]');
+  if (!wrap) return;
+  const btn = wrap.querySelector('[data-pwa-install]');
+  const hint = wrap.querySelector('[data-pwa-hint]');
+  const key = 'blens-admin-pwa-tip';
+  const leida = () => { try { return localStorage.getItem(key) === '1'; } catch (_) { return false; } };
+  const guardar = () => { try { localStorage.setItem(key, '1'); } catch (_) {} };
+  if (leida()) return;
+  let prompt = null;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    prompt = e;
+    wrap.hidden = false;
+  });
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (ios) wrap.hidden = false;
+  window.addEventListener('appinstalled', () => { guardar(); wrap.hidden = true; });
+  if (btn) btn.addEventListener('click', async () => {
+    if (prompt) {
+      await prompt.prompt();
+      await prompt.userChoice;
+      prompt = null;
+      guardar();
+      wrap.hidden = true;
+      return;
+    }
+    if (hint) {
+      hint.hidden = false;
+      setTimeout(() => { hint.hidden = true; }, 6000);
+    }
+  });
+})();
