@@ -236,6 +236,17 @@ body{overflow-x:hidden}
 .mv-a .up-min{display:flex;align-items:center;gap:.35rem;font-size:.78rem;color:var(--m);white-space:normal;flex:1 1 210px;min-width:150px}
 .mv-a .up-min input{width:100%;min-width:0;max-width:none;padding:.35rem;font-size:.75rem}
 .b.adj{background:rgba(255,90,31,.14);color:#ffb36b;border:1px solid rgba(255,90,31,.45)}
+.lf-filtros{display:flex;gap:.35rem;flex-wrap:wrap;margin:.8rem 0}
+.lf-pill{background:none;color:var(--m);border:1px solid var(--l);border-radius:99px;padding:.35rem .7rem;font:600 12px system-ui;text-decoration:none;display:inline-block;line-height:1.2}
+.lf-pill b{margin-left:.3rem;color:var(--h)}
+.lf-pill:hover{color:var(--h);border-color:var(--o)}
+.lf-pill.on{background:rgba(255,90,31,.12);color:var(--o);border-color:rgba(255,90,31,.5)}
+.b.tipo-video{background:rgba(120,140,255,.12);color:#aeb8ff;border:1px solid rgba(120,140,255,.35)}
+.b.tipo-fotos{background:rgba(255,90,31,.12);color:var(--o);border:1px solid rgba(255,90,31,.45)}
+.ent-form:has(select[name=tipo_entrega] option[value=fotos]:checked) .only-video,
+.ent-form:has(select[name=tipo_entrega] option[value=fotos]:checked) .l-video,
+.ent-form:has(select[name=tipo_entrega] option[value=video]:checked) .only-fotos,
+.ent-form:has(select[name=tipo_entrega] option[value=video]:checked) .l-fotos{display:none!important}
 
 /* ===== Navegación: Agenda y Presupuestos ===== */
 .top nav a.on{color:var(--o);font-weight:600}

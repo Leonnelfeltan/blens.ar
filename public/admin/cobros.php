@@ -7,6 +7,7 @@ session_start();
 header('X-Robots-Tag: noindex'); header('Cache-Control: no-store'); header('X-Frame-Options: DENY');
 if (empty($_SESSION['ok'])) { header('Location: ./'); exit; }
 $pdo = blens_db(); $agN = agenda_pendientes($pdo); $consN = consultas_pendientes($pdo); $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
+$tipoDe = fn(array $r): string => ((string)($r['tipo'] ?? 'video') === 'fotos') ? 'fotos' : 'video';
 if (!$pdo->query("SHOW TABLES LIKE 'trabajos'")->fetch()) exit('Faltan las tablas de cobros. En el servidor corré: sudo mysql < /tmp/nuevo/blens-config/migracion-cobros.sql');
 if (!$pdo->query("SHOW TABLES LIKE 'ajustes'")->fetch()) exit('Falta actualizar la base. En el servidor corré: sudo mysql < /tmp/nuevo/blens-config/migracion-4.sql');
 if (!$pdo->query("SHOW COLUMNS FROM trabajos LIKE 'entrega_id'")->fetch()) exit('Falta actualizar la base. En el servidor corré: sudo mysql < /tmp/nuevo/blens-config/migracion-5.sql');
@@ -100,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 $vc = isset($_GET['c']) ? (int)$_GET['c'] : (isset($_GET['cliente']) ? (int)$_GET['cliente'] : null); $T = $e($_SESSION['t']); $cl = null;
 if ($vc) { $s = $pdo->prepare('SELECT * FROM clientes WHERE id=?'); $s->execute([$vc]); $cl = $s->fetch() ?: null; }
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Cobros | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=23"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Cobros | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=24"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Proyectos</a><a href="consultas.php">Consultas<?php if ($consN > 0): ?><span class="nav-badge soft"><?= $consN ?></span><?php endif; ?></a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a></nav>
 <form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
@@ -111,12 +112,15 @@ if ($vc) { $s = $pdo->prepare('SELECT * FROM clientes WHERE id=?'); $s->execute(
 <tr><th>Total</th><th></th><th><?= $e(peso($tp)) ?></th><th><?= $e(peso($tc)) ?></th><th></th></tr></table>
 <?php else:
 $s = $pdo->prepare('SELECT * FROM recibos WHERE cliente_id=? AND prueba=? ORDER BY id DESC LIMIT 20'); $s->execute([$cl['id'], $mp]); $recs = $s->fetchAll();
-$tipoOpts = '<option value="video" data-m="' . (int)$cl['tarifa_video'] . '">Video</option><option value="foto" data-m="' . (int)$cl['tarifa_foto'] . '">Foto</option><option value="otro" data-m="0">Otro</option>';
+$tipoOpts = function (string $sel = '') use ($cl): string {
+    $op = fn(string $v, string $n, int $m) => '<option value="' . $v . '" data-m="' . $m . '"' . ($sel === $v ? ' selected' : '') . '>' . $n . '</option>';
+    return $op('video', 'Video', (int)$cl['tarifa_video']) . $op('foto', 'Foto / Pack de fotos', (int)$cl['tarifa_foto']) . $op('otro', 'Otro', 0);
+};
 $det = [];
-$q = $pdo->prepare('SELECT en.id,en.titulo,en.creado,en.proyecto_id FROM entregas en WHERE en.cliente_id=? AND en.proyecto_id IS NULL AND NOT EXISTS (SELECT 1 FROM trabajos t WHERE t.entrega_id = en.id) ORDER BY en.id DESC'); $q->execute([$cl['id']]);
-foreach ($q as $x) $det[] = ['k' => 'entrega', 'id' => (int)$x['id'], 't' => $x['titulo'], 'f' => substr($x['creado'], 0, 10)];
+$q = $pdo->prepare('SELECT en.id,en.titulo,en.creado,en.proyecto_id,en.tipo FROM entregas en WHERE en.cliente_id=? AND en.proyecto_id IS NULL AND NOT EXISTS (SELECT 1 FROM trabajos t WHERE t.entrega_id = en.id) ORDER BY en.id DESC'); $q->execute([$cl['id']]);
+foreach ($q as $x) $det[] = ['k' => 'entrega', 'id' => (int)$x['id'], 't' => $x['titulo'], 'f' => substr($x['creado'], 0, 10), 'tipo' => $tipoDe($x)];
 $q = $pdo->prepare("SELECT p.id,p.titulo,p.creado FROM proyectos p WHERE p.cliente_id=? AND p.categoria <> 'showreel' AND NOT EXISTS (SELECT 1 FROM trabajos t WHERE t.proyecto_id = p.id) AND NOT EXISTS (SELECT 1 FROM entregas en JOIN trabajos t ON t.entrega_id = en.id WHERE en.proyecto_id = p.id AND en.cliente_id = ?) ORDER BY p.id DESC"); $q->execute([$cl['id'], $cl['id']]);
-foreach ($q as $x) $det[] = ['k' => 'proyecto', 'id' => (int)$x['id'], 't' => $x['titulo'], 'f' => substr($x['creado'], 0, 10)];
+foreach ($q as $x) $det[] = ['k' => 'proyecto', 'id' => (int)$x['id'], 't' => $x['titulo'], 'f' => substr($x['creado'], 0, 10), 'tipo' => 'video'];
 $alias = ajuste($pdo, 'alias_cobro'); $cbu = ajuste($pdo, 'cbu_cobro');
 $s = $pdo->prepare('SELECT * FROM trabajos WHERE cliente_id=? AND prueba=? ORDER BY fecha DESC,id DESC LIMIT 150'); $s->execute([$cl['id'], $mp]); $movs = $s->fetchAll();
 $sk = $pdo->prepare("SELECT COALESCE(SUM(CASE WHEN estado='cobrado' THEN cantidad*monto_unit END),0) AS cob, COALESCE(SUM(CASE WHEN estado='pendiente' THEN cantidad*monto_unit END),0) AS pend, COUNT(*) AS n FROM trabajos WHERE cliente_id=? AND prueba=?");
@@ -157,10 +161,11 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
 <?php if (!$movs): ?><p class="mut">Todavía no hay movimientos para este cliente.</p><?php else: ?>
 <form id="fdel" method="post"><input type="hidden" name="a" value="del_trabajo"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>"></form>
 <div class="mvs">
-<?php foreach ($movs as $r): $sub = (float)$r['cantidad'] * (float)$r['monto_unit']; $cob = $r['estado'] === 'cobrado'; $ff = (string)($cob ? ($r['fecha_pago'] ?: $r['fecha']) : $r['fecha']); ?>
+<?php foreach ($movs as $r): $sub = (float)$r['cantidad'] * (float)$r['monto_unit']; $cob = $r['estado'] === 'cobrado'; $ff = (string)($cob ? ($r['fecha_pago'] ?: $r['fecha']) : $r['fecha']); $mt = (string)$r['tipo']; ?>
 <div class="mv">
   <div class="mv-l">
     <span class="badge <?= $cob ? 'ok' : 'pend' ?>"><?= $cob ? 'Cobrado' : 'Pendiente' ?></span>
+    <?php if ($mt === 'video' || $mt === 'foto'): ?><span class="b tipo-<?= $mt === 'foto' ? 'fotos' : 'video' ?>"><?= $mt === 'foto' ? 'FOTOS' : 'VIDEO' ?></span><?php endif; ?>
     <b><?= $e($r['detalle'] ?: (TIPOS[$r['tipo']] ?? $r['tipo'])) ?></b>
     <span class="mut"><?= $e(date('d/m/Y', strtotime($ff))) ?><?= $r['medio'] ? ' · ' . $e(MEDIOS[$r['medio']] ?? (string)$r['medio']) : '' ?><?= (int)$r['cantidad'] > 1 ? ' · ' . (int)$r['cantidad'] . ' × ' . $e(peso((float)$r['monto_unit'])) : '' ?></span>
   </div>
@@ -188,7 +193,7 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
 <form method="post"><input type="hidden" name="a" value="cobrar"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>">
 <p class="mut"><label class="chk"><input type="checkbox" id="todos" aria-label="Elegir todos"> Elegir todos los pendientes</label></p>
 <table class="cards"><tr><th></th><th>Fecha</th><th>Detalle</th><th>Subtotal</th><th></th></tr>
-<?php foreach ($pend as $r): $sub = (float)$r['cantidad'] * (float)$r['monto_unit']; ?><tr><td data-label=""><input class="sel" type="checkbox" name="ids[]" value="<?= (int)$r['id'] ?>"></td><td class="mut" data-label="Fecha"><?= $e(date('d/m/Y', strtotime($r['fecha']))) ?></td><td data-label="Detalle"><?= $e($r['detalle'] ?: TIPOS[$r['tipo']]) ?><br><span class="mut"><?= (int)$r['cantidad'] ?> × <?= $e(peso((float)$r['monto_unit'])) ?></span></td><td data-label="Subtotal"><?= $e(peso($sub)) ?></td><td data-label=""><button class="g" form="fdel" name="id" value="<?= (int)$r['id'] ?>">Quitar</button></td></tr><?php endforeach; ?>
+<?php foreach ($pend as $r): $sub = (float)$r['cantidad'] * (float)$r['monto_unit']; ?><tr><td data-label=""><input class="sel" type="checkbox" name="ids[]" value="<?= (int)$r['id'] ?>"></td><td class="mut" data-label="Fecha"><?= $e(date('d/m/Y', strtotime($r['fecha']))) ?></td><td data-label="Detalle"><?php if ((string)$r['tipo'] === 'video' || (string)$r['tipo'] === 'foto'): ?><span class="b tipo-<?= (string)$r['tipo'] === 'foto' ? 'fotos' : 'video' ?>"><?= (string)$r['tipo'] === 'foto' ? 'FOTOS' : 'VIDEO' ?></span> <?php endif; ?><?= $e($r['detalle'] ?: TIPOS[$r['tipo']]) ?><br><span class="mut"><?= (int)$r['cantidad'] ?> × <?= $e(peso((float)$r['monto_unit'])) ?></span></td><td data-label="Subtotal"><?= $e(peso($sub)) ?></td><td data-label=""><button class="g" form="fdel" name="id" value="<?= (int)$r['id'] ?>">Quitar</button></td></tr><?php endforeach; ?>
 <tr><th></th><th></th><th>Total pendiente</th><th><?= $e(peso($tpend)) ?></th><th></th></tr></table>
 <div class="f"><label><span class="lbl">Cómo pagó <span class="req">* obligatorio</span></span><select name="medio"><?php foreach (MEDIOS as $k => $n) echo '<option value="' . $k . '">' . $e($n) . '</option>'; ?></select></label><label><span class="lbl">Fecha de pago <span class="req">* obligatorio</span></span><input type="date" name="fecha_pago" value="<?= date('Y-m-d') ?>" required></label>
 <p class="mut full">Tildá los trabajos que querés incluir. Si no tildás ninguno, el ticket incluye todos los pendientes.</p>
@@ -197,7 +202,7 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
 <details class="accd"><summary>Registrar trabajo con detalle (tipo, cantidad y fecha)</summary>
 <form class="f" method="post" enctype="multipart/form-data"><input type="hidden" name="a" value="trabajo"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>">
 <label><span class="lbl">Fecha <span class="req">* obligatorio</span></span><input type="date" name="fecha" value="<?= date('Y-m-d') ?>" required></label>
-<label><span class="lbl">Tipo <span class="req">* obligatorio</span></span><select name="tipo" class="tipo-sel"><option value="video" data-m="<?= (int)$cl['tarifa_video'] ?>">Video</option><option value="foto" data-m="<?= (int)$cl['tarifa_foto'] ?>">Foto</option><option value="otro" data-m="0">Otro</option></select></label>
+<label><span class="lbl">Tipo <span class="req">* obligatorio</span></span><select name="tipo" class="tipo-sel"><?= $tipoOpts() ?></select></label>
 <label class="full"><span class="lbl">Detalle <span class="opt">(opcional)</span> (ej: reel de la propiedad de Av. Corrientes)</span><input name="detalle" maxlength="200"></label>
 <label><span class="lbl">Cantidad <span class="req">* obligatorio</span></span><input type="number" name="cantidad" value="1" min="1" max="999"></label><label><span class="lbl">Precio unitario ($) <span class="req">* obligatorio</span></span><input name="monto" class="monto-in" inputmode="numeric" required></label>
 <label><span class="lbl">Estado <span class="req">* obligatorio</span></span><select name="estado"><option value="pendiente">Pendiente de cobro</option><option value="cobrado">Ya cobrado (queda constancia)</option></select></label>
@@ -209,9 +214,9 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
 <h2>Detectados en lo que subiste (<?= count($det) ?>)</h2>
 <p class="mut">Si una entrega y un proyecto son el mismo trabajo, vinculalos desde Clientes para no cobrarlo dos veces.</p>
 <?php if (!$det): ?><p class="mut">No hay entregas ni proyectos de este cliente sin registrar como trabajo.</p><?php endif; ?>
-<?php foreach ($det as $x): ?><form class="f det" method="post"><input type="hidden" name="a" value="trabajo"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>"><input type="hidden" name="fecha" value="<?= $e($x['f']) ?>"><input type="hidden" name="detalle" value="<?= $e($x['t']) ?>"><input type="hidden" name="cantidad" value="1"><input type="hidden" name="<?= $x['k'] === 'entrega' ? 'entrega_id' : 'proyecto_id' ?>" value="<?= (int)$x['id'] ?>">
-<div class="full"><b><?= $e($x['t']) ?></b> <span class="mut"><?= $x['k'] === 'entrega' ? 'Entrega del portal' : 'Proyecto de la web' ?> · <?= $e(date('d/m/Y', strtotime($x['f']))) ?></span></div>
-<label><span class="lbl">Tipo <span class="req">* obligatorio</span></span><select name="tipo" class="tipo-sel"><?= $tipoOpts ?></select></label><label><span class="lbl">Precio ($) <span class="req">* obligatorio</span></span><input name="monto" class="monto-in" inputmode="numeric" required></label>
+<?php foreach ($det as $x): $esFotos = $x['k'] === 'entrega' && $x['tipo'] === 'fotos'; $tipoSel = $esFotos ? 'foto' : 'video'; $montoSug = (float)($esFotos ? $cl['tarifa_foto'] : $cl['tarifa_video']); ?><form class="f det" method="post"><input type="hidden" name="a" value="trabajo"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>"><input type="hidden" name="fecha" value="<?= $e($x['f']) ?>"><input type="hidden" name="detalle" value="<?= $e($x['t']) ?>"><input type="hidden" name="cantidad" value="1"><input type="hidden" name="<?= $x['k'] === 'entrega' ? 'entrega_id' : 'proyecto_id' ?>" value="<?= (int)$x['id'] ?>">
+<div class="full"><?php if ($x['k'] === 'entrega'): ?><span class="b tipo-<?= $esFotos ? 'fotos' : 'video' ?>"><?= $esFotos ? 'FOTOS' : 'VIDEO' ?></span><?php else: ?><span class="b">PROYECTO</span><?php endif; ?> <b><?= $e($x['t']) ?></b> <span class="mut"><?= $x['k'] === 'entrega' ? 'Entrega del portal' : 'Proyecto de la web' ?> · <?= $e(date('d/m/Y', strtotime($x['f']))) ?></span></div>
+<label><span class="lbl">Tipo <span class="req">* obligatorio</span></span><select name="tipo" class="tipo-sel"><?= $tipoOpts($tipoSel) ?></select></label><label><span class="lbl">Precio ($) <span class="req">* obligatorio</span></span><input name="monto" class="monto-in" inputmode="numeric" value="<?= $montoSug > 0 ? $e((string)$montoSug) : '' ?>" required></label>
 <label><span class="lbl">Estado <span class="req">* obligatorio</span></span><select name="estado"><option value="pendiente">Pendiente de cobro</option><option value="cobrado">Ya cobrado</option></select></label>
 <label><span class="lbl">Si ya cobraste: medio <span class="req">* obligatorio si elegís «Ya cobrado»</span></span><select name="medio"><?php foreach (MEDIOS as $k => $n) echo '<option value="' . $k . '">' . $e($n) . '</option>'; ?></select></label>
 <div class="row full"><button>Registrar como trabajo</button><button class="g" name="cero" value="1" formnovalidate>Registrar en $0 (histórico)</button></div></form><?php endforeach; ?>

@@ -146,6 +146,7 @@ function blens_migrar(?PDO $p = null): void {
             'estado_cliente'     => "VARCHAR(20) NOT NULL DEFAULT 'pendiente'",
             'comentario_cliente' => 'TEXT NULL',
             'comentario_fecha'   => 'DATETIME NULL',
+            'tipo'               => "VARCHAR(16) NOT NULL DEFAULT 'video'",
         ];
         foreach ($nuevasE as $col => $def) if (!isset($colsE[$col])) $p->exec("ALTER TABLE entregas ADD COLUMN `$col` $def");
         if ($p->query("SHOW TABLES LIKE 'consultas'")->fetch()) {

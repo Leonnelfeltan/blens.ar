@@ -11,6 +11,7 @@ $pdo = blens_db();
 $agN = agenda_pendientes($pdo);
 $consN = consultas_pendientes($pdo);
 $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
+$tipoDe = fn(array $r): string => ((string)($r['tipo'] ?? 'video') === 'fotos') ? 'fotos' : 'video';
 $msg = $_SESSION['flash'] ?? ''; unset($_SESSION['flash']);
 $acc = $_SESSION['acceso'] ?? null; unset($_SESSION['acceso']);
 const PRIV = '/var/www/blens-private/entregas';
@@ -81,44 +82,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($n0 !== '' && isset($_SESSION['nonces'][$n0])) { $_SESSION['flash'] = 'Esa entrega ya estaba guardada.'; header("Location: clientes.php?c=$c"); exit; }
             if ($n0 !== '') $_SESSION['nonces'][$n0] = 1;
             $id = (int)($_POST['id'] ?? 0); $t = mb_substr(trim((string)($_POST['titulo'] ?? '')), 0, 120); $d = mb_substr(str_replace("\r\n", "\n", trim((string)($_POST['descripcion'] ?? ''))), 0, 4000); $tituloAuto = false;
+            $tipoEn = (string)($_POST['tipo_entrega'] ?? 'video');
+            if (!in_array($tipoEn, ['video', 'fotos'], true)) $tipoEn = 'video';
             $hd = trim((string)($_POST['link_hd'] ?? '')); $k4 = ''; $pj = (int)($_POST['proyecto_id'] ?? 0) ?: null;
-            if ($pj) { $q0 = $pdo->prepare('SELECT id FROM proyectos WHERE id=? AND (cliente_id=? OR cliente_id IS NULL)'); $q0->execute([$pj, $c]); if (!$q0->fetchColumn()) throw new RuntimeException('Ese proyecto no pertenece a este cliente.'); }
-            if ($hd === '' && !$pj) throw new RuntimeException('Pegá el link de Google Drive o vinculá un proyecto de la web.');
+            if ($tipoEn === 'fotos') {
+                $pj = null;
+                if ($hd === '') throw new RuntimeException('Pegá el link de la carpeta o archivo de Google Drive del pack de fotos.');
+            } else {
+                if ($pj) { $q0 = $pdo->prepare('SELECT id FROM proyectos WHERE id=? AND (cliente_id=? OR cliente_id IS NULL)'); $q0->execute([$pj, $c]); if (!$q0->fetchColumn()) throw new RuntimeException('Ese proyecto no pertenece a este cliente.'); }
+                if ($hd === '' && !$pj) throw new RuntimeException('Pegá el link de Google Drive o vinculá un proyecto de la web.');
+            }
             if (($hd !== '' && !drive_ok($hd)) || ($k4 !== '' && !drive_ok($k4))) throw new RuntimeException('Los links tienen que ser de Google Drive y empezar con https://');
             $old = null;
             if ($id) { $s = $pdo->prepare('SELECT * FROM entregas WHERE id=? AND cliente_id=?'); $s->execute([$id, $c]); $old = $s->fetch(); if (!$old) throw new RuntimeException('Entrega inexistente.'); }
-            $mp4 = up('mp4', VIDEOS, 500 * 1048576); $auto = null;
-            if ($mp4) { [$mp4, $auto] = procesar($mp4); }
-            $pos = up('poster', ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'], 8 * 1048576);
-            if ($auto) { if ($pos) rmf($auto); else $pos = $auto; }
-            $mp4 = privado($mp4); $pos = privado($pos);
-            if ($mp4 && !empty($_FILES['mp4']['name'])) @file_put_contents(PRIV . '/' . basename($mp4) . '.name', trim(pathinfo((string)$_FILES['mp4']['name'], PATHINFO_FILENAME)));
+            $mp4 = null; $pos = null; $auto = null;
+            if ($tipoEn === 'video') {
+                $subido = up('mp4', VIDEOS, 500 * 1048576);
+                if ($subido) [$mp4, $auto] = procesar($subido);
+                $pos = up('poster', ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'], 8 * 1048576);
+                if ($auto) { if ($pos) rmf($auto); else $pos = $auto; }
+                $mp4 = privado($mp4); $pos = privado($pos);
+                if ($mp4 && !empty($_FILES['mp4']['name'])) @file_put_contents(PRIV . '/' . basename($mp4) . '.name', trim(pathinfo((string)$_FILES['mp4']['name'], PATHINFO_FILENAME)));
+            }
             if ($t === '') {
                 $tituloAuto = true;
                 $nombreArchivo = (string)($_FILES['mp4']['name'] ?? '');
-                if ($nombreArchivo !== '') {
+                if ($tipoEn === 'video' && $nombreArchivo !== '') {
                     $t = mb_substr(trim(pathinfo($nombreArchivo, PATHINFO_FILENAME)), 0, 120);
                 } elseif ($old && trim((string)$old['titulo']) !== '') {
                     $t = (string)$old['titulo'];
                 }
-                if ($t === '') $t = 'Video sin título';
+                if ($t === '') $t = $tipoEn === 'fotos' ? 'Pack de fotos sin título' : 'Video sin título';
             }
             if ($old) {
-                $pdo->prepare('UPDATE entregas SET titulo=?,descripcion=?,link_hd=?,link_4k=?,preview=COALESCE(?,preview),poster=COALESCE(?,poster),proyecto_id=? WHERE id=?')->execute([$t, $d, $hd, $k4, $mp4, $pos, $pj, $id]);
-                if ($mp4) rmp($old['preview']); if ($pos) rmp($old['poster']);
+                if ($tipoEn === 'fotos') {
+                    $pdo->prepare('UPDATE entregas SET tipo=?,titulo=?,descripcion=?,link_hd=?,link_4k=?,preview=NULL,poster=NULL,proyecto_id=NULL WHERE id=?')->execute([$tipoEn, $t, $d, $hd, $k4, $id]);
+                    rmp($old['preview']); rmp($old['poster']);
+                } else {
+                    $pdo->prepare('UPDATE entregas SET tipo=?,titulo=?,descripcion=?,link_hd=?,link_4k=?,preview=COALESCE(?,preview),poster=COALESCE(?,poster),proyecto_id=? WHERE id=?')->execute([$tipoEn, $t, $d, $hd, $k4, $mp4, $pos, $pj, $id]);
+                    if ($mp4) rmp($old['preview']); if ($pos) rmp($old['poster']);
+                }
             } else {
-                $pdo->prepare('INSERT INTO entregas (cliente_id,titulo,descripcion,link_hd,link_4k,preview,poster,proyecto_id) VALUES (?,?,?,?,?,?,?,?)')->execute([$c, $t, $d, $hd, $k4, $mp4, $pos, $pj]);
+                $pdo->prepare('INSERT INTO entregas (cliente_id,tipo,titulo,descripcion,link_hd,link_4k,preview,poster,proyecto_id) VALUES (?,?,?,?,?,?,?,?,?)')->execute([$c, $tipoEn, $t, $d, $hd, $k4, $mp4, $pos, $pj]);
             }
             $nid = $id ?: (int)$pdo->lastInsertId();
-            if (!$id && ($d === '' || $tituloAuto) && trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== '') {
+            if (!$id && $tipoEn === 'video' && ($d === '' || $tituloAuto) && trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== '') {
                 try { lanzar_worker($nid, 'entrega'); } catch (Throwable $x2) { error_log('[blens clientes] ' . $x2->getMessage()); }
             }
             $_SESSION['flash'] = 'Entrega guardada.'; header("Location: clientes.php?c=$c" . ($id ? '' : "&avisar=$nid")); exit;
         }
         if ($a === 'ia_entrega') {
             $eid = (int)($_POST['id'] ?? 0);
-            $s = $pdo->prepare('SELECT id FROM entregas WHERE id=? AND cliente_id=?'); $s->execute([$eid, $c]);
-            if (!$s->fetch()) throw new RuntimeException('Entrega inexistente.');
+            $s = $pdo->prepare("SELECT id FROM entregas WHERE id=? AND cliente_id=? AND tipo='video'"); $s->execute([$eid, $c]);
+            if (!$s->fetch()) throw new RuntimeException('Entrega de video inexistente.');
             if (trim((string)(blens_cfg()['ai_api_key'] ?? '')) === '') throw new RuntimeException('Falta configurar la clave de IA.');
             lanzar_worker($eid, 'entrega', true);
             $_SESSION['flash'] = 'Generando título y copy con IA. Recargá en unos minutos.';
@@ -126,7 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($a === 'ia_entregas') {
             if (trim((string)(blens_cfg()['ai_api_key'] ?? '')) === '') throw new RuntimeException('Falta configurar la clave de IA.');
-            $s = $pdo->prepare("SELECT id FROM entregas WHERE cliente_id=? AND (descripcion IS NULL OR descripcion='')"); $s->execute([$c]);
+            $s = $pdo->prepare("SELECT id FROM entregas WHERE cliente_id=? AND tipo='video' AND (descripcion IS NULL OR descripcion='')"); $s->execute([$c]);
             $ids = array_map('intval', $s->fetchAll(PDO::FETCH_COLUMN));
             foreach ($ids as $eid) { try { lanzar_worker($eid, 'entrega'); } catch (Throwable $x2) { error_log('[blens clientes] ' . $x2->getMessage()); } }
             $_SESSION['flash'] = $ids ? 'Generando textos con IA para ' . count($ids) . ' entrega(s). Recargá en unos minutos.' : 'No hay entregas sin copy.';
@@ -139,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $vids = drive_folder_videos($fid);
             if (!$vids) throw new RuntimeException('No encontré videos en esa carpeta. Revisá que esté compartida como «cualquier persona con el enlace» y que tenga archivos MP4, MOV, MKV o WebM.');
             if (!is_dir(COLA)) @mkdir(COLA, 0750, true);
-            $ins = $pdo->prepare('INSERT INTO entregas (cliente_id,titulo,descripcion,link_hd,link_4k,preview,poster,proyecto_id) VALUES (?,?,?,?,?,NULL,NULL,NULL)');
+            $ins = $pdo->prepare("INSERT INTO entregas (cliente_id,tipo,titulo,descripcion,link_hd,link_4k,preview,poster,proyecto_id) VALUES (?,'video',?,?,?,?,NULL,NULL,NULL)");
             $n = 0;
             foreach ($vids as $vid => $name) {
                 $titulo = trim(pathinfo($name, PATHINFO_FILENAME)); if ($titulo === '') $titulo = $name;
@@ -169,7 +185,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 $vc = isset($_GET['c']) ? (int)$_GET['c'] : null; $ve = isset($_GET['e']) ? (int)$_GET['e'] : null; $T = $e($_SESSION['t']);
-$list = $cli = $ent = null; $ents = [];
+$ft = (string)($_GET['ft'] ?? 'todos'); if (!in_array($ft, ['todos', 'video', 'fotos'], true)) $ft = 'todos';
+$list = $cli = $ent = null; $ents = []; $entsList = [];
 if ($vc === null) { $list = $pdo->query('SELECT c.*, (SELECT COUNT(*) FROM entregas x WHERE x.cliente_id = c.id) AS n FROM clientes c ORDER BY c.nombre')->fetchAll(); }
 else {
     $cli = ['id' => 0, 'nombre' => '', 'empresa' => '', 'usuario' => '', 'telefono' => '', 'activo' => 1, 'logo' => null, 'logo_web' => 1, 'tarifa_video' => null, 'tarifa_foto' => null, 'portal_visitas' => 0, 'portal_ultima_visita' => null];
@@ -185,11 +202,12 @@ else {
         $sa = $pdo->prepare('SELECT * FROM agenda WHERE cliente_id=? AND completado=0 AND fecha>=CURDATE() ORDER BY fecha, hora IS NULL, hora, id LIMIT 8');
         $sa->execute([$cli['id']]); $agendaCli = $sa->fetchAll();
         $s = $pdo->prepare('SELECT * FROM entregas WHERE cliente_id=? ORDER BY id DESC'); $s->execute([$cli['id']]); $ents = $s->fetchAll();
-        if ($ve !== null) { $ent = ['id' => 0, 'titulo' => '', 'descripcion' => '', 'link_hd' => '', 'link_4k' => '', 'preview' => '', 'poster' => '', 'proyecto_id' => null];
+        $entsList = $ft === 'todos' ? $ents : array_values(array_filter($ents, fn($r) => $tipoDe($r) === $ft));
+        if ($ve !== null) { $ent = ['id' => 0, 'tipo' => 'video', 'titulo' => '', 'descripcion' => '', 'link_hd' => '', 'link_4k' => '', 'preview' => '', 'poster' => '', 'proyecto_id' => null];
             foreach ($ents as $r) if ((int)$r['id'] === $ve) $ent = $r; }
     }
 }
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=23"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=24"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Proyectos</a><a href="consultas.php">Consultas<?php if ($consN > 0): ?><span class="nav-badge soft"><?= $consN ?></span><?php endif; ?></a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a><a href="../portal/" target="_blank" rel="noopener">Ver portal</a></nav>
 <form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
@@ -211,19 +229,22 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
 <?php foreach ($list as $r): ?><tr class="<?= $r['activo'] ? '' : 'off' ?>"><td data-label="Cliente"><?= !empty($r['logo']) ? '<img class="clogo" src="../media/logos/' . $e($r['logo']) . '" alt="">' : '' ?><?= $e($r['empresa'] ?: $r['nombre']) ?><br><span class="mut"><?= $e($r['empresa'] ? $r['nombre'] : '') ?></span></td><td class="mut" data-label="Usuario"><?= $e($r['usuario']) ?></td><td data-label="Entregas"><?= (int)$r['n'] ?></td><td class="mut" data-label="Portal"><?= $e(portal_info($r)) ?></td><td data-label=""><a class="btn g" href="?c=<?= (int)$r['id'] ?>">Abrir</a></td></tr><?php endforeach; if (!$list) echo '<tr><td colspan="5" class="mut">Todavía no hay clientes.</td></tr>'; ?></table>
 
 <?php elseif ($ent !== null): ?>
+<?php $tipoActual = $tipoDe($ent); ?>
 <h1><?= $e($cli['nombre']) ?> · <?= $ent['id'] ? 'Editar entrega' : 'Nueva entrega' ?></h1>
-<form class="f" method="post" enctype="multipart/form-data"><input type="hidden" name="a" value="entrega"><input type="hidden" name="nonce" value="<?= bin2hex(random_bytes(8)) ?>"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$ent['id'] ?>">
-<label class="full"><span class="lbl">Título <span class="opt">(opcional - lo completa la IA o toma el nombre del archivo)</span></span><input name="titulo" value="<?= $e($ent['titulo']) ?>" maxlength="120"></label>
+<form class="f ent-form" method="post" enctype="multipart/form-data"><input type="hidden" name="a" value="entrega"><input type="hidden" name="nonce" value="<?= bin2hex(random_bytes(8)) ?>"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$ent['id'] ?>">
+<label class="full"><span class="lbl">Tipo de entrega</span><select name="tipo_entrega"><option value="video"<?= $tipoActual === 'video' ? ' selected' : '' ?>>Video</option><option value="fotos"<?= $tipoActual === 'fotos' ? ' selected' : '' ?>>Fotos (Pack de fotos)</option></select></label>
+<label class="full"><span class="lbl">Título <span class="opt">(opcional - lo completa la IA en videos o toma el nombre del archivo)</span></span><input name="titulo" value="<?= $e($ent['titulo']) ?>" maxlength="120"></label>
 <label class="full"><span class="lbl">Descripción / copy para redes <span class="opt">(opcional)</span> (se respetan saltos de línea y emojis)</span><textarea name="descripcion" rows="9" maxlength="4000"><?= $e($ent['descripcion']) ?></textarea></label>
 <?php if (trim((string)$ent['descripcion']) !== ''): ?><div class="full"><button type="button" class="g" data-copiar="<?= $e(trim((string)$ent['titulo']) . "\n\n" . trim((string)$ent['descripcion'])) ?>">Copiar título y copy para redes</button></div><?php endif; ?>
-<label class="full"><span class="lbl">Link de Google Drive <span class="req">* obligatorio si no vinculás un proyecto</span> (público, en la mejor calidad)</span><input name="link_hd" value="<?= $e($ent['link_hd']) ?>" placeholder="https://drive.google.com/..."></label>
+<label class="full f-link"><span class="lbl l-video">Link de Google Drive <span class="req">* obligatorio si no vinculás un proyecto</span> (público, en la mejor calidad)</span><span class="lbl l-fotos">Link de la carpeta o archivo de Google Drive <span class="req">* obligatorio</span> (público, con permisos de descarga)</span><input name="link_hd" value="<?= $e($ent['link_hd']) ?>" placeholder="https://drive.google.com/..."></label>
+<p class="mut full only-fotos">Pegá el link de la carpeta o de un archivo del pack. El cliente verá una tarjeta de galería y descargará las fotos directo desde Drive. No se sube nada al servidor ni se procesa video.</p>
 <?php $ps = $pdo->prepare("SELECT id,titulo,cliente FROM proyectos WHERE categoria <> 'showreel' AND (cliente_id = ? OR cliente_id IS NULL) ORDER BY id DESC"); $ps->execute([(int)$cli['id']]); ?>
-<label class="full"><span class="lbl">Proyecto de la web relacionado <span class="opt">(opcional)</span> (si no subís un video de vista previa, se usa el de ese proyecto; además evita que aparezca duplicado en Cobros)</span><select name="proyecto_id"><option value="0">— Ninguno —</option><?php foreach ($ps as $x): ?><option value="<?= (int)$x['id'] ?>"<?= (int)($ent['proyecto_id'] ?? 0) === (int)$x['id'] ? ' selected' : '' ?>><?= $e($x['titulo'] . ($x['cliente'] ? ' · ' . $x['cliente'] : '')) ?></option><?php endforeach; ?></select></label>
-<label class="full"><span class="lbl">Video para la vista previa <span class="opt">(opcional)</span> (si no subís nada, el portal muestra el video desde el link de Drive) <?= $ent['preview'] ? '· ya cargado; dejá vacío para mantenerlo' : '' ?></span><input type="file" name="mp4" accept="video/*"></label>
-<p class="mut full">Se convierte solo a 720p y solo lo ve este cliente al entrar con su usuario. Puede tardar unos minutos: no cierres la página.</p>
-<label class="full"><span class="lbl">Portada propia <span class="opt">(opcional)</span></span><input type="file" name="poster" accept="image/jpeg,image/png,image/webp"></label>
+<label class="full only-video"><span class="lbl">Proyecto de la web relacionado <span class="opt">(opcional)</span> (si no subís un video de vista previa, se usa el de ese proyecto; además evita que aparezca duplicado en Cobros)</span><select name="proyecto_id"><option value="0">— Ninguno —</option><?php foreach ($ps as $x): ?><option value="<?= (int)$x['id'] ?>"<?= (int)($ent['proyecto_id'] ?? 0) === (int)$x['id'] ? ' selected' : '' ?>><?= $e($x['titulo'] . ($x['cliente'] ? ' · ' . $x['cliente'] : '')) ?></option><?php endforeach; ?></select></label>
+<label class="full only-video"><span class="lbl">Video para la vista previa <span class="opt">(opcional)</span> (si no subís nada, el portal muestra el video desde el link de Drive) <?= $ent['preview'] ? '· ya cargado; dejá vacío para mantenerlo' : '' ?></span><input type="file" name="mp4" accept="video/*"></label>
+<p class="mut full only-video">Se convierte solo a 720p y solo lo ve este cliente al entrar con su usuario. Puede tardar unos minutos: no cierres la página.</p>
+<label class="full only-video"><span class="lbl">Portada propia <span class="opt">(opcional)</span></span><input type="file" name="poster" accept="image/jpeg,image/png,image/webp"></label>
 <div class="row full"><button>Guardar</button><a class="btn g" href="?c=<?= (int)$cli['id'] ?>">Cancelar</a></div></form>
-<?php if ($ent['id'] && trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== ''): ?>
+<?php if ($tipoActual === 'video' && $ent['id'] && trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== ''): ?>
 <div class="row"><form method="post"><input type="hidden" name="a" value="ia_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$ent['id'] ?>"><button class="g">Generar título y copy con IA</button></form></div>
 <p class="mut">La IA escucha el audio y genera un título y un copy listo para Instagram/TikTok. Reemplaza el título y la descripción actuales. Tarda unos minutos: recargá la página para ver el resultado.</p>
 <?php endif; ?>
@@ -247,7 +268,7 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
     <p class="mut">Último acceso: <?= !empty($cli['portal_ultima_visita']) ? $e(date('d/m/Y H:i', strtotime((string)$cli['portal_ultima_visita']))) : 'Nunca ingresó' ?></p>
     <div class="c360-list">
     <?php foreach (array_slice($ents, 0, 8) as $r): $est = (string)($r['estado_cliente'] ?? 'pendiente'); $com = trim((string)($r['comentario_cliente'] ?? '')); ?>
-      <div class="c360-item"><div class="c360-ent"><b><?= $e($r['titulo']) ?></b><br><span class="mut"><?= $e(substr((string)$r['creado'], 0, 10)) ?></span>
+      <div class="c360-item"><div class="c360-ent"><span class="b tipo-<?= $tipoDe($r) ?>"><?= $tipoDe($r) === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span> <b><?= $e($r['titulo']) ?></b><br><span class="mut"><?= $e(substr((string)$r['creado'], 0, 10)) ?></span>
         <?php if ($est === 'ajuste'): ?><blockquote class="c360-quote"><?= nl2br($e($com)) ?></blockquote>
         <form method="post" class="c360-resolve"><input type="hidden" name="a" value="resolver_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="g">Marcar resuelto</button></form><?php endif; ?></div>
         <span><?php if ($est === 'ajuste'): ?><span class="b adj">Pidió ajuste</span><?php elseif ($est === 'aprobado'): ?><span class="badge ok">Aprobado</span><?php endif; ?></span></div>
@@ -302,7 +323,9 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
 <div class="row full"><button>Importar videos</button><button type="button" class="g" data-cerrar>Cancelar</button></div>
 </form>
 </dialog>
-<table class="cards"><tr><th>Título</th><th>Fecha</th><th>Links</th><th>Copy</th><th></th></tr>
-<?php foreach ($ents as $r): ?><tr><td data-label="Título"><?= $e($r['titulo']) ?></td><td class="mut" data-label="Fecha"><?= $e(substr($r['creado'], 0, 10)) ?></td><td data-label="Links"><?= $r['link_hd'] ? 'HD ' : '' ?><?= $r['link_4k'] ? '4K' : '' ?></td><td class="mut" data-label="Copy"><?= trim((string)$r['descripcion']) !== '' ? 'Sí' : '—' ?></td><td data-label=""><a class="btn g" href="?c=<?= (int)$cli['id'] ?>&e=<?= (int)$r['id'] ?>">Editar</a><?php if (trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== ''): ?><form method="post" class="ia-f"><input type="hidden" name="a" value="ia_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="g">IA</button></form><?php endif; ?></td></tr><?php endforeach; if (!$ents) echo '<tr><td colspan="5" class="mut">Sin entregas todavía.</td></tr>'; ?></table>
+<?php $nVidEnt = count(array_filter($ents, fn($r) => $tipoDe($r) === 'video')); $nFotEnt = count($ents) - $nVidEnt; ?>
+<div class="lf-filtros"><a class="lf-pill<?= $ft === 'todos' ? ' on' : '' ?>" href="?c=<?= (int)$cli['id'] ?>&ft=todos">Todos <b><?= count($ents) ?></b></a><a class="lf-pill<?= $ft === 'video' ? ' on' : '' ?>" href="?c=<?= (int)$cli['id'] ?>&ft=video">Videos <b><?= $nVidEnt ?></b></a><a class="lf-pill<?= $ft === 'fotos' ? ' on' : '' ?>" href="?c=<?= (int)$cli['id'] ?>&ft=fotos">Fotos <b><?= $nFotEnt ?></b></a></div>
+<table class="cards"><tr><th>Tipo</th><th>Título</th><th>Fecha</th><th>Links</th><th>Copy</th><th></th></tr>
+<?php foreach ($entsList as $r): ?><tr><td data-label="Tipo"><span class="b tipo-<?= $tipoDe($r) ?>"><?= $tipoDe($r) === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span></td><td data-label="Título"><?= $e($r['titulo']) ?></td><td class="mut" data-label="Fecha"><?= $e(substr($r['creado'], 0, 10)) ?></td><td data-label="Links"><?= $r['link_hd'] ? 'HD ' : '' ?><?= $r['link_4k'] ? '4K' : '' ?></td><td class="mut" data-label="Copy"><?= trim((string)$r['descripcion']) !== '' ? 'Sí' : '—' ?></td><td data-label=""><a class="btn g" href="?c=<?= (int)$cli['id'] ?>&e=<?= (int)$r['id'] ?>">Editar</a><?php if ($tipoDe($r) === 'video' && trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== ''): ?><form method="post" class="ia-f"><input type="hidden" name="a" value="ia_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="g">IA</button></form><?php endif; ?></td></tr><?php endforeach; if (!$entsList) echo '<tr><td colspan="6" class="mut">Sin entregas todavía.</td></tr>'; ?></table>
 <h2>Eliminar cliente</h2><form method="post" class="row"><input type="hidden" name="a" value="del_cliente"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><label class="chk"><input type="checkbox" required>Confirmo: se borran el cliente y todas sus entregas <span class="req">* obligatorio</span></label><button class="r">Eliminar</button></form>
 <?php endif; endif; ?><script src="admin.js?v=21"></script></body></html>

@@ -6,6 +6,7 @@ session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict', 'secure' 
 session_start();
 header('X-Robots-Tag: noindex'); header('Cache-Control: no-store'); header('X-Frame-Options: DENY');
 $pdo = blens_db(); blens_migrar($pdo); $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
+$tipoDe = fn(array $r): string => ((string)($r['tipo'] ?? 'video') === 'fotos') ? 'fotos' : 'video';
 $_SESSION['t'] ??= bin2hex(random_bytes(16)); $msg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!hash_equals($_SESSION['t'], (string)($_POST['t'] ?? ''))) { http_response_code(400); exit('Sesión vencida. Recargá la página.'); }
@@ -41,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['a'] ?? '') === 'aj
     $eid = (int)($_POST['e'] ?? 0);
     $com = mb_substr(trim((string)($_POST['comentario'] ?? '')), 0, 1000);
     if (!$cid || $vista || $eid <= 0) { http_response_code(403); exit('Acceso denegado.'); }
-    $q = $pdo->prepare('SELECT id,titulo FROM entregas WHERE id=? AND cliente_id=?'); $q->execute([$eid, $cid]); $enFb = $q->fetch();
+    $q = $pdo->prepare('SELECT id,titulo,tipo FROM entregas WHERE id=? AND cliente_id=?'); $q->execute([$eid, $cid]); $enFb = $q->fetch();
     if (!$enFb) { http_response_code(404); exit('Entrega inexistente.'); }
     if ($com === '') {
         $_SESSION['pflash'] = 'Escribí qué ajuste necesitás antes de enviar.';
@@ -51,7 +52,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['a'] ?? '') === 'aj
         $pdo->prepare("UPDATE entregas SET estado_cliente='ajuste', comentario_cliente=?, comentario_fecha=NOW() WHERE id=? AND cliente_id=?")->execute([$com, $eid, $cid]);
         $qc = $pdo->prepare('SELECT nombre,empresa FROM clientes WHERE id=?'); $qc->execute([$cid]); $cf = $qc->fetch() ?: [];
         $empresa = trim((string)($cf['empresa'] ?? '')) ?: trim((string)($cf['nombre'] ?? '')) ?: 'Cliente';
-        $cuerpo = 'Empresa: ' . $empresa . "\n" . 'Video: ' . (string)$enFb['titulo'] . "\n\n" . 'Pidió un ajuste: ' . $com;
+        $tipoFb = $tipoDe($enFb) === 'fotos' ? 'Pack de fotos' : 'Video';
+        $cuerpo = 'Empresa: ' . $empresa . "\n" . $tipoFb . ': ' . (string)$enFb['titulo'] . "\n\n" . 'Pidió un ajuste: ' . $com;
         blens_ntfy('Feedback de cliente · blens.ar', $cuerpo, 'high', 'speech_balloon', ['view, Abrir panel, https://blens.ar/admin/']);
         $_SESSION['pflash'] = 'Recibimos tu pedido de ajuste.';
     } catch (Throwable $x) {
@@ -95,8 +97,8 @@ $fb = function (array $r) use ($e, $T, $vista): string {
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" media="print" data-fonts>
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap"></noscript>
-<link rel="stylesheet" href="../styles.css?v=18"><link rel="stylesheet" href="portal.css?v=11"></head><body>
-<svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
+<link rel="stylesheet" href="../styles.css?v=18"><link rel="stylesheet" href="portal.css?v=12"></head><body>
+<svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol><symbol id="photos" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m4 17 5-5 3.5 3.5L16 12l4 4"/></symbol></svg>
 <header class="ph"><a class="brand" href="../" aria-label="blens.ar, inicio"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
 <?php if ($cli): ?><div class="phr"><span class="mut">Portal de clientes</span><?= $vista ? '<span class="perr">Vista de administrador</span>' : '' ?><form method="post"><input type="hidden" name="a" value="salir"><input type="hidden" name="t" value="<?= $T ?>"><button class="out">Salir</button></form></div>
 <?php else: ?><a class="link" href="../">Volver a la web</a><?php endif; ?></header>
@@ -116,19 +118,33 @@ $fb = function (array $r) use ($e, $T, $vista): string {
 <?php else:
 $id = (int)($_GET['e'] ?? 0); $en = null;
 if ($id) { $s = $pdo->prepare($SQL . ' AND e.id = ?'); $s->execute([$cid, $id]); $en = $s->fetch() ?: null; }
-if ($en): ?>
-<main class="pt"><div class="pd"><div><?php if ($vid($en)): ?><div class="cvw"><video playsinline preload="auto" data-auto<?= $pst($en) ? ' poster="' . $e($pst($en)) . '"' : '' ?>><source src="<?= $e($vid($en)) ?>" type="video/mp4"></video></div><p class="mut sm">Vista previa del proyecto.</p><?php elseif ($df = $did($en)): ?><div class="cvw dfr" data-did="<?= $e($df) ?>"><iframe src="https://drive.google.com/file/d/<?= $e($df) ?>/preview" allow="autoplay; fullscreen" allowfullscreen loading="lazy" title="Vista previa"></iframe></div><p class="mut sm">Vista previa desde Google Drive.</p><?php endif; ?></div>
-<div><a class="back" href="./">&larr; Mis entregas</a><h1><?= $e($en['titulo']) ?></h1><p class="sub"><?= $e(substr($en['creado'], 0, 10)) ?></p>
+if ($en): $tipoEn = $tipoDe($en); ?>
+<main class="pt"><div class="pd"><div>
+<?php if ($tipoEn === 'fotos'): ?>
+  <div class="gal">
+    <svg class="gal-ico"><use href="#photos"/></svg>
+    <b>Pack de fotos</b>
+    <p class="mut sm">Tus fotos están en Google Drive. Abrí la carpeta para verlas y descargarlas.</p>
+    <?php if ($drive($en)): ?><a class="btn gal-btn" href="<?= $e($drive($en)) ?>" target="_blank" rel="noopener noreferrer">Ver y descargar fotos (Drive)</a><?php else: ?><p class="mut">El enlace todavía no está disponible.</p><?php endif; ?>
+  </div>
+<?php elseif ($vid($en)): ?><div class="cvw"><video playsinline preload="auto" data-auto<?= $pst($en) ? ' poster="' . $e($pst($en)) . '"' : '' ?>><source src="<?= $e($vid($en)) ?>" type="video/mp4"></video></div><p class="mut sm">Vista previa del proyecto.</p>
+<?php elseif ($df = $did($en)): ?><div class="cvw dfr" data-did="<?= $e($df) ?>"><iframe src="https://drive.google.com/file/d/<?= $e($df) ?>/preview" allow="autoplay; fullscreen" allowfullscreen loading="lazy" title="Vista previa"></iframe></div><p class="mut sm">Vista previa desde Google Drive.</p>
+<?php endif; ?></div>
+<div><a class="back" href="./">&larr; Mis entregas</a><h1><?= $e($en['titulo']) ?></h1><p class="sub"><span class="b tipo-<?= $tipoEn ?>"><?= $tipoEn === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span> <?= $e(substr($en['creado'], 0, 10)) ?> · <?= $tipoEn === 'fotos' ? 'Pack de fotos' : 'Video' ?></p>
 <?php if (trim((string)$en['descripcion']) !== ''): ?><div class="copy"><?= nl2br($e($en['descripcion'])) ?></div><?php endif; ?>
-<?php if ($drive($en)): ?><a class="btn" href="<?= $e($drive($en)) ?>" target="_blank" rel="noopener">Abrir en Drive / Descargar</a><p class="mut sm">El archivo final está en la mejor calidad, en Google Drive.</p><?php else: ?><p class="mut">El archivo final todavía no está disponible.</p><?php endif; ?>
+<?php if ($tipoEn !== 'fotos'): ?><?php if ($drive($en)): ?><a class="btn" href="<?= $e($drive($en)) ?>" target="_blank" rel="noopener">Abrir en Drive / Descargar</a><p class="mut sm">El archivo final está en la mejor calidad, en Google Drive.</p><?php else: ?><p class="mut">El archivo final todavía no está disponible.</p><?php endif; ?><?php endif; ?>
 <?= $fb($en) ?></div></div></main>
 <?php else:
-$s = $pdo->prepare($SQL . ' ORDER BY e.id DESC'); $s->execute([$cid]); $es = $s->fetchAll(); ?>
+$s = $pdo->prepare($SQL . ' ORDER BY e.id DESC'); $s->execute([$cid]); $es = $s->fetchAll();
+$nVideos = count(array_filter($es, fn($r) => $tipoDe($r) === 'video')); $nFotos = count($es) - $nVideos;
+$ft = (string)($_GET['ft'] ?? 'todos'); if (!in_array($ft, ['todos', 'video', 'fotos'], true)) $ft = 'todos';
+$esView = $ft === 'todos' ? $es : array_values(array_filter($es, fn($r) => $tipoDe($r) === $ft)); ?>
 <main class="pt"><?= $cli['logo'] ? '<img class="clogo" loading="lazy" src="../media/logos/' . $e($cli['logo']) . '" alt="" width="180" height="80">' : '' ?><h1>Hola, <?= $e(explode(' ', trim($cli['nombre']))[0]) ?></h1><p class="sub"><?= $cli['empresa'] ? $e($cli['empresa']) . ' · ' : '' ?>Tus entregas (<?= count($es) ?>)</p>
-<?php if (!$es) echo '<p class="mut">Todavía no hay entregas cargadas.</p>'; ?>
-<div class="pg"><?php foreach ($es as $r): ?><article class="pc"><a class="pc-img" href="?e=<?= (int)$r['id'] ?>" aria-label="Ver <?= $e($r['titulo']) ?>"><?= $pst($r) ? '<img src="' . $e($pst($r)) . '" alt="" loading="lazy" width="800" height="500">' : ($did($r) ? '<img src="https://drive.google.com/thumbnail?id=' . $e($did($r)) . '&amp;sz=w800" alt="" loading="lazy" width="800" height="500" referrerpolicy="no-referrer">' : '') ?><span class="pc-date"><?= $e(substr($r['creado'], 0, 10)) ?></span></a>
-<div class="pc-body"><h3><a href="?e=<?= (int)$r['id'] ?>"><?= $e($r['titulo']) ?></a></h3><?php if (trim((string)$r['descripcion']) !== '') echo '<p class="pc-desc">' . $e($r['descripcion']) . '</p>'; ?>
-<?php if ($drive($r)): ?><a class="btn" href="<?= $e($drive($r)) ?>" target="_blank" rel="noopener">Abrir en Drive / Descargar</a><?php endif; ?></div><?= $fb($r) ?></article><?php endforeach; ?></div></main>
+<div class="pf-filtros"><a class="pf-pill<?= $ft === 'todos' ? ' on' : '' ?>" href="./?ft=todos">Todos <b><?= count($es) ?></b></a><a class="pf-pill<?= $ft === 'video' ? ' on' : '' ?>" href="./?ft=video">Videos <b><?= $nVideos ?></b></a><a class="pf-pill<?= $ft === 'fotos' ? ' on' : '' ?>" href="./?ft=fotos">Fotos <b><?= $nFotos ?></b></a></div>
+<?php if (!$esView) echo '<p class="mut">' . ($es ? 'No hay entregas de este tipo.' : 'Todavía no hay entregas cargadas.') . '</p>'; ?>
+<div class="pg"><?php foreach ($esView as $r): $tf = $tipoDe($r); ?><article class="pc tipo-<?= $tf ?>"><a class="pc-img" href="?e=<?= (int)$r['id'] ?>" aria-label="Ver <?= $e($r['titulo']) ?>"><?php if ($tf === 'fotos'): ?><span class="pc-gal"><svg class="gal-ico"><use href="#photos"/></svg><b>Galería de fotos</b></span><?php else: ?><?= $pst($r) ? '<img src="' . $e($pst($r)) . '" alt="" loading="lazy" width="800" height="500">' : ($did($r) ? '<img src="https://drive.google.com/thumbnail?id=' . $e($did($r)) . '&amp;sz=w800" alt="" loading="lazy" width="800" height="500" referrerpolicy="no-referrer">' : '') ?><?php endif; ?><span class="pc-date"><?= $e(substr($r['creado'], 0, 10)) ?></span></a>
+<div class="pc-body"><span class="pc-tipo tipo-<?= $tf ?>"><?= $tf === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span><h3><a href="?e=<?= (int)$r['id'] ?>"><?= $e($r['titulo']) ?></a></h3><?php if (trim((string)$r['descripcion']) !== '') echo '<p class="pc-desc">' . $e($r['descripcion']) . '</p>'; ?>
+<?php if ($drive($r)): ?><a class="btn" href="<?= $e($drive($r)) ?>" target="_blank" rel="<?= $tf === 'fotos' ? 'noopener noreferrer' : 'noopener' ?>"><?= $tf === 'fotos' ? 'Ver y descargar fotos (Drive)' : 'Abrir en Drive / Descargar' ?></a><?php endif; ?></div><?= $fb($r) ?></article><?php endforeach; ?></div></main>
 <?php endif; endif; ?>
 <footer class="foot"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span><span class="loc">Posadas, Misiones · Argentina</span><nav class="social"><a href="../">Web</a><a href="<?= $e($contacto) ?>">Contacto</a></nav><span class="mut">© 2026 blens.ar</span></footer>
 <script src="../assets/fonts.js?v=1" defer></script><script src="../assets/player.js?v=12" defer></script><script src="dfr.js?v=10" defer></script></body></html>
