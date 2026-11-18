@@ -8,9 +8,9 @@ $urls = [['loc' => $sitio . '/', 'lastmod' => date('Y-m-d')]];
 try {
     $db = blens_db();
     try {
-        $rows = $db->query("SELECT id,creado FROM proyectos WHERE visible=1 AND (estado='listo' OR video_mp4 IS NOT NULL) ORDER BY orden ASC, id DESC")->fetchAll();
+        $rows = $db->query("SELECT id,creado FROM proyectos WHERE visible=1 AND (categoria IS NULL OR categoria <> 'showreel') AND (estado='listo' OR video_mp4 IS NOT NULL) ORDER BY orden ASC, id DESC")->fetchAll();
     } catch (Throwable $x) {
-        $rows = $db->query('SELECT id,creado FROM proyectos WHERE visible=1 ORDER BY orden ASC, id DESC')->fetchAll();
+        $rows = $db->query("SELECT id,creado FROM proyectos WHERE visible=1 AND (categoria IS NULL OR categoria <> 'showreel') ORDER BY orden ASC, id DESC")->fetchAll();
     }
     foreach ($rows as $r) {
         $urls[] = [

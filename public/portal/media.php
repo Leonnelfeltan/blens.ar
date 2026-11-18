@@ -2,9 +2,9 @@
 declare(strict_types=1);
 require __DIR__ . '/../../blens-config/bootstrap.php';
 session_name('blens_cliente'); session_start();
-$cid = (int)($_SESSION['cid'] ?? 0);
+$cid = (int)($_SESSION['cliente_id'] ?? $_SESSION['cid'] ?? 0);
 if (!$cid || !empty($_SESSION['forzar'])) { http_response_code(403); exit; }
-$s = blens_db()->prepare('SELECT preview,poster FROM entregas WHERE id=? AND cliente_id=?'); $s->execute([(int)($_GET['e'] ?? 0), $cid]); $r = $s->fetch();
+$s = blens_db()->prepare('SELECT e.preview,e.poster FROM entregas e JOIN clientes c ON c.id=e.cliente_id WHERE e.id=? AND e.cliente_id=? AND c.activo=1'); $s->execute([(int)($_GET['e'] ?? 0), $cid]); $r = $s->fetch();
 $t = ($_GET['t'] ?? 'v') === 'p' ? 'p' : 'v';
 $f = $r ? ($t === 'p' ? $r['poster'] : $r['preview']) : null;
 $path = $f ? '/var/www/blens-private/entregas/' . basename($f) : '';

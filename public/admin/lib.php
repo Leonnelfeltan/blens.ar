@@ -24,7 +24,7 @@ function blens_acreditar_tna(?PDO $pdo = null): void {
         if ($dias < 1) { set_ajuste($pdo, 'tna_ultima_fecha', $hoy); return; }
         $f = $tna / 100 / 365;
         for ($i = 0; $i < $dias; $i++) { $interes = $saldo * $f; $saldo += $interes; $ganado += $interes; }
-        set_ajuste($pdo, 'saldo_cuenta', (string)round($saldo));
+        set_ajuste($pdo, 'saldo_cuenta', (string)round($saldo, 2));
         set_ajuste($pdo, 'tna_ganado_mes', (string)round($ganado, 2));
         set_ajuste($pdo, 'tna_ultima_fecha', $hoy);
     } catch (Throwable $x) { error_log('[blens tna] ' . $x->getMessage()); }
@@ -39,7 +39,7 @@ function portal_info(?array $c): string {
     return $t;
 }
 /* ---- Mensaje de resumen para mandar por WhatsApp ---- */
-function resumen_cobro(array $cl, array $pend, int $total, string $alias, string $cbu): string {
+function resumen_cobro(array $cl, array $pend, float $total, string $alias, string $cbu): string {
     $nombre = explode(' ', trim((string)($cl['nombre'] ?? 'cliente')))[0] ?: 'cliente';
     $empresa = trim((string)($cl['empresa'] ?? ''));
     $l = [];
@@ -47,7 +47,7 @@ function resumen_cobro(array $cl, array $pend, int $total, string $alias, string
     $l[] = '';
     $l[] = 'Este es el resumen de tus trabajos y las cuotas pendientes al ' . date('d/m/Y') . ':';
     $l[] = '';
-    if ($pend) { foreach ($pend as $r) { $sub = (int)$r['cantidad'] * (int)$r['monto_unit']; $det = trim((string)$r['detalle']) !== '' ? (string)$r['detalle'] : (TIPOS[$r['tipo']] ?? (string)$r['tipo']); $l[] = '• ' . $det . ' — ' . (int)$r['cantidad'] . ' × ' . peso((int)$r['monto_unit']) . ' = ' . peso($sub); } }
+    if ($pend) { foreach ($pend as $r) { $sub = (float)$r['cantidad'] * (float)$r['monto_unit']; $det = trim((string)$r['detalle']) !== '' ? (string)$r['detalle'] : (TIPOS[$r['tipo']] ?? (string)$r['tipo']); $l[] = '• ' . $det . ' — ' . (int)$r['cantidad'] . ' × ' . peso((float)$r['monto_unit']) . ' = ' . peso($sub); } }
     else $l[] = '• No tenés trabajos pendientes de pago.';
     $l[] = '';
     $l[] = 'Total a pagar: ' . peso($total);

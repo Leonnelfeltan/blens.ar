@@ -136,4 +136,4 @@ $s = $pdo->prepare($SQL . ' ORDER BY e.id DESC'); $s->execute([$cid]); $es = $s-
 <?php if ($drive($r)): ?><a class="btn" href="<?= $e($drive($r)) ?>" target="_blank" rel="noopener">Abrir en Drive / Descargar</a><?php endif; ?></div><?= $fb($r) ?></article><?php endforeach; ?></div></main>
 <?php endif; endif; ?>
 <footer class="foot"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span><span class="loc">Posadas, Misiones · Argentina</span><nav class="social"><a href="../">Web</a><a href="<?= $e($contacto) ?>">Contacto</a></nav><span class="mut">© 2026 blens.ar</span></footer>
-<script src="../assets/fonts.js?v=1" defer></script><script src="../assets/player.js?v=11" defer></script><script src="dfr.js?v=10" defer></script></body></html>
+<script src="../assets/fonts.js?v=1" defer></script><script src="../assets/player.js?v=12" defer></script><script src="dfr.js?v=10" defer></script></body></html>

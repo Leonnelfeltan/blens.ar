@@ -47,12 +47,14 @@ $hoy = date('Y-m-d');
 $clientes = $pdo->query('SELECT id,empresa,nombre FROM clientes ORDER BY empresa,nombre')->fetchAll();
 $agN = agenda_pendientes($pdo);
 $rows = $pdo->query('SELECT a.*, c.nombre AS cliente_nombre, c.empresa AS cliente_empresa FROM agenda a LEFT JOIN clientes c ON c.id=a.cliente_id ORDER BY a.fecha, a.hora IS NULL, a.hora, a.id')->fetchAll();
-$gHoy = $gProx = $gDone = [];
+$gAtras = $gHoy = $gProx = $gDone = [];
 foreach ($rows as $r) {
     if ((int)$r['completado']) $gDone[] = $r;
+    elseif ($r['fecha'] < $hoy) $gAtras[] = $r;
     elseif ($r['fecha'] === $hoy) $gHoy[] = $r;
     else $gProx[] = $r;
 }
+usort($gAtras, fn(array $a, array $b): int => strcmp($b['fecha'] . ($b['hora'] ?? ''), $a['fecha'] . ($a['hora'] ?? '')));
 usort($gDone, fn(array $a, array $b): int => strcmp($b['fecha'] . ($b['hora'] ?? ''), $a['fecha'] . ($a['hora'] ?? '')));
 $gDone = array_slice($gDone, 0, 60);
 $render = function (array $items, bool $done) use ($e, $T, $hoy): void {
@@ -92,10 +94,12 @@ $render = function (array $items, bool $done) use ($e, $T, $hoy): void {
 <label class="wide"><span class="lbl">Lugar / nota <span class="opt">(opcional)</span></span><input name="lugar_nota" maxlength="255" placeholder="Dirección, link de reunión o detalle"></label>
 <button>Agregar a la agenda</button>
 </form>
+<h2>Atrasados</h2>
+<?php if (!$gAtras): ?><p class="mut">No hay eventos vencidos sin completar.</p><?php else: ?><div class="ag-list"><?php $render($gAtras, false); ?></div><?php endif; ?>
 <h2>Hoy</h2>
 <?php if (!$gHoy): ?><p class="mut">No hay eventos pendientes para hoy.</p><?php else: ?><div class="ag-list"><?php $render($gHoy, false); ?></div><?php endif; ?>
 <h2>Próximos</h2>
 <?php if (!$gProx): ?><p class="mut">No hay eventos próximos.</p><?php else: ?><div class="ag-list"><?php $render($gProx, false); ?></div><?php endif; ?>
 <h2>Completados</h2>
 <?php if (!$gDone): ?><p class="mut">Todavía no completaste eventos.</p><?php else: ?><div class="ag-list"><?php $render($gDone, true); ?></div><?php endif; ?>
-<script src="admin.js?v=19"></script></body></html>
+<script src="admin.js?v=20"></script></body></html>

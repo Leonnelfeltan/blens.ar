@@ -10,20 +10,21 @@ $pdo = blens_db(); $agN = agenda_pendientes($pdo); $e = fn($s) => htmlspecialcha
 if (!$pdo->query("SHOW TABLES LIKE 'trabajos'")->fetch()) exit('Faltan las tablas de cobros. En el servidor corré: sudo mysql < /tmp/nuevo/blens-config/migracion-cobros.sql');
 if (!$pdo->query("SHOW TABLES LIKE 'ajustes'")->fetch()) exit('Falta actualizar la base. En el servidor corré: sudo mysql < /tmp/nuevo/blens-config/migracion-4.sql');
 if (!$pdo->query("SHOW COLUMNS FROM trabajos LIKE 'entrega_id'")->fetch()) exit('Falta actualizar la base. En el servidor corré: sudo mysql < /tmp/nuevo/blens-config/migracion-5.sql');
-$mp = $pdo->query("SELECT valor FROM ajustes WHERE clave='modo_prueba'")->fetchColumn() === '1' ? 1 : 0;
+$mp = modo_prueba($pdo);
 $ok = $_SESSION['flash'] ?? ''; unset($_SESSION['flash']); $err = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!hash_equals($_SESSION['t'], (string)($_POST['t'] ?? ''))) { http_response_code(400); exit('Sesión vencida. Recargá la página.'); }
     $a = $_POST['a'] ?? ''; $c = (int)($_POST['cid'] ?? 0);
     try {
         if ($a === 'modo') { $pdo->prepare("INSERT INTO ajustes (clave,valor) VALUES ('modo_prueba',?) ON DUPLICATE KEY UPDATE valor=VALUES(valor)")->execute([$mp ? '0' : '1']); $_SESSION['flash'] = 'Modo prueba ' . ($mp ? 'desactivado: ahora lo que cargues se guarda de verdad.' : 'activado.'); header('Location: ' . ($c ? "cobros.php?c=$c" : 'cobros.php')); exit; }
-        if ($a === 'borrar_pruebas') { $pdo->exec('DELETE FROM recibos WHERE prueba=1'); $pdo->exec('DELETE FROM trabajos WHERE prueba=1'); $_SESSION['flash'] = 'Datos de prueba borrados (trabajos y recibos).'; header('Location: ' . ($c ? "cobros.php?c=$c" : 'cobros.php')); exit; }
+        if ($a === 'borrar_pruebas') { $pdo->exec('DELETE FROM recibos WHERE prueba=1'); $pdo->exec('DELETE FROM trabajos WHERE prueba=1'); $pdo->exec('DELETE FROM gastos WHERE prueba=1'); $_SESSION['flash'] = 'Datos de prueba borrados (trabajos, recibos y gastos).'; header('Location: ' . ($c ? "cobros.php?c=$c" : 'cobros.php')); exit; }
         $s = $pdo->prepare('SELECT * FROM clientes WHERE id=?'); $s->execute([$c]); $cl = $s->fetch();
         if (!$cl) throw new RuntimeException('Cliente inexistente.');
         if ($a === 'trabajo') {
             $f = (string)($_POST['fecha'] ?? ''); if (!fecha_ok($f)) throw new RuntimeException('Fecha inválida.');
             $tipo = (string)($_POST['tipo'] ?? 'otro'); if (!isset(TIPOS[$tipo])) $tipo = 'otro';
-            $det = mb_substr(trim((string)($_POST['detalle'] ?? '')), 0, 200); $cant = max(1, min(999, (int)($_POST['cantidad'] ?? 1))); $cero = isset($_POST['cero']); $mon = $cero ? 0 : (int)preg_replace('/\D/', '', (string)($_POST['monto'] ?? '0'));
+            $det = mb_substr(trim((string)($_POST['detalle'] ?? '')), 0, 200); $cant = max(1, min(999, (int)($_POST['cantidad'] ?? 1))); $cero = isset($_POST['cero']); $mon = $cero ? 0.0 : round((float)str_replace(',', '.', trim((string)($_POST['monto'] ?? '0'))), 2);
+            if (!$cero && $mon <= 0) throw new RuntimeException('El precio unitario tiene que ser mayor a cero.');
             $est = $cero || ($_POST['estado'] ?? 'pendiente') === 'cobrado' ? 'cobrado' : 'pendiente'; $med = null; $fpg = null;
             if ($est === 'cobrado') { $med = $cero ? 'otro' : (string)($_POST['medio'] ?? ''); if (!isset(MEDIOS[$med])) { if ($cero) $med = 'otro'; else throw new RuntimeException('Elegí cómo te pagaron.'); } $fpg = (string)($_POST['fecha_pago'] ?? '') ?: $f; if (!fecha_ok($fpg)) throw new RuntimeException('Fecha de pago inválida.'); }
             $ei = (int)($_POST['entrega_id'] ?? 0) ?: null; $pi = (int)($_POST['proyecto_id'] ?? 0) ?: null;
@@ -31,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare('INSERT INTO trabajos (cliente_id,fecha,tipo,detalle,cantidad,monto_unit,prueba,estado,medio,fecha_pago,entrega_id,proyecto_id,comprobante) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')->execute([$c, $f, $tipo, $det, $cant, $mon, $mp, $est, $med, $fpg, $ei, $pi, $comp]);
             $_SESSION['flash'] = 'Trabajo registrado.';
         } elseif ($a === 'cobro_rapido') {
-            $det = mb_substr(trim((string)($_POST['concepto'] ?? '')), 0, 200); $mon = (int)preg_replace('/\D/', '', (string)($_POST['monto'] ?? '0'));
+            $det = mb_substr(trim((string)($_POST['concepto'] ?? '')), 0, 200); $mon = round((float)str_replace(',', '.', trim((string)($_POST['monto'] ?? '0'))), 2);
             if ($det === '') throw new RuntimeException('Escribí el concepto del cobro.');
             if ($mon <= 0) throw new RuntimeException('El monto tiene que ser mayor a cero.');
             $est = ($_POST['estado'] ?? 'pendiente') === 'cobrado' ? 'cobrado' : 'pendiente'; $med = null; $fpg = null;
@@ -45,14 +46,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else $_SESSION['flash'] = 'Cobro registrado.';
         } elseif ($a === 'marcar_cobrado') {
             $id = (int)($_POST['id'] ?? 0);
-            $s = $pdo->prepare("SELECT * FROM trabajos WHERE id=? AND cliente_id=? AND estado='pendiente' AND recibo_id IS NULL"); $s->execute([$id, $c]);
+            $s = $pdo->prepare("SELECT * FROM trabajos WHERE id=? AND cliente_id=? AND estado='pendiente' AND recibo_id IS NULL AND prueba=?"); $s->execute([$id, $c, $mp]);
             if (!$tr = $s->fetch()) throw new RuntimeException('Ese trabajo ya no está pendiente.');
             $med = (string)($_POST['medio'] ?? 'transferencia'); if (!isset(MEDIOS[$med])) $med = 'transferencia';
             $fpg = (string)($_POST['fecha_pago'] ?? '') ?: date('Y-m-d'); if (!fecha_ok($fpg)) throw new RuntimeException('Fecha de pago inválida.');
             $comp = comprobante_subir();
             $pdo->prepare("UPDATE trabajos SET estado='cobrado',medio=?,fecha_pago=?,comprobante=COALESCE(?,comprobante) WHERE id=?")->execute([$med, $fpg, $comp, $id]);
             if ($comp) comprobante_borrar((string)($tr['comprobante'] ?? ''));
-            $mon = (int)$tr['cantidad'] * (int)$tr['monto_unit'];
+            $mon = (float)$tr['cantidad'] * (float)$tr['monto_unit'];
             if (isset($_POST['sumar_saldo'])) {
                 set_ajuste($pdo, 'saldo_cuenta', (string)(saldo_cuenta($pdo) + $mon));
                 set_ajuste($pdo, 'tna_ultima_fecha', date('Y-m-d'));
@@ -66,8 +67,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['flash'] = 'Datos de cobro guardados.';
         } elseif ($a === 'del_trabajo') {
             $tid = (int)($_POST['id'] ?? 0);
-            $s = $pdo->prepare('SELECT comprobante FROM trabajos WHERE id=? AND cliente_id=? AND recibo_id IS NULL'); $s->execute([$tid, $c]); $comp = $s->fetchColumn();
-            $pdo->prepare('DELETE FROM trabajos WHERE id=? AND cliente_id=? AND recibo_id IS NULL')->execute([$tid, $c]);
+            $s = $pdo->prepare('SELECT comprobante FROM trabajos WHERE id=? AND cliente_id=? AND recibo_id IS NULL AND prueba=?'); $s->execute([$tid, $c, $mp]); $comp = $s->fetchColumn();
+            $pdo->prepare('DELETE FROM trabajos WHERE id=? AND cliente_id=? AND recibo_id IS NULL AND prueba=?')->execute([$tid, $c, $mp]);
             if ($comp) comprobante_borrar((string)$comp);
             $_SESSION['flash'] = 'Trabajo quitado.';
         } elseif ($a === 'cobrar') {
@@ -75,9 +76,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$ids) throw new RuntimeException('Elegí al menos un trabajo pendiente.');
             $medio = (string)($_POST['medio'] ?? ''); if (!isset(MEDIOS[$medio])) throw new RuntimeException('Elegí cómo te pagaron.');
             $fp = (string)($_POST['fecha_pago'] ?? ''); if (!fecha_ok($fp)) throw new RuntimeException('Fecha de pago inválida.');
-            $q = $pdo->prepare("SELECT * FROM trabajos WHERE cliente_id=? AND estado='pendiente' AND id IN (" . implode(',', array_fill(0, count($ids), '?')) . ')'); $q->execute(array_merge([$c], $ids)); $rows = $q->fetchAll();
+            $q = $pdo->prepare("SELECT * FROM trabajos WHERE cliente_id=? AND estado='pendiente' AND prueba=? AND id IN (" . implode(',', array_fill(0, count($ids), '?')) . ')'); $q->execute(array_merge([$c, $mp], $ids)); $rows = $q->fetchAll();
             if (!$rows) throw new RuntimeException('Esos trabajos ya no están pendientes.');
-            $tot = 0; $ms = []; foreach ($rows as $r) { $tot += $r['cantidad'] * $r['monto_unit']; $ms[mes($r['fecha'])] = 1; }
+            $tot = 0; $ms = []; foreach ($rows as $r) { $tot += (float)$r['cantidad'] * (float)$r['monto_unit']; $ms[mes($r['fecha'])] = 1; }
+            $tot = round($tot, 2);
             $pdo->beginTransaction();
             $pr = $mp; foreach ($rows as $r) if (!empty($r['prueba'])) $pr = 1;
             $nq = $pdo->prepare('SELECT COALESCE(MAX(numero),0)+1 FROM recibos WHERE prueba=?'); $nq->execute([$pr]); $num = (int)$nq->fetchColumn();
@@ -106,12 +108,12 @@ if ($vc) { $s = $pdo->prepare('SELECT * FROM clientes WHERE id=?'); $s->execute(
 <div class="<?= $mp ? 'ok' : 'err' ?>"><b>Modo prueba: <?= $mp ? 'ACTIVADO' : 'DESACTIVADO' ?>.</b> <?= $mp ? 'Los trabajos y recibos que cargues quedan marcados como PRUEBA, no ocupan la numeración real y se pueden borrar.' : 'Lo que cargues ahora se guarda de verdad.' ?>
 <div class="row"><form method="post"><input type="hidden" name="a" value="modo"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)($cl['id'] ?? 0) ?>"><button class="g"><?= $mp ? 'Salir del modo prueba' : 'Activar modo prueba' ?></button></form>
 <form method="post"><input type="hidden" name="a" value="borrar_pruebas"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)($cl['id'] ?? 0) ?>"><label class="chk"><input type="checkbox" required>Confirmo borrar los datos de prueba <span class="req">* obligatorio</span></label><button class="r">Borrar datos de prueba</button></form></div></div>
-<?php if (!$cl): $rows = $pdo->query("SELECT c.id,c.empresa,c.nombre, COALESCE(SUM(CASE WHEN t.estado='pendiente' THEN t.cantidad*t.monto_unit END),0) AS pend, COALESCE(SUM(CASE WHEN t.estado='cobrado' THEN t.cantidad*t.monto_unit END),0) AS cobrado, COUNT(t.id) AS ntrab FROM clientes c LEFT JOIN trabajos t ON t.cliente_id=c.id GROUP BY c.id ORDER BY c.empresa,c.nombre")->fetchAll(); $tp = $tc = 0; ?>
+<?php if (!$cl): $ql = $pdo->prepare("SELECT c.id,c.empresa,c.nombre, COALESCE(SUM(CASE WHEN t.estado='pendiente' THEN t.cantidad*t.monto_unit END),0) AS pend, COALESCE(SUM(CASE WHEN t.estado='cobrado' THEN t.cantidad*t.monto_unit END),0) AS cobrado, COUNT(t.id) AS ntrab FROM clientes c LEFT JOIN trabajos t ON t.cliente_id=c.id AND t.prueba=? GROUP BY c.id ORDER BY c.empresa,c.nombre"); $ql->execute([$mp]); $rows = $ql->fetchAll(); $tp = $tc = 0.0; ?>
 <h1>Cobros</h1><table class="cards"><tr><th>Cliente</th><th>Trabajos</th><th>Pendiente</th><th>Cobrado</th><th></th></tr>
-<?php foreach ($rows as $r): $tp += $r['pend']; $tc += $r['cobrado']; ?><tr><td data-label="Cliente"><?= $e($r['empresa'] ?: $r['nombre']) ?></td><td data-label="Trabajos"><?= (int)$r['ntrab'] ?></td><td data-label="Pendiente"><?= $e(peso((int)$r['pend'])) ?></td><td data-label="Cobrado"><?= $e(peso((int)$r['cobrado'])) ?></td><td data-label=""><a class="btn g" href="?c=<?= (int)$r['id'] ?>">Abrir</a></td></tr><?php endforeach; if (!$rows) echo '<tr><td colspan="5" class="mut">Primero agregá clientes.</td></tr>'; ?>
+<?php foreach ($rows as $r): $tp += (float)$r['pend']; $tc += (float)$r['cobrado']; ?><tr><td data-label="Cliente"><?= $e($r['empresa'] ?: $r['nombre']) ?></td><td data-label="Trabajos"><?= (int)$r['ntrab'] ?></td><td data-label="Pendiente"><?= $e(peso((float)$r['pend'])) ?></td><td data-label="Cobrado"><?= $e(peso((float)$r['cobrado'])) ?></td><td data-label=""><a class="btn g" href="?c=<?= (int)$r['id'] ?>">Abrir</a></td></tr><?php endforeach; if (!$rows) echo '<tr><td colspan="5" class="mut">Primero agregá clientes.</td></tr>'; ?>
 <tr><th>Total</th><th></th><th><?= $e(peso($tp)) ?></th><th><?= $e(peso($tc)) ?></th><th></th></tr></table>
 <?php else:
-$s = $pdo->prepare('SELECT * FROM recibos WHERE cliente_id=? ORDER BY id DESC LIMIT 20'); $s->execute([$cl['id']]); $recs = $s->fetchAll(); $tp = 0;
+$s = $pdo->prepare('SELECT * FROM recibos WHERE cliente_id=? AND prueba=? ORDER BY id DESC LIMIT 20'); $s->execute([$cl['id'], $mp]); $recs = $s->fetchAll();
 $tipoOpts = '<option value="video" data-m="' . (int)$cl['tarifa_video'] . '">Video</option><option value="foto" data-m="' . (int)$cl['tarifa_foto'] . '">Foto</option><option value="otro" data-m="0">Otro</option>';
 $det = [];
 $q = $pdo->prepare('SELECT en.id,en.titulo,en.creado,en.proyecto_id FROM entregas en WHERE en.cliente_id=? AND en.proyecto_id IS NULL AND NOT EXISTS (SELECT 1 FROM trabajos t WHERE t.entrega_id = en.id) ORDER BY en.id DESC'); $q->execute([$cl['id']]);
@@ -119,9 +121,11 @@ foreach ($q as $x) $det[] = ['k' => 'entrega', 'id' => (int)$x['id'], 't' => $x[
 $q = $pdo->prepare("SELECT p.id,p.titulo,p.creado FROM proyectos p WHERE p.cliente_id=? AND p.categoria <> 'showreel' AND NOT EXISTS (SELECT 1 FROM trabajos t WHERE t.proyecto_id = p.id) AND NOT EXISTS (SELECT 1 FROM entregas en JOIN trabajos t ON t.entrega_id = en.id WHERE en.proyecto_id = p.id AND en.cliente_id = ?) ORDER BY p.id DESC"); $q->execute([$cl['id'], $cl['id']]);
 foreach ($q as $x) $det[] = ['k' => 'proyecto', 'id' => (int)$x['id'], 't' => $x['titulo'], 'f' => substr($x['creado'], 0, 10)];
 $alias = ajuste($pdo, 'alias_cobro'); $cbu = ajuste($pdo, 'cbu_cobro');
-$s = $pdo->prepare('SELECT * FROM trabajos WHERE cliente_id=? ORDER BY fecha DESC,id DESC LIMIT 150'); $s->execute([$cl['id']]); $movs = $s->fetchAll();
-$tpend = 0; $tcob = 0; $ntrab = 0; $pend = [];
-foreach ($movs as $r) { $ntrab++; $sub = (int)$r['cantidad'] * (int)$r['monto_unit']; if ($r['estado'] === 'cobrado') $tcob += $sub; else { $tpend += $sub; $pend[] = $r; } }
+$s = $pdo->prepare('SELECT * FROM trabajos WHERE cliente_id=? AND prueba=? ORDER BY fecha DESC,id DESC LIMIT 150'); $s->execute([$cl['id'], $mp]); $movs = $s->fetchAll();
+$sk = $pdo->prepare("SELECT COALESCE(SUM(CASE WHEN estado='cobrado' THEN cantidad*monto_unit END),0) AS cob, COALESCE(SUM(CASE WHEN estado='pendiente' THEN cantidad*monto_unit END),0) AS pend, COUNT(*) AS n FROM trabajos WHERE cliente_id=? AND prueba=?");
+$sk->execute([$cl['id'], $mp]); $k = $sk->fetch();
+$tcob = round((float)$k['cob'], 2); $tpend = round((float)$k['pend'], 2); $ntrab = (int)$k['n'];
+$qp = $pdo->prepare("SELECT * FROM trabajos WHERE cliente_id=? AND prueba=? AND estado='pendiente' ORDER BY fecha,id"); $qp->execute([$cl['id'], $mp]); $pend = $qp->fetchAll();
 $resumen = resumen_cobro($cl, $pend, $tpend, $alias, $cbu);
 $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], $resumen) : null;
 ?>
@@ -156,12 +160,12 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
 <?php if (!$movs): ?><p class="mut">Todavía no hay movimientos para este cliente.</p><?php else: ?>
 <form id="fdel" method="post"><input type="hidden" name="a" value="del_trabajo"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>"></form>
 <div class="mvs">
-<?php foreach ($movs as $r): $sub = (int)$r['cantidad'] * (int)$r['monto_unit']; $cob = $r['estado'] === 'cobrado'; $ff = (string)($cob ? ($r['fecha_pago'] ?: $r['fecha']) : $r['fecha']); ?>
+<?php foreach ($movs as $r): $sub = (float)$r['cantidad'] * (float)$r['monto_unit']; $cob = $r['estado'] === 'cobrado'; $ff = (string)($cob ? ($r['fecha_pago'] ?: $r['fecha']) : $r['fecha']); ?>
 <div class="mv">
   <div class="mv-l">
     <span class="badge <?= $cob ? 'ok' : 'pend' ?>"><?= $cob ? 'Cobrado' : 'Pendiente' ?></span>
     <b><?= $e($r['detalle'] ?: (TIPOS[$r['tipo']] ?? $r['tipo'])) ?></b>
-    <span class="mut"><?= $e(date('d/m/Y', strtotime($ff))) ?><?= $r['medio'] ? ' · ' . $e(MEDIOS[$r['medio']] ?? (string)$r['medio']) : '' ?><?= (int)$r['cantidad'] > 1 ? ' · ' . (int)$r['cantidad'] . ' × ' . $e(peso((int)$r['monto_unit'])) : '' ?></span>
+    <span class="mut"><?= $e(date('d/m/Y', strtotime($ff))) ?><?= $r['medio'] ? ' · ' . $e(MEDIOS[$r['medio']] ?? (string)$r['medio']) : '' ?><?= (int)$r['cantidad'] > 1 ? ' · ' . (int)$r['cantidad'] . ' × ' . $e(peso((float)$r['monto_unit'])) : '' ?></span>
   </div>
   <div class="mv-r">
     <b class="<?= $cob ? 'ok-t' : 'warn-t' ?>"><?= $e(peso($sub)) ?></b>
@@ -185,7 +189,7 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
 <form method="post"><input type="hidden" name="a" value="cobrar"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>">
 <p class="mut"><label class="chk"><input type="checkbox" id="todos" aria-label="Elegir todos"> Elegir todos los pendientes</label></p>
 <table class="cards"><tr><th></th><th>Fecha</th><th>Detalle</th><th>Subtotal</th><th></th></tr>
-<?php foreach ($pend as $r): $sub = (int)$r['cantidad'] * (int)$r['monto_unit']; ?><tr><td data-label=""><input class="sel" type="checkbox" name="ids[]" value="<?= (int)$r['id'] ?>"></td><td class="mut" data-label="Fecha"><?= $e(date('d/m/Y', strtotime($r['fecha']))) ?></td><td data-label="Detalle"><?= $e($r['detalle'] ?: TIPOS[$r['tipo']]) ?><br><span class="mut"><?= (int)$r['cantidad'] ?> × <?= $e(peso((int)$r['monto_unit'])) ?></span></td><td data-label="Subtotal"><?= $e(peso($sub)) ?></td><td data-label=""><button class="g" form="fdel" name="id" value="<?= (int)$r['id'] ?>">Quitar</button></td></tr><?php endforeach; ?>
+<?php foreach ($pend as $r): $sub = (float)$r['cantidad'] * (float)$r['monto_unit']; ?><tr><td data-label=""><input class="sel" type="checkbox" name="ids[]" value="<?= (int)$r['id'] ?>"></td><td class="mut" data-label="Fecha"><?= $e(date('d/m/Y', strtotime($r['fecha']))) ?></td><td data-label="Detalle"><?= $e($r['detalle'] ?: TIPOS[$r['tipo']]) ?><br><span class="mut"><?= (int)$r['cantidad'] ?> × <?= $e(peso((float)$r['monto_unit'])) ?></span></td><td data-label="Subtotal"><?= $e(peso($sub)) ?></td><td data-label=""><button class="g" form="fdel" name="id" value="<?= (int)$r['id'] ?>">Quitar</button></td></tr><?php endforeach; ?>
 <tr><th></th><th></th><th>Total pendiente</th><th><?= $e(peso($tpend)) ?></th><th></th></tr></table>
 <div class="f"><label><span class="lbl">Cómo pagó <span class="req">* obligatorio</span></span><select name="medio"><?php foreach (MEDIOS as $k => $n) echo '<option value="' . $k . '">' . $e($n) . '</option>'; ?></select></label><label><span class="lbl">Fecha de pago <span class="req">* obligatorio</span></span><input type="date" name="fecha_pago" value="<?= date('Y-m-d') ?>" required></label>
 <p class="mut full">Tildá los trabajos que querés incluir. Si no tildás ninguno, el ticket incluye todos los pendientes.</p>
@@ -213,5 +217,5 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
 <label><span class="lbl">Si ya cobraste: medio <span class="req">* obligatorio si elegís «Ya cobrado»</span></span><select name="medio"><?php foreach (MEDIOS as $k => $n) echo '<option value="' . $k . '">' . $e($n) . '</option>'; ?></select></label>
 <div class="row full"><button>Registrar como trabajo</button><button class="g" name="cero" value="1" formnovalidate>Registrar en $0 (histórico)</button></div></form><?php endforeach; ?>
 <h2>Recibos</h2><table class="cards"><tr><th>N°</th><th>Fecha</th><th>Período</th><th>Total</th><th></th></tr>
-<?php foreach ($recs as $r): ?><tr><td data-label="N°"><?= $e(nro($r)) ?></td><td class="mut" data-label="Fecha"><?= $e(date('d/m/Y', strtotime($r['fecha']))) ?> · <?= $e(MEDIOS[$r['medio']] ?? $r['medio']) ?></td><td data-label="Período"><?= $e($r['periodo']) ?></td><td data-label="Total"><?= $e(peso((int)$r['total'])) ?></td><td data-label=""><a class="btn g" href="recibo.php?id=<?= (int)$r['id'] ?>">Ver / imprimir</a></td></tr><?php endforeach; if (!$recs) echo '<tr><td colspan="5" class="mut">Todavía no hay recibos.</td></tr>'; ?></table>
-<?php endif; ?><script src="admin.js?v=19"></script></body></html>
+<?php foreach ($recs as $r): ?><tr><td data-label="N°"><?= $e(nro($r)) ?></td><td class="mut" data-label="Fecha"><?= $e(date('d/m/Y', strtotime($r['fecha']))) ?> · <?= $e(MEDIOS[$r['medio']] ?? $r['medio']) ?></td><td data-label="Período"><?= $e($r['periodo']) ?></td><td data-label="Total"><?= $e(peso((float)$r['total'])) ?></td><td data-label=""><a class="btn g" href="recibo.php?id=<?= (int)$r['id'] ?>">Ver / imprimir</a></td></tr><?php endforeach; if (!$recs) echo '<tr><td colspan="5" class="mut">Todavía no hay recibos.</td></tr>'; ?></table>
+<?php endif; ?><script src="admin.js?v=20"></script></body></html>

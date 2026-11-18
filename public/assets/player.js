@@ -9,7 +9,7 @@
   };
   const fmt = t => { t = Math.max(0, Math.floor(t || 0)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
   document.querySelectorAll('.cvw').forEach(w => {
-    const v = w.querySelector('video'); v.controls = false;
+    const v = w.querySelector('video'); if (!v) return; v.controls = false;
     w.insertAdjacentHTML('beforeend', `<button type="button" class="cv-big" aria-label="Reproducir">${I.play}</button><div class="cv-bar"><button type="button" class="cv-b cv-pp" aria-label="Reproducir o pausar">${I.play}${I.pause}</button><span class="cv-time">0:00 / 0:00</span><div class="cv-prog" role="slider" tabindex="0" aria-label="Progreso" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div><button type="button" class="cv-b cv-mu" aria-label="Sonido">${I.vol}${I.mute}</button><button type="button" class="cv-b cv-fs" aria-label="Pantalla completa">${I.fs}</button></div><button type="button" class="cv-snd" hidden>Tocar para activar el sonido</button>`);
     const $ = s => w.querySelector(s), snd = $('.cv-snd'), prog = $('.cv-prog'), bar = $('.cv-prog i'), tm = $('.cv-time');
     const load = () => { if (!v.dataset.ready) { const s = v.querySelectorAll('source[data-src]'); s.forEach(x => { if (!x.src) x.src = x.dataset.src; }); if (s.length) v.load(); v.dataset.ready = 1; } };

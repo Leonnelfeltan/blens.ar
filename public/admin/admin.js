@@ -202,7 +202,12 @@ document.querySelectorAll('[data-cerrar]').forEach(b => b.addEventListener('clic
   if (!dlg) return;
   if (dlg.close) dlg.close(); else dlg.removeAttribute('open');
 }));
-if (document.querySelector('[data-proc]')) setTimeout(() => location.reload(), 8000);
+const procReloadKey = 'blens_proc_reloads';
+if (document.querySelector('[data-proc]')) {
+  const n = parseInt(sessionStorage.getItem(procReloadKey) || '0', 10) || 0;
+  if (n < 15) { sessionStorage.setItem(procReloadKey, String(n + 1)); setTimeout(() => location.reload(), 8000); }
+  else aviso('El procesamiento sigue en marcha. Dejá la página abierta y volvé a revisar en unos minutos.');
+} else sessionStorage.removeItem(procReloadKey);
 
 // ---- Cobros: habilitar el saldo solo cuando el cobro está cobrado ----
 const cobroEstado = document.querySelector('[data-estado]');

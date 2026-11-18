@@ -7,7 +7,7 @@ session_set_cookie_params(['httponly' => true, 'samesite' => 'Strict', 'secure' 
 session_start();
 header('X-Robots-Tag: noindex'); header('Cache-Control: no-store'); header('X-Frame-Options: DENY');
 
-$cfg = blens_cfg(); $pdo = blens_db();
+$cfg = blens_cfg(); $pdo = blens_db(); $mp = modo_prueba($pdo);
 blens_migrar();                                          // migración automática (columnas nuevas y tabla de gastos)
 $agN = agenda_pendientes($pdo);
 if (!empty($_SESSION['ok'])) blens_acreditar_tna($pdo);  // acreditación diaria de intereses (idempotente)
@@ -110,7 +110,7 @@ if ($post) {
         try {
             if ($a === 'logout') { session_destroy(); header('Location: ./'); exit; }
             if ($a === 'saldo') {
-                $sal = (int)preg_replace('/\D/', '', (string)($_POST['saldo_cuenta'] ?? '0'));
+                $sal = round((float)str_replace(',', '.', trim((string)($_POST['saldo_cuenta'] ?? '0'))), 2);
                 $tna = (float)str_replace(',', '.', trim((string)($_POST['tna_cuenta'] ?? '0')));
                 if ($tna < 0 || $tna > 100) throw new RuntimeException('La TNA tiene que estar entre 0 y 100.');
                 set_ajuste($pdo, 'saldo_cuenta', (string)$sal);
@@ -120,7 +120,7 @@ if ($post) {
             }
             if ($a === 'gasto_add') {
                 $con = mb_substr(trim((string)($_POST['concepto'] ?? '')), 0, 160);
-                $mon = (int)preg_replace('/\D/', '', (string)($_POST['monto'] ?? '0'));
+                $mon = round((float)str_replace(',', '.', trim((string)($_POST['monto'] ?? '0'))), 2);
                 $f = (string)($_POST['fecha'] ?? date('Y-m-d'));
                 $dx = DateTime::createFromFormat('Y-m-d', $f);
                 if (!$dx || $dx->format('Y-m-d') !== $f) throw new RuntimeException('Fecha inválida.');
@@ -128,7 +128,7 @@ if ($post) {
                 if ($mon <= 0) throw new RuntimeException('El monto tiene que ser mayor a cero.');
                 $cat = mb_substr(trim((string)($_POST['categoria'] ?? 'general')), 0, 60) ?: 'general';
                 $comp = comprobante_subir();
-                $pdo->prepare('INSERT INTO gastos (fecha,concepto,categoria,monto,comprobante) VALUES (?,?,?,?,?)')->execute([$f, $con, $cat, $mon, $comp]);
+                $pdo->prepare('INSERT INTO gastos (fecha,concepto,categoria,monto,prueba,comprobante) VALUES (?,?,?,?,?,?)')->execute([$f, $con, $cat, $mon, $mp, $comp]);
                 if (isset($_POST['descontar'])) set_ajuste($pdo, 'saldo_cuenta', (string)max(0, saldo_cuenta($pdo) - $mon));
                 fin('./?ok=1#finanzas');
             }
@@ -138,7 +138,7 @@ if ($post) {
                 if ($g) {
                     $pdo->prepare('DELETE FROM gastos WHERE id=?')->execute([$gid]);
                     comprobante_borrar((string)($g['comprobante'] ?? ''));
-                    if (isset($_POST['devolver'])) set_ajuste($pdo, 'saldo_cuenta', (string)(saldo_cuenta($pdo) + (int)$g['monto']));
+                    if (isset($_POST['devolver'])) set_ajuste($pdo, 'saldo_cuenta', (string)(saldo_cuenta($pdo) + (float)$g['monto']));
                 }
                 fin('./?ok=1#finanzas');
             }
@@ -336,7 +336,7 @@ $urlMes = fn(string $m): string => './?' . ($view !== 'proyectos' ? 'v=' . rawur
     <div class="kpi"><span class="k">Ganancia neta de <?= $e($mesTxt) ?></span><b class="<?= $neto < 0 ? 'warn' : '' ?>"><?= $e(peso($neto)) ?></b><span class="mut">cobrado menos gastos</span></div>
     <div class="kpi"><span class="k">Saldo en cuenta</span><b><?= $e(peso($saldo)) ?></b>
       <?php if ($tna > 0): ?><span class="chip-r">+<?= $e(peso($rend['diario'])) ?>/día · ~<?= $e(peso($rend['mensual'])) ?>/mes (TNA <?= $e($tnaTxt) ?>%)</span>
-        <span class="mut">Rendido en el mes: +<?= $e(peso((int)round($rendidoMes))) ?></span>
+        <span class="mut">Rendido en el mes: +<?= $e(peso(round($rendidoMes, 2))) ?></span>
       <?php else: ?><span class="mut">cargá tu TNA para ver el rendimiento</span><?php endif; ?></div>
   </div>
   <details class="accd" <?= isset($_GET['d']) || isset($_GET['g']) ? 'open' : '' ?>><summary>Saldo en cuenta, TNA y gastos de <?= $e($mesTxt) ?></summary>
@@ -360,7 +360,7 @@ $urlMes = fn(string $m): string => './?' . ($view !== 'proyectos' ? 'v=' . rawur
           <label class="chk"><input type="checkbox" name="descontar" checked> Descontar el gasto del saldo en cuenta</label></form>
         <div class="gastos">
         <?php foreach ($gastos as $g): ?><div class="gasto"><span><b><?= $e($g['concepto']) ?></b><br><span class="mut"><?= $e(date('d/m/Y', strtotime((string)$g['fecha']))) ?> · <?= $e($g['categoria']) ?></span></span>
-          <span><?= $e(peso((int)$g['monto'])) ?>
+          <span><?= $e(peso((float)$g['monto'])) ?>
           <?php if (!empty($g['comprobante'])) echo comprobante_boton('gasto', (int)$g['id']); ?>
           <form method="post"><input type="hidden" name="a" value="gasto_del"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>"><input type="hidden" name="id" value="<?= (int)$g['id'] ?>"><label class="chk" title="Devolver el monto al saldo"><input type="checkbox" name="devolver"> +saldo</label><button title="Eliminar gasto">✕</button></form></span></div>
         <?php endforeach; if (!$gastos) echo '<p class="mut">Todavía no cargaste gastos este mes.</p>'; ?>
@@ -517,4 +517,4 @@ $card = function (array $r, bool $drag) use ($cats, $e, $fbs): void { $est = $r[
 <div class="plist plist-portfolio" id="portfolio-list" data-t="<?= $e($_SESSION['t']) ?>">
 <?php foreach ($port as $r) $card($r, true); if (!$port) echo '<p class="mut">Todavía no cargaste proyectos del portfolio.</p>'; ?>
 </div>
-<?php endif; endif; ?><script src="admin.js?v=19"></script></body></html>
+<?php endif; endif; ?><script src="admin.js?v=20"></script></body></html>

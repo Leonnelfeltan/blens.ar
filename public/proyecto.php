@@ -47,4 +47,4 @@ $video = ($p['video_1080'] ?? null) ?: ($p['video_mp4'] ?? null) ?: ($p['video_4
   <div class="cta2"><p>¿Querés algo así para tu empresa?</p><a class="btn" href="./#contacto">Contanos tu proyecto</a></div>
 </main>
 <footer class="foot"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span><span class="loc">Posadas, Misiones · Argentina</span><span class="mut">© 2026 blens.ar</span></footer>
-<script src="assets/fonts.js?v=1" defer></script><script src="assets/player.js?v=11" defer></script><script src="assets/nav.js?v=2" defer></script></body></html>
+<script src="assets/fonts.js?v=1" defer></script><script src="assets/player.js?v=12" defer></script><script src="assets/nav.js?v=2" defer></script></body></html>

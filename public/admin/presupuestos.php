@@ -17,11 +17,11 @@ function presu_cliente(PDO $pdo, array $p): array {
     $rows = $pdo->query('SELECT id,nombre,empresa,telefono FROM clientes')->fetchAll();
     foreach ($rows as $r) {
         $rt = preg_replace('/\D+/', '', (string)($r['telefono'] ?? '')) ?? '';
-        if ($tel !== '' && $rt === $tel) return [(int)$r['id'], false];
+        if ($tel !== '' && $rt === $tel) return ['id' => (int)$r['id'], 'creado' => false, 'usuario' => '', 'clave' => ''];
     }
     foreach ($rows as $r) {
         if (mb_strtolower(trim((string)$r['nombre'])) === mb_strtolower($nombre)
-            && ($empresa === '' || mb_strtolower(trim((string)$r['empresa'])) === mb_strtolower($empresa))) return [(int)$r['id'], false];
+            && ($empresa === '' || mb_strtolower(trim((string)$r['empresa'])) === mb_strtolower($empresa))) return ['id' => (int)$r['id'], 'creado' => false, 'usuario' => '', 'clave' => ''];
     }
     $base = mb_strtolower($nombre, 'UTF-8');
     $base = strtr($base, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u', 'ñ' => 'n']);
@@ -35,9 +35,10 @@ function presu_cliente(PDO $pdo, array $p): array {
         $usuario = $base . (++$i);
         if (strlen($usuario) > 60) $usuario = substr($base, 0, 50) . $i;
     }
+    $clave = blens_clave_nueva();
     $pdo->prepare('INSERT INTO clientes (nombre,empresa,usuario,clave_hash,telefono,activo,cambiar_clave,clave_inicial_hasta) VALUES (?,?,?,?,?,1,1,DATE_ADD(NOW(), INTERVAL 7 DAY))')
-        ->execute([$nombre, $empresa, $usuario, password_hash(blens_clave_nueva(), PASSWORD_DEFAULT), trim((string)($p['telefono'] ?? ''))]);
-    return [(int)$pdo->lastInsertId(), true];
+        ->execute([$nombre, $empresa, $usuario, password_hash($clave, PASSWORD_DEFAULT), trim((string)($p['telefono'] ?? ''))]);
+    return ['id' => (int)$pdo->lastInsertId(), 'creado' => true, 'usuario' => $usuario, 'clave' => $clave];
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -91,18 +92,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $items = presu_items((string)$p['items_json']); $total = presu_total($items);
             if (!$items || $total <= 0) throw new RuntimeException('El presupuesto no tiene ítems válidos.');
-            $prueba = ajuste($pdo, 'modo_prueba', '0') === '1' ? 1 : 0;
+            $prueba = modo_prueba($pdo);
             $detalle = mb_substr('Presupuesto ' . (string)$p['numero'] . ' · ' . (string)$p['cliente_nombre'], 0, 200);
             $pdo->beginTransaction();
             try {
-                [$cid, $creado] = presu_cliente($pdo, $p);
+                $cliente = presu_cliente($pdo, $p);
+                $cid = $cliente['id'];
                 $pdo->prepare("INSERT INTO trabajos (cliente_id,fecha,tipo,detalle,cantidad,monto_unit,prueba,estado) VALUES (?,?,?,?,1,?,?,'pendiente')")
-                    ->execute([$cid, date('Y-m-d'), 'otro', $detalle, (int)round($total), $prueba]);
+                    ->execute([$cid, date('Y-m-d'), 'otro', $detalle, round((float)$total, 2), $prueba]);
                 $tid = (int)$pdo->lastInsertId();
                 $pdo->prepare("UPDATE presupuestos SET estado='aceptado', trabajo_id=? WHERE id=?")->execute([$tid, $id]);
                 $pdo->commit();
             } catch (Throwable $x) { $pdo->rollBack(); throw $x; }
-            $_SESSION['flash'] = 'Presupuesto aceptado. Se creó un cobro pendiente por ' . presu_money($total) . ($creado ? '. Se creó también el cliente en Clientes.' : '.');
+            $_SESSION['flash'] = 'Presupuesto aceptado. Se creó un cobro pendiente por ' . presu_money($total)
+                . ($cliente['creado']
+                    ? '. Cliente nuevo: ' . $cliente['usuario'] . ' · clave temporal: ' . $cliente['clave'] . '. Entregala al cliente y pedile que la cambie al entrar.'
+                    : '.');
             header('Location: cobros.php?c=' . $cid); exit;
         }
     } catch (Throwable $x) {
@@ -169,4 +174,4 @@ $list = $pdo->query('SELECT p.*, t.cliente_id AS cobro_cliente_id FROM presupues
 <?php endforeach; ?>
 </table>
 <?php endif; ?>
-<script src="admin.js?v=19"></script></body></html>
+<script src="admin.js?v=20"></script></body></html>
