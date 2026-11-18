@@ -42,6 +42,21 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-confirm]');
   if (b && !confirm(b.dataset.confirm || '¿Confirmar?')) e.preventDefault();
 });
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-toggle]');
+  if (t) {
+    const box = document.querySelector(t.dataset.toggle);
+    if (box && 'open' in box) { box.open = !box.open; if (box.open) box.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+  }
+  const d = e.target.closest('[data-open-detalle]');
+  if (d) {
+    const box = document.querySelector(d.dataset.openDetalle);
+    if (box && 'open' in box) { box.open = true; box.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+  }
+});
+const abrirNuevo = () => { if (location.hash === '#nuevo') { const box = document.getElementById('nuevo'); if (box) box.open = true; } };
+abrirNuevo();
+window.addEventListener('hashchange', abrirNuevo);
 
 // ---- Imágenes para WhatsApp: tarjeta de acceso, ticket de cobro y recibo ----
 function bajar(b, nombre) { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = nombre; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
@@ -223,8 +238,9 @@ document.querySelectorAll('[data-importar]').forEach(b => b.addEventListener('cl
 }));
 document.querySelectorAll('[data-cerrar]').forEach(b => b.addEventListener('click', () => {
   const dlg = b.closest('dialog');
-  if (!dlg) return;
-  if (dlg.close) dlg.close(); else dlg.removeAttribute('open');
+  if (dlg) { if (dlg.close) dlg.close(); else dlg.removeAttribute('open'); return; }
+  const box = b.closest('details');
+  if (box) box.open = false;
 }));
 const procReloadKey = 'blens_proc_reloads';
 if (document.querySelector('[data-proc]')) {
@@ -240,13 +256,31 @@ if (cobroEstado && cobroSumar) {
   const updCobro = () => { const esCob = cobroEstado.value === 'cobrado'; cobroSumar.disabled = !esCob; cobroSumar.checked = esCob; };
   cobroEstado.addEventListener('change', updCobro); updCobro();
 }
+const movForm = document.querySelector('.mov-form');
+if (movForm) {
+  const mode = movForm.querySelector('[data-mov-mode]');
+  const action = movForm.querySelector('[data-mov-a]');
+  const label = movForm.querySelector('[data-mov-label]');
+  const submit = movForm.querySelector('[data-mov-submit]');
+  const cero = movForm.querySelector('[data-mov-cero]');
+  const updMov = () => {
+    const trabajo = mode.value === 'trabajo';
+    movForm.querySelectorAll('[data-mov-only]').forEach(x => x.hidden = x.dataset.movOnly !== mode.value);
+    if (action) action.value = trabajo ? 'trabajo' : 'cobro_rapido';
+    if (label) label.textContent = trabajo ? 'Precio unitario ($) * obligatorio' : 'Monto total ($) * obligatorio';
+    if (submit) submit.textContent = trabajo ? 'Registrar trabajo' : 'Registrar cobro';
+    if (cero) cero.hidden = !trabajo;
+    if (trabajo) { const tipo = movForm.querySelector('select.tipo-sel'); if (tipo) tipo.dispatchEvent(new Event('change')); }
+  };
+  mode.addEventListener('change', updMov); updMov();
+}
 // ---- Dashboard: cambiar de mes al elegir otro ----
 document.querySelectorAll('.msel input[type=month]').forEach(inp => inp.addEventListener('change', () => { if (inp.form) inp.form.submit(); }));
 document.querySelectorAll('[data-open-finanzas]').forEach(b => b.addEventListener('click', () => {
   const box = document.querySelector('.dash .accd'); if (!box) return;
   box.open = true;
   box.scrollIntoView({ block: 'start', behavior: 'smooth' });
-  const input = box.querySelector('input[name=concepto]');
+  const input = box.querySelector('input[name=detalle]') || box.querySelector('input[name=concepto]');
   if (input) setTimeout(() => input.focus(), 150);
 }));
 const pfSearch = document.getElementById('portfolio-search');

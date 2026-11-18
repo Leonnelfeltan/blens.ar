@@ -291,7 +291,7 @@ if ($post) {
 }
 $auth = !empty($_SESSION['ok']);
 ?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>Panel | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=26"></head><body>
+<title>Panel | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=27"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <?php if (!$auth): ?>
 <form class="login" method="post"><h1 class="lh"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span> · panel</h1>
@@ -301,7 +301,7 @@ $auth = !empty($_SESSION['ok']);
 <?php else:
 $view = $_GET['v'] ?? 'proyectos'; $edit = isset($_GET['e']) ? (int)$_GET['e'] : null; ?>
 <div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
-<nav><a href="./">Proyectos</a><a href="consultas.php">Consultas<?php if ($consN > 0): ?><span class="nav-badge soft"><?= $consN ?></span><?php endif; ?></a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros<?php if ($cobN > 0): ?><span class="nav-badge soft"><?= $cobN ?></span><?php endif; ?></a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a><a href="../" target="_blank" rel="noopener">Ver web</a></nav>
+<nav><a href="./">Inicio</a><a href="consultas.php">Consultas<?php if ($consN > 0): ?><span class="nav-badge soft"><?= $consN ?></span><?php endif; ?></a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros<?php if ($cobN > 0): ?><span class="nav-badge soft"><?= $cobN ?></span><?php endif; ?></a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a><a href="../" target="_blank" rel="noopener">Ver web</a></nav>
 <form method="post"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>"><button class="g">Salir</button></form></div>
 <?php if (isset($_GET['ok'])) { $imp = (int)($_GET['imp'] ?? 0); $impErr = (int)($_GET['imp_err'] ?? 0); echo '<p class="ok">' . ($imp > 0 ? 'Se importaron ' . $imp . ' videos a la cola de procesamiento.' : 'Cambios guardados.') . ' Pueden tardar hasta un minuto en verse en la web.' . ($impErr > 0 ? ' ' . $impErr . ' no se pudieron iniciar; revisá la lista.' : '') . '</p>'; } if ($msg) echo '<p class="err">' . $e($msg) . '</p>'; ?>
 <?php
@@ -323,31 +323,31 @@ $rendidoMes = (float)str_replace(',', '.', (string)ajuste($pdo, 'tna_ganado_mes'
 $urlMes = fn(string $m): string => './?' . ($view !== 'proyectos' ? 'v=' . rawurlencode($view) . '&' : '') . 'mes=' . $m . '#finanzas';
 ?>
 <div class="dash" id="finanzas">
-  <form class="msel" method="get" action="./">
-    <?php if ($view !== 'proyectos'): ?><input type="hidden" name="v" value="<?= $e($view) ?>"><?php endif; ?>
-    <span class="k">Mes del dashboard</span>
-    <a class="btn g" href="<?= $e($urlMes($ymPrev)) ?>" title="Mes anterior">‹ Anterior</a>
-    <input type="month" name="mes" value="<?= $e($ym) ?>">
-    <button type="submit">Ver mes</button>
-    <a class="btn g" href="<?= $e($urlMes($ymNext)) ?>" title="Mes siguiente">Siguiente ›</a>
-    <?php if (!$esMesActual): ?><a class="btn g" href="<?= $e($urlMes(date('Y-m'))) ?>">Mes actual</a><?php endif; ?>
-    <span class="mut"><?= $esMesActual ? 'Estás viendo el mes actual' : 'Estás viendo ' . $e($mesTxt) ?></span>
-  </form>
+  <div class="dash-head">
+    <div><h1>Resumen financiero</h1><span class="mut">Neto de <?= $e($mesTxt) ?>: <b class="<?= $neto < 0 ? 'warn' : '' ?>"><?= $e(peso($neto)) ?></b></span></div>
+    <form class="msel" method="get" action="./">
+      <?php if ($view !== 'proyectos'): ?><input type="hidden" name="v" value="<?= $e($view) ?>"><?php endif; ?>
+      <a class="btn g" href="<?= $e($urlMes($ymPrev)) ?>" title="Mes anterior">‹ Anterior</a>
+      <b class="msel-txt"><?= $e($mesTxt) ?></b>
+      <a class="btn g" href="<?= $e($urlMes($ymNext)) ?>" title="Mes siguiente">Siguiente ›</a>
+      <input type="month" name="mes" value="<?= $e($ym) ?>" aria-label="Elegir otro mes" title="Elegir otro mes">
+      <?php if (!$esMesActual): ?><a class="btn g" href="<?= $e($urlMes(date('Y-m'))) ?>">Actual</a><?php endif; ?>
+    </form>
+  </div>
   <div class="kpis fin">
-    <a class="kpi fin link" href="cobros.php" title="Ver cobros"><span class="k">Cobrado en <?= $e($mesTxt) ?></span><b><?= $e(peso($cobMes)) ?></b><span class="mut">Ver cobros →</span></a>
+    <a class="kpi fin link" href="cobros.php" title="Ver cobros"><span class="k">Cobrado</span><b><?= $e(peso($cobMes)) ?></b><span class="mut">en <?= $e($mesTxt) ?> · ver cobros →</span></a>
     <a class="kpi fin link" href="cobros.php" title="Ver pendientes de cobro"><span class="k">Por cobrar</span><b class="<?= $porCobrar > 0 ? 'warn' : '' ?>"><?= $e(peso($porCobrar)) ?></b><span class="mut"><?= $cobN ?> trabajo(s) pendiente(s)</span></a>
-    <button type="button" class="kpi fin link" data-open-finanzas title="Ver gastos y registrar uno"><span class="k">Gastos en <?= $e($mesTxt) ?></span><b><?= $e(peso($gasMes)) ?></b><span class="mut"><?= count($gastos) ?> gasto(s) · abrir detalle</span></button>
-    <div class="kpi"><span class="k">Ganancia neta de <?= $e($mesTxt) ?></span><b class="<?= $neto < 0 ? 'warn' : '' ?>"><?= $e(peso($neto)) ?></b><span class="mut">cobrado menos gastos</span></div>
-    <div class="kpi"><span class="k">Saldo en cuenta</span><b><?= $e(peso($saldo)) ?></b>
+    <button type="button" class="kpi fin link" data-open-finanzas title="Ver gastos y registrar uno"><span class="k">Gastos</span><b><?= $e(peso($gasMes)) ?></b><span class="mut">en <?= $e($mesTxt) ?> · <?= count($gastos) ?> gasto(s)</span></button>
+    <div class="kpi"><span class="k">Saldo en cuenta / TNA</span><b><?= $e(peso($saldo)) ?></b>
       <?php if ($tna > 0): ?><span class="chip-r">+<?= $e(peso($rend['diario'])) ?>/día · ~<?= $e(peso($rend['mensual'])) ?>/mes (TNA <?= $e($tnaTxt) ?>%)</span>
         <span class="mut">Rendido en el mes: +<?= $e(peso(round($rendidoMes, 2))) ?></span>
       <?php else: ?><span class="mut">cargá tu TNA para ver el rendimiento</span><?php endif; ?></div>
   </div>
   <div class="quick-actions">
-    <a class="btn g" href="cobros.php#nuevo">+ Nuevo cobro</a>
-    <button type="button" class="btn g" data-open-finanzas>+ Registrar gasto</button>
-    <a class="btn g" href="agenda.php#nuevo">+ Evento en agenda</a>
-    <a class="btn g" href="presupuestos.php#nuevo">+ Nuevo presupuesto</a>
+    <a class="btn" href="cobros.php#nuevo">+ Cobro</a>
+    <button type="button" class="btn g" data-open-finanzas>+ Gasto</button>
+    <a class="btn g" href="agenda.php#nuevo">+ Agenda</a>
+    <a class="btn g" href="presupuestos.php#nuevo">+ Presupuesto</a>
   </div>
   <details class="accd" <?= isset($_GET['d']) || isset($_GET['g']) ? 'open' : '' ?>><summary>Saldo en cuenta, TNA y gastos de <?= $e($mesTxt) ?></summary>
     <div class="cols">
@@ -538,4 +538,4 @@ $card = function (array $r, bool $drag) use ($cats, $e, $fbs): void { $est = $r[
 </div>
 <p class="mut" id="portfolio-empty" hidden>No hay proyectos con ese filtro.</p>
 <?php if (!$port) echo '<p class="mut">Todavía no cargaste proyectos del portfolio.</p>'; ?>
-<?php endif; endif; ?><script src="admin.js?v=22"></script></body></html>
+<?php endif; endif; ?><script src="admin.js?v=23"></script></body></html>

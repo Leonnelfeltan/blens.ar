@@ -33,13 +33,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare('INSERT INTO trabajos (cliente_id,fecha,tipo,detalle,cantidad,monto_unit,prueba,estado,medio,fecha_pago,entrega_id,proyecto_id,comprobante) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')->execute([$c, $f, $tipo, $det, $cant, $mon, $mp, $est, $med, $fpg, $ei, $pi, $comp]);
             $_SESSION['flash'] = 'Trabajo registrado.';
         } elseif ($a === 'cobro_rapido') {
-            $det = mb_substr(trim((string)($_POST['concepto'] ?? '')), 0, 200); $mon = round((float)str_replace(',', '.', trim((string)($_POST['monto'] ?? '0'))), 2);
+            $f = (string)($_POST['fecha'] ?? ''); if (!fecha_ok($f)) $f = date('Y-m-d');
+            $det = mb_substr(trim((string)($_POST['detalle'] ?? $_POST['concepto'] ?? '')), 0, 200); $mon = round((float)str_replace(',', '.', trim((string)($_POST['monto'] ?? '0'))), 2);
             if ($det === '') throw new RuntimeException('Escribí el concepto del cobro.');
             if ($mon <= 0) throw new RuntimeException('El monto tiene que ser mayor a cero.');
             $est = ($_POST['estado'] ?? 'pendiente') === 'cobrado' ? 'cobrado' : 'pendiente'; $med = null; $fpg = null;
-            if ($est === 'cobrado') { $med = (string)($_POST['medio'] ?? 'transferencia'); if (!isset(MEDIOS[$med])) $med = 'transferencia'; $fpg = (string)($_POST['fecha_pago'] ?? '') ?: date('Y-m-d'); if (!fecha_ok($fpg)) throw new RuntimeException('Fecha de pago inválida.'); }
+            if ($est === 'cobrado') { $med = (string)($_POST['medio'] ?? 'transferencia'); if (!isset(MEDIOS[$med])) $med = 'transferencia'; $fpg = (string)($_POST['fecha_pago'] ?? '') ?: $f; if (!fecha_ok($fpg)) throw new RuntimeException('Fecha de pago inválida.'); }
             $comp = comprobante_subir();
-            $pdo->prepare('INSERT INTO trabajos (cliente_id,fecha,tipo,detalle,cantidad,monto_unit,prueba,estado,medio,fecha_pago,comprobante) VALUES (?,?,?,?,1,?,?,?,?,?,?)')->execute([$c, date('Y-m-d'), 'otro', $det, $mon, $mp, $est, $med, $fpg, $comp]);
+            $pdo->prepare('INSERT INTO trabajos (cliente_id,fecha,tipo,detalle,cantidad,monto_unit,prueba,estado,medio,fecha_pago,comprobante) VALUES (?,?,?,?,1,?,?,?,?,?,?)')->execute([$c, $f, 'otro', $det, $mon, $mp, $est, $med, $fpg, $comp]);
             if ($est === 'cobrado' && isset($_POST['sumar_saldo'])) {
                 set_ajuste($pdo, 'saldo_cuenta', (string)(saldo_cuenta($pdo) + $mon));
                 set_ajuste($pdo, 'tna_ultima_fecha', date('Y-m-d'));   // el importe nuevo empieza a rendir desde hoy
@@ -101,9 +102,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 $vc = isset($_GET['c']) ? (int)$_GET['c'] : (isset($_GET['cliente']) ? (int)$_GET['cliente'] : null); $T = $e($_SESSION['t']); $cl = null;
 if ($vc) { $s = $pdo->prepare('SELECT * FROM clientes WHERE id=?'); $s->execute([$vc]); $cl = $s->fetch() ?: null; }
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Cobros | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=26"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Cobros | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=27"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
-<div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Proyectos</a><a href="consultas.php">Consultas<?php if ($consN > 0): ?><span class="nav-badge soft"><?= $consN ?></span><?php endif; ?></a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a></nav>
+<div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Inicio</a><a href="consultas.php">Consultas<?php if ($consN > 0): ?><span class="nav-badge soft"><?= $consN ?></span><?php endif; ?></a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a></nav>
 <form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
 <?php if ($ok) echo '<p class="ok">' . $e($ok) . '</p>'; if ($err) echo '<p class="err">' . $e($err) . '</p>'; ?>
 <?php if (!$cl): $ql = $pdo->prepare("SELECT c.id,c.empresa,c.nombre, COALESCE(SUM(CASE WHEN t.estado='pendiente' THEN t.cantidad*t.monto_unit END),0) AS pend, COALESCE(SUM(CASE WHEN t.estado='cobrado' THEN t.cantidad*t.monto_unit END),0) AS cobrado, COUNT(t.id) AS ntrab FROM clientes c LEFT JOIN trabajos t ON t.cliente_id=c.id AND t.prueba=? GROUP BY c.id ORDER BY c.empresa,c.nombre"); $ql->execute([$mp]); $rows = $ql->fetchAll(); $tp = $tc = 0.0; ?>
@@ -131,7 +132,7 @@ $resumen = resumen_cobro($cl, $pend, $tpend, $alias, $cbu);
 $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], $resumen) : null;
 ?>
 <?= !empty($cl['logo']) ? '<img class="clogo" src="../media/logos/' . $e($cl['logo']) . '" alt="">' : '' ?>
-<div class="clh"><h1><?= $e($cl['empresa'] ? $cl['empresa'] . ' · ' . $cl['nombre'] : $cl['nombre']) ?></h1><div class="row"><a class="btn g" href="cobros.php">&larr; Todos</a><a class="btn g" href="clientes.php?c=<?= (int)$cl['id'] ?>">Datos y tarifas</a></div></div>
+<div class="clh"><h1><?= $e($cl['empresa'] ? $cl['empresa'] . ' · ' . $cl['nombre'] : $cl['nombre']) ?></h1><div class="row"><a class="btn g" href="cobros.php">&larr; Todos</a><a class="btn g" href="clientes.php?c=<?= (int)$cl['id'] ?>">Datos y tarifas</a><button type="button" class="btn" data-toggle="#nuevo">+ Nuevo movimiento</button><button type="button" class="btn g" data-open-detalle="#cobrar-varios">Cobrar varios / Recibo</button></div></div>
 <div class="kpis">
   <div class="kpi"><span class="k">Cobrado total</span><b><?= $e(peso($tcob)) ?></b><span class="mut">histórico del cliente</span></div>
   <div class="kpi"><span class="k">Pendiente a cobrar</span><b class="<?= $tpend > 0 ? 'warn' : '' ?>"><?= $e(peso($tpend)) ?></b><span class="mut"><?= count($pend) ?> trabajo(s) sin cobrar</span></div>
@@ -149,14 +150,40 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
   </details>
   <?php if ($waCli): ?><details class="prev"><summary>Ver el mensaje que se va a mandar</summary><pre class="msj"><?= $e($resumen) ?></pre></details><?php endif; ?>
 </div>
-<form class="quick" id="nuevo" method="post" enctype="multipart/form-data"><input type="hidden" name="a" value="cobro_rapido"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>">
-<label><span class="lbl">Concepto</span><input name="concepto" maxlength="200" placeholder="Reel de producto" required></label>
-<label><span class="lbl">Monto ($)</span><input name="monto" inputmode="numeric" placeholder="0" required></label>
-<label><span class="lbl">Estado</span><select name="estado" data-estado><option value="pendiente">Pendiente</option><option value="cobrado">Cobrado</option></select></label>
+<?php if ($det): ?>
+<div class="det-aviso">
+  <div class="det-h"><span class="b">DETECTADOS</span><b><?= count($det) ?> pendiente(s) de registrar</b><span class="mut">Entregas y proyectos listos para cobrar</span></div>
+  <div class="det-items">
+  <?php foreach ($det as $x): $esFotos = $x['k'] === 'entrega' && $x['tipo'] === 'fotos'; $tipoSel = $esFotos ? 'foto' : 'video'; $montoSug = (float)($esFotos ? $cl['tarifa_foto'] : $cl['tarifa_video']); ?>
+    <form method="post" class="det-one"><input type="hidden" name="a" value="trabajo"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>"><input type="hidden" name="fecha" value="<?= $e($x['f']) ?>"><input type="hidden" name="detalle" value="<?= $e($x['t']) ?>"><input type="hidden" name="cantidad" value="1"><input type="hidden" name="<?= $x['k'] === 'entrega' ? 'entrega_id' : 'proyecto_id' ?>" value="<?= (int)$x['id'] ?>"><input type="hidden" name="tipo" value="<?= $tipoSel ?>"><input type="hidden" name="monto" value="<?= $montoSug > 0 ? $e((string)$montoSug) : '0' ?>"><input type="hidden" name="estado" value="pendiente">
+      <span class="b tipo-<?= $esFotos ? 'fotos' : ($x['k'] === 'entrega' ? 'video' : '') ?>"><?= $x['k'] === 'entrega' ? ($esFotos ? 'FOTOS' : 'VIDEO') : 'PROYECTO' ?></span>
+      <span class="det-txt"><b><?= $e($x['t']) ?></b><small class="mut"><?= $e(date('d/m/Y', strtotime($x['f']))) ?></small></span>
+      <?php if ($montoSug > 0): ?><button title="Registrar como trabajo pendiente">+ Registrar</button><?php endif; ?>
+      <button class="g" name="cero" value="1" formnovalidate title="Registrar en $0 (histórico)"><?= $montoSug > 0 ? '$0' : 'Registrar' ?></button>
+    </form>
+  <?php endforeach; ?>
+  </div>
+</div>
+<?php endif; ?>
+<details class="accd mov-form" id="nuevo">
+<summary>Nuevo movimiento</summary>
+<form class="f" method="post" enctype="multipart/form-data"><input type="hidden" name="a" value="cobro_rapido" data-mov-a><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>">
+<label class="full"><span class="lbl">Qué querés cargar</span><select name="modalidad" data-mov-mode><option value="cobro">Cobro directo (concepto y monto total)</option><option value="trabajo">Trabajo por cantidad y tarifa</option></select></label>
+<label><span class="lbl">Fecha</span><input type="date" name="fecha" value="<?= date('Y-m-d') ?>" required></label>
+<label class="full"><span class="lbl">Detalle / concepto <span class="req">* obligatorio</span></span><input name="detalle" maxlength="200" placeholder="Reel de producto" required></label>
+<div class="full" data-mov-only="trabajo" hidden>
+  <label><span class="lbl">Tipo <span class="req">* obligatorio</span></span><select name="tipo" class="tipo-sel"><?= $tipoOpts() ?></select></label>
+  <label><span class="lbl">Cantidad <span class="req">* obligatorio</span></span><input type="number" name="cantidad" value="1" min="1" max="999"></label>
+</div>
+<label><span class="lbl" data-mov-label>Monto total ($) <span class="req">* obligatorio</span></span><input name="monto" class="monto-in" inputmode="numeric" placeholder="0" required></label>
+<label><span class="lbl">Estado <span class="req">* obligatorio</span></span><select name="estado" data-estado><option value="pendiente">Pendiente de cobro</option><option value="cobrado">Ya cobrado</option></select></label>
 <label><span class="lbl">Medio</span><select name="medio"><?php foreach (MEDIOS as $k => $n) echo '<option value="' . $k . '">' . $e($n) . '</option>'; ?></select></label>
-<button>Cargar cobro</button>
+<label><span class="lbl">Si ya cobraste: fecha de cobro</span><input type="date" name="fecha_pago"></label>
 <label class="full"><span class="lbl">Comprobante <span class="opt">(opcional, máximo 8 MB)</span></span><input type="file" name="comprobante" accept=".jpg,.jpeg,.png,.webp,.pdf"></label>
-<label class="chk-inline full"><input type="checkbox" name="sumar_saldo" value="1" checked data-sumar> Sumar al saldo en cuenta</label></form>
+<label class="chk-inline full"><input type="checkbox" name="sumar_saldo" value="1" checked data-sumar> Sumar al saldo en cuenta</label>
+<div class="row full"><button data-mov-submit>Registrar cobro</button><button class="g" name="cero" value="1" formnovalidate data-mov-cero hidden>Registrar en $0 (histórico)</button><button type="button" class="g" data-cerrar>Cerrar</button></div>
+</form>
+</details>
 <h2>Movimientos</h2>
 <?php if (!$movs): ?><p class="mut">Todavía no hay movimientos para este cliente.</p><?php else: ?>
 <form id="fdel" method="post"><input type="hidden" name="a" value="del_trabajo"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>"></form>
@@ -188,7 +215,7 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
 </div>
 <?php endforeach; ?>
 </div><?php endif; ?>
-<details class="accd"><summary>Cobrar varios y generar recibo</summary>
+<details class="accd" id="cobrar-varios"><summary>Cobrar varios y generar recibo</summary>
 <?php if (!$pend): ?><p class="mut">No hay trabajos pendientes.</p><?php else: ?>
 <form method="post"><input type="hidden" name="a" value="cobrar"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>">
 <p class="mut"><label class="chk"><input type="checkbox" id="todos" aria-label="Elegir todos"> Elegir todos los pendientes</label></p>
@@ -199,27 +226,6 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
 <p class="mut full">Tildá los trabajos que querés incluir. Si no tildás ninguno, el ticket incluye todos los pendientes.</p>
 <div class="row full"><button type="submit" formaction="ticket.php" formnovalidate>Armar ticket de cobro</button><button class="g">Marcar como cobrado y generar recibo</button></div></div></form><?php endif; ?>
 </details>
-<details class="accd"><summary>Registrar trabajo con detalle (tipo, cantidad y fecha)</summary>
-<form class="f" method="post" enctype="multipart/form-data"><input type="hidden" name="a" value="trabajo"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>">
-<label><span class="lbl">Fecha <span class="req">* obligatorio</span></span><input type="date" name="fecha" value="<?= date('Y-m-d') ?>" required></label>
-<label><span class="lbl">Tipo <span class="req">* obligatorio</span></span><select name="tipo" class="tipo-sel"><?= $tipoOpts() ?></select></label>
-<label class="full"><span class="lbl">Detalle <span class="opt">(opcional)</span> (ej: reel de la propiedad de Av. Corrientes)</span><input name="detalle" maxlength="200"></label>
-<label><span class="lbl">Cantidad <span class="req">* obligatorio</span></span><input type="number" name="cantidad" value="1" min="1" max="999"></label><label><span class="lbl">Precio unitario ($) <span class="req">* obligatorio</span></span><input name="monto" class="monto-in" inputmode="numeric" required></label>
-<label><span class="lbl">Estado <span class="req">* obligatorio</span></span><select name="estado"><option value="pendiente">Pendiente de cobro</option><option value="cobrado">Ya cobrado (queda constancia)</option></select></label>
-<label><span class="lbl">Si ya cobraste: medio <span class="req">* obligatorio si elegís «Ya cobrado»</span></span><select name="medio"><?php foreach (MEDIOS as $k => $n) echo '<option value="' . $k . '">' . $e($n) . '</option>'; ?></select></label>
-<label><span class="lbl">Si ya cobraste: fecha de cobro <span class="req">* obligatorio si elegís «Ya cobrado»</span></span><input type="date" name="fecha_pago"></label>
-<label class="full"><span class="lbl">Comprobante <span class="opt">(opcional, máximo 8 MB)</span></span><input type="file" name="comprobante" accept=".jpg,.jpeg,.png,.webp,.pdf"></label>
-<div class="row full"><button>Registrar</button><button class="g" name="cero" value="1" formnovalidate>Registrar en $0 (histórico)</button></div></form>
-</details>
-<h2>Detectados en lo que subiste (<?= count($det) ?>)</h2>
-<p class="mut">Si una entrega y un proyecto son el mismo trabajo, vinculalos desde Clientes para no cobrarlo dos veces.</p>
-<?php if (!$det): ?><p class="mut">No hay entregas ni proyectos de este cliente sin registrar como trabajo.</p><?php endif; ?>
-<?php foreach ($det as $x): $esFotos = $x['k'] === 'entrega' && $x['tipo'] === 'fotos'; $tipoSel = $esFotos ? 'foto' : 'video'; $montoSug = (float)($esFotos ? $cl['tarifa_foto'] : $cl['tarifa_video']); ?><form class="f det" method="post"><input type="hidden" name="a" value="trabajo"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>"><input type="hidden" name="fecha" value="<?= $e($x['f']) ?>"><input type="hidden" name="detalle" value="<?= $e($x['t']) ?>"><input type="hidden" name="cantidad" value="1"><input type="hidden" name="<?= $x['k'] === 'entrega' ? 'entrega_id' : 'proyecto_id' ?>" value="<?= (int)$x['id'] ?>">
-<div class="full"><?php if ($x['k'] === 'entrega'): ?><span class="b tipo-<?= $esFotos ? 'fotos' : 'video' ?>"><?= $esFotos ? 'FOTOS' : 'VIDEO' ?></span><?php else: ?><span class="b">PROYECTO</span><?php endif; ?> <b><?= $e($x['t']) ?></b> <span class="mut"><?= $x['k'] === 'entrega' ? 'Entrega del portal' : 'Proyecto de la web' ?> · <?= $e(date('d/m/Y', strtotime($x['f']))) ?></span></div>
-<label><span class="lbl">Tipo <span class="req">* obligatorio</span></span><select name="tipo" class="tipo-sel"><?= $tipoOpts($tipoSel) ?></select></label><label><span class="lbl">Precio ($) <span class="req">* obligatorio</span></span><input name="monto" class="monto-in" inputmode="numeric" value="<?= $montoSug > 0 ? $e((string)$montoSug) : '' ?>" required></label>
-<label><span class="lbl">Estado <span class="req">* obligatorio</span></span><select name="estado"><option value="pendiente">Pendiente de cobro</option><option value="cobrado">Ya cobrado</option></select></label>
-<label><span class="lbl">Si ya cobraste: medio <span class="req">* obligatorio si elegís «Ya cobrado»</span></span><select name="medio"><?php foreach (MEDIOS as $k => $n) echo '<option value="' . $k . '">' . $e($n) . '</option>'; ?></select></label>
-<div class="row full"><button>Registrar como trabajo</button><button class="g" name="cero" value="1" formnovalidate>Registrar en $0 (histórico)</button></div></form><?php endforeach; ?>
 <h2>Recibos</h2><table class="cards"><tr><th>N°</th><th>Fecha</th><th>Período</th><th>Total</th><th></th></tr>
 <?php foreach ($recs as $r): ?><tr><td data-label="N°"><?= $e(nro($r)) ?></td><td class="mut" data-label="Fecha"><?= $e(date('d/m/Y', strtotime($r['fecha']))) ?> · <?= $e(MEDIOS[$r['medio']] ?? $r['medio']) ?></td><td data-label="Período"><?= $e($r['periodo']) ?></td><td data-label="Total"><?= $e(peso((float)$r['total'])) ?></td><td data-label=""><a class="btn g" href="recibo.php?id=<?= (int)$r['id'] ?>">Ver / imprimir</a></td></tr><?php endforeach; if (!$recs) echo '<tr><td colspan="5" class="mut">Todavía no hay recibos.</td></tr>'; ?></table>
-<?php endif; ?><script src="admin.js?v=22"></script></body></html>
+<?php endif; ?><script src="admin.js?v=23"></script></body></html>
