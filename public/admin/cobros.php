@@ -98,16 +98,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($x instanceof PDOException) { error_log('[blens cobros] ' . $x->getMessage()); $err = 'Error de base de datos.'; } else $err = $x->getMessage();
     }
 }
-$vc = isset($_GET['c']) ? (int)$_GET['c'] : null; $T = $e($_SESSION['t']); $cl = null;
+$vc = isset($_GET['c']) ? (int)$_GET['c'] : (isset($_GET['cliente']) ? (int)$_GET['cliente'] : null); $T = $e($_SESSION['t']); $cl = null;
 if ($vc) { $s = $pdo->prepare('SELECT * FROM clientes WHERE id=?'); $s->execute([$vc]); $cl = $s->fetch() ?: null; }
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Cobros | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=22"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Cobros | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=23"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Proyectos</a><a href="consultas.php">Consultas<?php if ($consN > 0): ?><span class="nav-badge soft"><?= $consN ?></span><?php endif; ?></a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a></nav>
 <form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
 <?php if ($ok) echo '<p class="ok">' . $e($ok) . '</p>'; if ($err) echo '<p class="err">' . $e($err) . '</p>'; ?>
-<div class="<?= $mp ? 'ok' : 'err' ?>"><b>Modo prueba: <?= $mp ? 'ACTIVADO' : 'DESACTIVADO' ?>.</b> <?= $mp ? 'Los trabajos y recibos que cargues quedan marcados como PRUEBA, no ocupan la numeración real y se pueden borrar.' : 'Lo que cargues ahora se guarda de verdad.' ?>
-<div class="row"><form method="post"><input type="hidden" name="a" value="modo"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)($cl['id'] ?? 0) ?>"><button class="g"><?= $mp ? 'Salir del modo prueba' : 'Activar modo prueba' ?></button></form>
-<form method="post"><input type="hidden" name="a" value="borrar_pruebas"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)($cl['id'] ?? 0) ?>"><label class="chk"><input type="checkbox" required>Confirmo borrar los datos de prueba <span class="req">* obligatorio</span></label><button class="r">Borrar datos de prueba</button></form></div></div>
 <?php if (!$cl): $ql = $pdo->prepare("SELECT c.id,c.empresa,c.nombre, COALESCE(SUM(CASE WHEN t.estado='pendiente' THEN t.cantidad*t.monto_unit END),0) AS pend, COALESCE(SUM(CASE WHEN t.estado='cobrado' THEN t.cantidad*t.monto_unit END),0) AS cobrado, COUNT(t.id) AS ntrab FROM clientes c LEFT JOIN trabajos t ON t.cliente_id=c.id AND t.prueba=? GROUP BY c.id ORDER BY c.empresa,c.nombre"); $ql->execute([$mp]); $rows = $ql->fetchAll(); $tp = $tc = 0.0; ?>
 <h1>Cobros</h1><table class="cards"><tr><th>Cliente</th><th>Trabajos</th><th>Pendiente</th><th>Cobrado</th><th></th></tr>
 <?php foreach ($rows as $r): $tp += (float)$r['pend']; $tc += (float)$r['cobrado']; ?><tr><td data-label="Cliente"><?= $e($r['empresa'] ?: $r['nombre']) ?></td><td data-label="Trabajos"><?= (int)$r['ntrab'] ?></td><td data-label="Pendiente"><?= $e(peso((float)$r['pend'])) ?></td><td data-label="Cobrado"><?= $e(peso((float)$r['cobrado'])) ?></td><td data-label=""><a class="btn g" href="?c=<?= (int)$r['id'] ?>">Abrir</a></td></tr><?php endforeach; if (!$rows) echo '<tr><td colspan="5" class="mut">Primero agregá clientes.</td></tr>'; ?>
@@ -155,7 +152,7 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
 <label><span class="lbl">Medio</span><select name="medio"><?php foreach (MEDIOS as $k => $n) echo '<option value="' . $k . '">' . $e($n) . '</option>'; ?></select></label>
 <button>Cargar cobro</button>
 <label class="full"><span class="lbl">Comprobante <span class="opt">(opcional, máximo 8 MB)</span></span><input type="file" name="comprobante" accept=".jpg,.jpeg,.png,.webp,.pdf"></label>
-<label class="chk full"><input type="checkbox" name="sumar_saldo" value="1" checked data-sumar> Sumar al saldo en cuenta</label></form>
+<label class="chk-inline full"><input type="checkbox" name="sumar_saldo" value="1" checked data-sumar> Sumar al saldo en cuenta</label></form>
 <h2>Movimientos</h2>
 <?php if (!$movs): ?><p class="mut">Todavía no hay movimientos para este cliente.</p><?php else: ?>
 <form id="fdel" method="post"><input type="hidden" name="a" value="del_trabajo"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>"></form>
@@ -172,11 +169,13 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
     <?php if (!empty($r['comprobante'])) echo comprobante_boton('cobro', (int)$r['id']); ?>
     <?php if (!$cob): ?>
     <form class="mv-a" method="post" enctype="multipart/form-data"><input type="hidden" name="a" value="marcar_cobrado"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cl['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
-      <select name="medio" aria-label="Medio de pago"><?php foreach (MEDIOS as $k => $n) echo '<option value="' . $k . '">' . $e($n) . '</option>'; ?></select>
-      <label class="chk" title="Sumar el importe al saldo en cuenta"><input type="checkbox" name="sumar_saldo" value="1" checked> +saldo</label>
-      <label class="up-min" title="Adjuntar comprobante (máximo 8 MB)"><input type="file" name="comprobante" accept=".jpg,.jpeg,.png,.webp,.pdf"> Comprobante</label>
-      <button class="g">Marcar cobrado</button>
-      <button class="g" form="fdel" name="id" value="<?= (int)$r['id'] ?>" title="Quitar este movimiento">Quitar</button>
+      <div class="mv-actions">
+        <select name="medio" aria-label="Medio de pago"><?php foreach (MEDIOS as $k => $n) echo '<option value="' . $k . '">' . $e($n) . '</option>'; ?></select>
+        <label class="chk" title="Sumar el importe al saldo en cuenta"><input type="checkbox" name="sumar_saldo" value="1" checked> +saldo</label>
+        <label class="up-min" title="Adjuntar comprobante (máximo 8 MB)"><input type="file" name="comprobante" accept=".jpg,.jpeg,.png,.webp,.pdf"> Comprobante</label>
+        <button class="g">Marcar cobrado</button>
+        <button class="g" form="fdel" name="id" value="<?= (int)$r['id'] ?>" title="Quitar este movimiento">Quitar</button>
+      </div>
     </form>
     <?php elseif (!empty($r['recibo_id'])): ?><a class="btn g" href="recibo.php?id=<?= (int)$r['recibo_id'] ?>">Ver recibo</a>
     <?php else: ?><span class="mut">Cobrado sin recibo</span><?php endif; ?>

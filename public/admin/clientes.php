@@ -156,6 +156,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($r = $s->fetch()) { rmp($r['preview']); rmp($r['poster']); $pdo->prepare('DELETE FROM entregas WHERE id=? AND cliente_id=?')->execute([(int)$_POST['id'], $c]); }
             $_SESSION['flash'] = 'Entrega eliminada.'; header("Location: clientes.php?c=$c"); exit;
         }
+        if ($a === 'resolver_entrega') {
+            $eid = (int)($_POST['id'] ?? 0);
+            $s = $pdo->prepare("SELECT id FROM entregas WHERE id=? AND cliente_id=? AND estado_cliente='ajuste'"); $s->execute([$eid, $c]);
+            if (!$s->fetch()) throw new RuntimeException('No hay un pedido de ajuste pendiente.');
+            $pdo->prepare('UPDATE entregas SET estado_cliente=NULL, comentario_cliente=NULL, comentario_fecha=NULL WHERE id=? AND cliente_id=?')->execute([$eid, $c]);
+            $_SESSION['flash'] = 'Pedido de ajuste marcado como resuelto.'; header("Location: clientes.php?c=$c"); exit;
+        }
     } catch (Throwable $x) {
         if ($x instanceof PDOException) { error_log('[blens clientes] ' . $x->getMessage()); $msg = $x->getCode() === '23000' ? 'Ese usuario ya existe.' : 'Error de base de datos.'; }
         else $msg = $x->getMessage();
@@ -182,7 +189,7 @@ else {
             foreach ($ents as $r) if ((int)$r['id'] === $ve) $ent = $r; }
     }
 }
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=22"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=23"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Proyectos</a><a href="consultas.php">Consultas<?php if ($consN > 0): ?><span class="nav-badge soft"><?= $consN ?></span><?php endif; ?></a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a><a href="../portal/" target="_blank" rel="noopener">Ver portal</a></nav>
 <form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
@@ -239,11 +246,11 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
     <h2>Entregas del portal</h2>
     <p class="mut">Último acceso: <?= !empty($cli['portal_ultima_visita']) ? $e(date('d/m/Y H:i', strtotime((string)$cli['portal_ultima_visita']))) : 'Nunca ingresó' ?></p>
     <div class="c360-list">
-    <?php foreach (array_slice($ents, 0, 8) as $r): $est = (string)($r['estado_cliente'] ?? 'pendiente'); ?>
-      <div class="c360-item"><span><b><?= $e($r['titulo']) ?></b><br><span class="mut"><?= $e(substr((string)$r['creado'], 0, 10)) ?></span></span>
-        <span><?php if ($est === 'aprobado'): ?><span class="badge ok">Aprobado</span>
-        <?php elseif ($est === 'ajuste'): ?><span class="b adj" title="<?= $e((string)($r['comentario_cliente'] ?? '')) ?>">Pidió ajuste: "<?= $e(mb_substr(trim((string)($r['comentario_cliente'] ?? '')), 0, 60)) ?>"</span>
-        <?php else: ?><span class="badge pend">Pendiente</span><?php endif; ?></span></div>
+    <?php foreach (array_slice($ents, 0, 8) as $r): $est = (string)($r['estado_cliente'] ?? 'pendiente'); $com = trim((string)($r['comentario_cliente'] ?? '')); ?>
+      <div class="c360-item"><div class="c360-ent"><b><?= $e($r['titulo']) ?></b><br><span class="mut"><?= $e(substr((string)$r['creado'], 0, 10)) ?></span>
+        <?php if ($est === 'ajuste'): ?><blockquote class="c360-quote"><?= nl2br($e($com)) ?></blockquote>
+        <form method="post" class="c360-resolve"><input type="hidden" name="a" value="resolver_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="g">Marcar resuelto</button></form><?php endif; ?></div>
+        <span><?php if ($est === 'ajuste'): ?><span class="b adj">Pidió ajuste</span><?php elseif ($est === 'aprobado'): ?><span class="badge ok">Aprobado</span><?php endif; ?></span></div>
     <?php endforeach; if (!$ents) echo '<p class="mut">Sin entregas todavía.</p>'; ?>
     </div>
   </section>
@@ -264,6 +271,7 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
       <?php if (!empty($cli['telefono']) && ($w = wa_url((string)$cli['telefono'], 'Hola ' . explode(' ', trim((string)$cli['nombre']))[0] . ', '))): ?><a class="btn" href="<?= $e($w) ?>" target="_blank" rel="noopener">WhatsApp</a><?php else: ?><span class="mut">Sin teléfono cargado</span><?php endif; ?>
       <form method="post"><input type="hidden" name="a" value="ver_como"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><button class="g">Ver portal</button></form>
       <form method="post"><input type="hidden" name="a" value="nueva_clave"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><button class="g">Regenerar clave</button></form>
+      <a class="btn g" href="cobros.php?cliente=<?= (int)$cli['id'] ?>">Cobros del cliente</a>
       <a class="btn g" href="cobros.php?c=<?= (int)$cli['id'] ?>#nuevo">+ Nuevo cobro</a>
       <a class="btn g" href="?c=<?= (int)$cli['id'] ?>&e=0">+ Nueva entrega</a>
     </div>

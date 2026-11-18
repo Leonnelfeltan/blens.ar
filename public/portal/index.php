@@ -36,30 +36,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 $cid = (int)($_SESSION['cid'] ?? 0); $T = $e($_SESSION['t']); $cli = null; $forzar = !empty($_SESSION['forzar']); $vista = !empty($_SESSION['vista']);
 if ($cid) { $s = $pdo->prepare('SELECT nombre,empresa,logo FROM clientes WHERE id=? AND (activo=1 OR ?=1)'); $s->execute([$cid, $vista ? 1 : 0]); $cli = $s->fetch(); if (!$cli) { session_destroy(); header('Location: ./'); exit; } }
-// ---- Feedback del cliente sobre una entrega (aprobar o pedir ajuste) ----
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array((string)($_POST['a'] ?? ''), ['aprobar', 'ajuste'], true)) {
-    $accion = (string)$_POST['a'];
+// ---- Feedback del cliente sobre una entrega (pedir ajuste) ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['a'] ?? '') === 'ajuste') {
     $eid = (int)($_POST['e'] ?? 0);
     $com = mb_substr(trim((string)($_POST['comentario'] ?? '')), 0, 1000);
     if (!$cid || $vista || $eid <= 0) { http_response_code(403); exit('Acceso denegado.'); }
     $q = $pdo->prepare('SELECT id,titulo FROM entregas WHERE id=? AND cliente_id=?'); $q->execute([$eid, $cid]); $enFb = $q->fetch();
     if (!$enFb) { http_response_code(404); exit('Entrega inexistente.'); }
-    if ($accion === 'ajuste' && $com === '') {
+    if ($com === '') {
         $_SESSION['pflash'] = 'Escribí qué ajuste necesitás antes de enviar.';
         header('Location: ./?e=' . $eid); exit;
     }
     try {
-        if ($accion === 'aprobar') {
-            $pdo->prepare("UPDATE entregas SET estado_cliente='aprobado', comentario_cliente=NULL, comentario_fecha=NOW() WHERE id=? AND cliente_id=?")->execute([$eid, $cid]);
-        } else {
-            $pdo->prepare("UPDATE entregas SET estado_cliente='ajuste', comentario_cliente=?, comentario_fecha=NOW() WHERE id=? AND cliente_id=?")->execute([$com, $eid, $cid]);
-        }
+        $pdo->prepare("UPDATE entregas SET estado_cliente='ajuste', comentario_cliente=?, comentario_fecha=NOW() WHERE id=? AND cliente_id=?")->execute([$com, $eid, $cid]);
         $qc = $pdo->prepare('SELECT nombre,empresa FROM clientes WHERE id=?'); $qc->execute([$cid]); $cf = $qc->fetch() ?: [];
         $empresa = trim((string)($cf['empresa'] ?? '')) ?: trim((string)($cf['nombre'] ?? '')) ?: 'Cliente';
-        $cuerpo = 'Empresa: ' . $empresa . "\n" . 'Video: ' . (string)$enFb['titulo'] . "\n\n"
-            . ($accion === 'aprobar' ? 'Aprobó la entrega.' : 'Pidió un ajuste: ' . $com);
+        $cuerpo = 'Empresa: ' . $empresa . "\n" . 'Video: ' . (string)$enFb['titulo'] . "\n\n" . 'Pidió un ajuste: ' . $com;
         blens_ntfy('Feedback de cliente · blens.ar', $cuerpo, 'high', 'speech_balloon', ['view, Abrir panel, https://blens.ar/admin/']);
-        $_SESSION['pflash'] = $accion === 'aprobar' ? '¡Gracias! Registramos tu aprobación.' : 'Recibimos tu pedido de ajuste.';
+        $_SESSION['pflash'] = 'Recibimos tu pedido de ajuste.';
     } catch (Throwable $x) {
         error_log('[blens portal feedback] ' . $x->getMessage());
         $_SESSION['pflash'] = 'No pudimos guardar tu respuesta. Probá de nuevo en un momento.';
@@ -87,10 +81,11 @@ $fb = function (array $r) use ($e, $T, $vista): string {
     elseif ($est === 'ajuste') $h .= '<p class="fb-badge adj">Pidió ajuste: "' . $e($com) . '"</p>';
     else $h .= '<p class="fb-badge pend">Esperando tu respuesta</p>';
     if (!$vista) {
-        $h .= '<div class="fb-acts">'
-            . '<form method="post"><input type="hidden" name="a" value="aprobar"><input type="hidden" name="t" value="' . $T . '"><input type="hidden" name="e" value="' . $id . '"><button class="fb-btn ok" type="submit">Aprobar entrega</button></form>'
-            . '<details class="fb-adj"><summary class="fb-btn adj">Pedir ajuste</summary><form method="post"><input type="hidden" name="a" value="ajuste"><input type="hidden" name="t" value="' . $T . '"><input type="hidden" name="e" value="' . $id . '"><label>¿Qué querés ajustar?<textarea name="comentario" rows="3" maxlength="1000" required placeholder="Contanos brevemente qué cambio necesitás…"></textarea></label><button class="fb-btn adj" type="submit">Enviar pedido</button></form></details>'
-            . '</div>';
+        $h .= '<div class="fb-acts"><div class="fb-adj"><form method="post">'
+            . '<input type="hidden" name="a" value="ajuste"><input type="hidden" name="t" value="' . $T . '"><input type="hidden" name="e" value="' . $id . '">'
+            . '<label>¿Qué querés ajustar?<textarea name="comentario" rows="3" maxlength="1000" required placeholder="Contanos brevemente qué cambio necesitás…"></textarea></label>'
+            . '<button class="fb-btn adj" type="submit">Pedir ajuste</button>'
+            . '</form></div></div>';
     }
     return $h . '</div>';
 };
