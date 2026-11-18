@@ -28,9 +28,9 @@ function blens_cfg(): array { static $c = null; return $c ??= require __DIR__ . 
 
 const SESION_DIAS = 60, SESION_LIFETIME = 5184000;
 if (PHP_SAPI !== 'cli') {
-    $dirSesiones = __DIR__ . '/sessions';
+    $dirSesiones = '/var/www/blens-private/sessions';
     if (!is_dir($dirSesiones)) @mkdir($dirSesiones, 0700, true);
-    if (is_dir($dirSesiones)) session_save_path($dirSesiones);
+    if (is_dir($dirSesiones) && is_writable($dirSesiones)) session_save_path($dirSesiones);
     ini_set('session.gc_maxlifetime', (string)SESION_LIFETIME);
     ini_set('session.cookie_lifetime', (string)SESION_LIFETIME);
     session_set_cookie_params([
