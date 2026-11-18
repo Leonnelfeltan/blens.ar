@@ -57,6 +57,24 @@ document.addEventListener('click', e => {
 const abrirNuevo = () => { if (location.hash === '#nuevo') { const box = document.getElementById('nuevo'); if (box) box.open = true; } };
 abrirNuevo();
 window.addEventListener('hashchange', abrirNuevo);
+function waNumero(tel) {
+  let d = String(tel || '').replace(/\D+/g, ''); if (!d) return '';
+  if (d.startsWith('00')) d = d.slice(2);
+  if (d.startsWith('54')) return d.startsWith('549') ? d : '549' + d.slice(2);
+  d = d.replace(/^0+/, '');
+  if (d.length === 12) for (const a of (d.startsWith('11') ? [2] : [3, 4])) { if (d.slice(a, a + 2) === '15') { d = d.slice(0, a) + d.slice(a + 2); break; } }
+  return d.length === 10 ? '549' + d : '';
+}
+document.querySelectorAll('[data-wa-quick]').forEach(box => {
+  const sel = box.querySelector('[data-wa-q-mode]');
+  const link = box.querySelector('[data-wa-q-link]');
+  if (!sel || !link) return;
+  sel.addEventListener('change', () => {
+    const msg = box.dataset['waMsg' + sel.value.charAt(0).toUpperCase() + sel.value.slice(1)] || '';
+    const n = waNumero(box.dataset.tel || '');
+    if (n) link.href = 'https://wa.me/' + n + '?text=' + encodeURIComponent(msg);
+  });
+});
 
 // ---- Imágenes para WhatsApp: tarjeta de acceso, ticket de cobro y recibo ----
 function bajar(b, nombre) { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = nombre; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }

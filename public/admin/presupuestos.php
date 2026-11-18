@@ -40,6 +40,19 @@ function presu_cliente(PDO $pdo, array $p): array {
         ->execute([$nombre, $empresa, $usuario, password_hash($clave, PASSWORD_DEFAULT), trim((string)($p['telefono'] ?? ''))]);
     return ['id' => (int)$pdo->lastInsertId(), 'creado' => true, 'usuario' => $usuario, 'clave' => $clave];
 }
+function presu_wa_tel(PDO $pdo, array $p): string {
+    $tel = preg_replace('/\D+/', '', (string)($p['telefono'] ?? '')) ?? '';
+    if ($tel !== '') return $tel;
+    $nombre = mb_strtolower(trim((string)($p['cliente_nombre'] ?? '')));
+    $empresa = mb_strtolower(trim((string)($p['empresa'] ?? '')));
+    if ($nombre === '') return '';
+    foreach ($pdo->query('SELECT nombre,empresa,telefono FROM clientes') as $r) {
+        if (mb_strtolower(trim((string)($r['nombre'] ?? ''))) !== $nombre) continue;
+        if ($empresa !== '' && mb_strtolower(trim((string)($r['empresa'] ?? ''))) !== $empresa) continue;
+        return (string)($r['telefono'] ?? '');
+    }
+    return '';
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!hash_equals($_SESSION['t'], (string)($_POST['t'] ?? ''))) { http_response_code(400); exit('Sesión vencida. Recargá la página.'); }
@@ -119,8 +132,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $agN = agenda_pendientes($pdo);
 $consN = consultas_pendientes($pdo);
+$plantillas = wa_plantillas($pdo);
 $list = $pdo->query('SELECT p.*, t.cliente_id AS cobro_cliente_id FROM presupuestos p LEFT JOIN trabajos t ON t.id=p.trabajo_id ORDER BY p.id DESC')->fetchAll();
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Presupuestos | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=27"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Presupuestos | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=28"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Inicio</a><a href="consultas.php">Consultas<?php if ($consN > 0): ?><span class="nav-badge soft"><?= $consN ?></span><?php endif; ?></a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a class="on" href="presupuestos.php">Presupuestos</a><a href="../" target="_blank" rel="noopener">Ver web</a></nav>
 <form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
@@ -158,7 +172,7 @@ $list = $pdo->query('SELECT p.*, t.cliente_id AS cobro_cliente_id FROM presupues
 <h2>Guardados</h2>
 <?php if (!$list): ?><p class="mut">Todavía no hay presupuestos guardados.</p><?php else: ?>
 <table class="cards"><tr><th>N°</th><th>Cliente</th><th>Total</th><th>Fecha</th><th>Estado</th><th></th></tr>
-<?php foreach ($list as $p): $wa = wa_url((string)$p['telefono'], presu_wa_texto($p)); $tieneCobro = !empty($p['cobro_cliente_id']); ?>
+<?php foreach ($list as $p): $pn = explode(' ', trim((string)($p['cliente_nombre'] ?? '')))[0] ?: 'hola'; $wa = wa_link(presu_wa_tel($pdo, $p), $plantillas['presupuesto'], ['{nombre}' => $pn, '{numero}' => (string)($p['numero'] ?? ''), '{monto}' => presu_money((float)($p['total'] ?? 0))]); $tieneCobro = !empty($p['cobro_cliente_id']); ?>
 <tr>
 <td data-label="N°"><b><?= $e($p['numero']) ?></b></td>
 <td data-label="Cliente"><?= $e($p['empresa'] ?: $p['cliente_nombre']) ?><br><span class="mut"><?= $e($p['empresa'] ? $p['cliente_nombre'] : '') ?></span></td>
@@ -175,4 +189,4 @@ $list = $pdo->query('SELECT p.*, t.cliente_id AS cobro_cliente_id FROM presupues
 <?php endforeach; ?>
 </table>
 <?php endif; ?>
-<script src="admin.js?v=23"></script></body></html>
+<script src="admin.js?v=24"></script></body></html>

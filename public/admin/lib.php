@@ -202,6 +202,37 @@ function lanzar_worker(int $id, string $tipo = 'proyecto', bool $forzar = false)
     exec('setsid nohup ' . escapeshellarg($php) . ' ' . escapeshellarg($w) . ' ' . (int)$id . $arg . ' > /dev/null 2>&1 &');
 }
 
+const WA_PLANTILLAS = [
+    'consulta' => 'Hola {nombre}, ¿cómo estás? Te escribo de blens.ar por tu consulta en la web. ¿Tenés un momento para charlar sobre lo que necesitás?',
+    'entrega' => 'Hola {nombre}, ya subimos tu nuevo material al portal de blens.ar ({link_portal}) con tu usuario {usuario}. ¡Cualquier ajuste nos avisás por ahí!',
+    'presupuesto' => 'Hola {nombre}, te comparto el presupuesto #{numero} de blens.ar por un total de {monto}. Quedo atento a cualquier duda.',
+    'cobro' => 'Hola {nombre}, te paso el detalle de los trabajos pendientes en blens.ar por {monto}. ¡Muchas gracias!',
+];
+function wa_plantillas(PDO $pdo): array {
+    $out = [];
+    foreach (WA_PLANTILLAS as $k => $def) {
+        $clave = 'wa_plantilla_' . $k;
+        $v = trim(ajuste($pdo, $clave, $def));
+        if ($v === '') { $v = $def; set_ajuste($pdo, $clave, $v); }
+        $out[$k] = $v;
+    }
+    return $out;
+}
+function wa_guardar_plantillas(PDO $pdo, array $vals): void {
+    foreach (WA_PLANTILLAS as $k => $def) {
+        $v = (string)($vals[$k] ?? $def);
+        $v = trim(str_replace("\r\n", "\n", $v));
+        set_ajuste($pdo, 'wa_plantilla_' . $k, mb_substr($v !== '' ? $v : $def, 0, 1000));
+    }
+}
+function wa_render(string $plantilla, array $datos): string { return strtr($plantilla, $datos); }
+function wa_link_portal(): string { return rtrim((string)(blens_cfg()['sitio'] ?? 'https://blens.ar'), '/') . '/portal/'; }
+function wa_link(?string $tel, string $plantilla, array $datos): ?string {
+    if ($tel === null || trim($tel) === '') return null;
+    $n = wa_num($tel);
+    return $n ? 'https://wa.me/' . $n . '?text=' . rawurlencode(wa_render($plantilla, $datos)) : null;
+}
+
 // Número en formato WhatsApp Argentina (549 + área + número)
 function wa_num(string $tel): ?string {
     $d = preg_replace('/\D+/', '', $tel) ?? ''; if ($d === '') return null;

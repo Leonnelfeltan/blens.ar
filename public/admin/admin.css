@@ -168,6 +168,10 @@ dialog.imp form.f{max-width:none;margin:0}
 details.accd{background:var(--c2);border:1px solid var(--l);border-radius:8px;padding:.8rem 1rem;margin:1rem 0}
 details.accd>summary{cursor:pointer;color:var(--h);font-weight:600;font-size:.95rem}
 details.accd[open]>summary{margin-bottom:.8rem;color:var(--o)}
+.wa-tpl textarea{min-height:5.5rem}
+.c360-actions .wa-quick{grid-column:1/-1;display:flex;gap:.35rem;align-items:center;flex-wrap:wrap}
+.wa-quick select{width:auto;min-width:10rem;flex:1 1 10rem;padding:.5rem .55rem;font:600 .8rem system-ui;color:var(--h);background:var(--c2);border:1px solid var(--l);border-radius:4px}
+.wa-quick .btn{width:auto;flex:0 0 auto;white-space:nowrap}
 
 /* ===== Dashboard financiero ===== */
 .dash{margin:1.4rem 0 2rem}

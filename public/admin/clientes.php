@@ -248,7 +248,7 @@ $formCliente = function (bool $conBorrar = false) use ($e, $cli, $T): string {
 <?php endif; ?>
 <?php return ob_get_clean();
 };
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=27"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=28"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Inicio</a><a href="consultas.php">Consultas<?php if ($consN > 0): ?><span class="nav-badge soft"><?= $consN ?></span><?php endif; ?></a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a><a href="../portal/" target="_blank" rel="noopener">Ver portal</a></nav>
 <form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
@@ -294,7 +294,16 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
 
 <?php else: ?>
 <h1 class="cli-title"><?= $cli['id'] ? $e(($cli['empresa'] ? $cli['empresa'] . ' · ' : '') . $cli['nombre']) : 'Nuevo cliente' ?></h1>
-<?php if ($cli['id']): ?>
+<?php if ($cli['id']):
+$waTpl = wa_plantillas($pdo);
+$waNombre = explode(' ', trim((string)$cli['nombre']))[0] ?: 'hola';
+$waDatos = ['{nombre}' => $waNombre, '{empresa}' => (string)($cli['empresa'] ?? ''), '{usuario}' => (string)($cli['usuario'] ?? ''), '{link_portal}' => wa_link_portal(), '{monto}' => peso((float)($fin['pend'] ?? 0))];
+$waLinks = [
+    'entrega' => wa_link((string)($cli['telefono'] ?? ''), $waTpl['entrega'], $waDatos),
+    'cobro' => wa_link((string)($cli['telefono'] ?? ''), $waTpl['cobro'], $waDatos),
+    'libre' => wa_link((string)($cli['telefono'] ?? ''), 'Hola {nombre},', $waDatos),
+];
+?>
 <nav class="tabs" id="cli-tabs" role="tablist" aria-label="Ficha del cliente">
   <a class="tab on" href="#tab-resumen" role="tab" aria-selected="true" aria-controls="tab-resumen">Resumen y Entregas</a>
   <a class="tab" href="#tab-datos" role="tab" aria-selected="false" aria-controls="tab-datos">Datos y Tarifas</a>
@@ -312,7 +321,12 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
     </section>
     <section class="c360-card">
       <div class="c360-actions">
-        <?php if (!empty($cli['telefono']) && ($w = wa_url((string)$cli['telefono'], 'Hola ' . explode(' ', trim($cli['nombre']))[0] . ', '))): ?><a class="btn" href="<?= $e($w) ?>" target="_blank" rel="noopener">WhatsApp</a><?php else: ?><span class="mut">Sin teléfono cargado</span><?php endif; ?>
+        <?php if (!empty($cli['telefono']) && $waLinks['entrega']): ?>
+        <div class="wa-quick" data-wa-quick data-tel="<?= $e((string)$cli['telefono']) ?>" data-wa-msg-entrega="<?= $e(wa_render($waTpl['entrega'], $waDatos)) ?>" data-wa-msg-cobro="<?= $e(wa_render($waTpl['cobro'], $waDatos)) ?>" data-wa-msg-libre="<?= $e(wa_render('Hola {nombre},', $waDatos)) ?>">
+          <select class="wa-q-sel" data-wa-q-mode aria-label="Elegir mensaje de WhatsApp"><option value="entrega">Avisar entrega lista</option><option value="cobro">Recordatorio de saldo</option><option value="libre">Chat libre</option></select>
+          <a class="btn" href="<?= $e($waLinks['entrega']) ?>" target="_blank" rel="noopener" data-wa-q-link>WhatsApp</a>
+        </div>
+        <?php else: ?><span class="mut">Sin teléfono cargado</span><?php endif; ?>
         <form method="post"><input type="hidden" name="a" value="ver_como"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><button class="g">Ver portal</button></form>
         <a class="btn g" href="cobros.php?cliente=<?= (int)$cli['id'] ?>">Cobros</a>
         <form method="post"><input type="hidden" name="a" value="nueva_clave"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><button class="g">Regenerar clave</button></form>
@@ -374,4 +388,4 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
 <?php else: ?>
 <?= $formCliente(false) ?>
 <?php endif; ?>
-<?php endif; ?><script src="admin.js?v=23"></script></body></html>
+<?php endif; ?><script src="admin.js?v=24"></script></body></html>
