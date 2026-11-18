@@ -101,6 +101,25 @@ dialog.imp form.f{max-width:none;margin:0}
 .c360-quote{background:var(--c);border-left:3px solid var(--o);border-radius:3px;padding:.55rem .7rem;margin:.45rem 0;color:var(--h);font-size:.85rem;white-space:pre-wrap}
 .c360-resolve{margin:.45rem 0 0}
 .c360-resolve button{padding:.35rem .6rem;font-size:.78rem}
+.tabs{display:flex;gap:.35rem;flex-wrap:wrap;border-bottom:1px solid var(--l);margin:.9rem 0 1.1rem}
+.tab{background:none;color:var(--m);border:0;border-bottom:2px solid transparent;border-radius:0;padding:.6rem .85rem;font:600 .85rem system-ui;text-decoration:none;cursor:pointer}
+.tab:hover{color:var(--h)}
+.tab.on{color:var(--o);border-bottom-color:var(--o)}
+.tab-panel[hidden]{display:none!important}
+.c360.resumen-grid{grid-template-columns:minmax(0,1fr) minmax(240px,.5fr);margin:0}
+.c360.hist-grid{grid-template-columns:repeat(2,minmax(0,1fr));margin:0}
+.resumen-grid .c360-actions{margin-top:0}
+.ent-head{margin:.4rem 0}
+.ent-table td,.ent-table th{padding:.45rem .55rem;font-size:.84rem}
+.ent-table td form{margin:0}
+.ent-actions{display:flex;gap:.35rem;flex-wrap:wrap;align-items:center}
+.ent-actions .btn,.ent-actions button{padding:.3rem .55rem;font-size:.78rem;white-space:nowrap}
+.ent-com{margin:.25rem 0;font-size:.74rem;max-width:15rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.resolver-f{margin:.3rem 0 0}
+.resolver-f button{padding:.28rem .5rem;font-size:.74rem}
+.del-cli{margin-top:1.4rem;border:1px solid var(--l);border-radius:6px;background:var(--c2);padding:.8rem 1rem}
+.del-cli summary{cursor:pointer;color:var(--o);font-weight:600;font-size:.9rem}
+.del-cli[open] summary{margin-bottom:.7rem}
 
 /* ===== abono mensual / resumen por WhatsApp ===== */
 .plan{display:grid;grid-template-columns:1fr auto;gap:1rem;align-items:center;background:var(--c2);border:1px solid var(--l);border-left:6px solid var(--o);border-radius:6px;padding:1rem 1.2rem;margin:1rem 0}
@@ -219,7 +238,7 @@ body{overflow-x:hidden}
   /* billetera / dashboard en una columna */
   .kpis,.kpis.fin{grid-template-columns:1fr 1fr}
   .quick-actions{grid-template-columns:1fr 1fr}
-  .c360{grid-template-columns:1fr}
+  .c360,.c360.resumen-grid,.c360.hist-grid{grid-template-columns:1fr}
   .quick{grid-template-columns:1fr 1fr}
   .quick label:first-child{grid-column:1/-1}
   .quick button{grid-column:1/-1}

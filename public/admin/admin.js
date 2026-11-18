@@ -18,6 +18,30 @@ document.querySelectorAll('form').forEach(f => {
 });
 const todos = document.getElementById('todos');
 if (todos) todos.addEventListener('change', () => document.querySelectorAll('.sel').forEach(c => c.checked = todos.checked));
+const cliTabs = document.getElementById('cli-tabs');
+if (cliTabs) {
+  const tabIds = ['tab-resumen', 'tab-datos', 'tab-historial'];
+  const tabs = Array.from(cliTabs.querySelectorAll('.tab'));
+  const panels = Array.from(document.querySelectorAll('.tab-panel'));
+  const activarTab = id => {
+    const activo = tabIds.includes(id) ? id : 'tab-resumen';
+    tabs.forEach(t => { const on = t.getAttribute('href') === '#' + activo; t.classList.toggle('on', on); t.setAttribute('aria-selected', on ? 'true' : 'false'); });
+    panels.forEach(p => p.hidden = p.id !== activo);
+  };
+  activarTab(location.hash.slice(1));
+  window.addEventListener('hashchange', () => activarTab(location.hash.slice(1)));
+  cliTabs.addEventListener('click', e => {
+    const t = e.target.closest('.tab'); if (!t) return;
+    e.preventDefault();
+    const id = t.getAttribute('href').slice(1);
+    activarTab(id);
+    if (location.hash !== '#' + id) location.hash = id;
+  });
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-confirm]');
+  if (b && !confirm(b.dataset.confirm || '¿Confirmar?')) e.preventDefault();
+});
 
 // ---- Imágenes para WhatsApp: tarjeta de acceso, ticket de cobro y recibo ----
 function bajar(b, nombre) { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = nombre; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }

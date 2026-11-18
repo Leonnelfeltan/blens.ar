@@ -27,6 +27,17 @@ function drive_ok(string $u): bool {
     if ($u === '') return true;
     return str_starts_with($u, 'https://') && in_array(strtolower((string)parse_url($u, PHP_URL_HOST)), ['drive.google.com', 'docs.google.com', 'drive.usercontent.google.com'], true);
 }
+function registrar_trabajo_entrega(PDO $pdo, int $clienteId, int $entregaId, string $titulo, string $tipo): void {
+    $q = $pdo->prepare('SELECT 1 FROM trabajos WHERE entrega_id=? LIMIT 1'); $q->execute([$entregaId]);
+    if ($q->fetchColumn()) return;
+    $q = $pdo->prepare('SELECT tarifa_video,tarifa_foto FROM clientes WHERE id=?'); $q->execute([$clienteId]); $cl = $q->fetch();
+    if (!$cl) return;
+    $tipoTrabajo = $tipo === 'fotos' ? 'foto' : 'video';
+    $tarifa = $tipo === 'fotos' ? ($cl['tarifa_foto'] ?? 0) : ($cl['tarifa_video'] ?? 0);
+    $monto = round(max(0, (float)$tarifa), 2);
+    $detalle = mb_substr(trim($titulo), 0, 200); if ($detalle === '') $detalle = $tipo === 'fotos' ? 'Pack de fotos' : 'Video';
+    $pdo->prepare("INSERT INTO trabajos (cliente_id,fecha,tipo,detalle,cantidad,monto_unit,prueba,estado,entrega_id) VALUES (?,?,?,?,1,?,?, 'pendiente',?)")->execute([$clienteId, date('Y-m-d'), $tipoTrabajo, $detalle, $monto, modo_prueba($pdo) ? 1 : 0, $entregaId]);
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!hash_equals($_SESSION['t'], (string)($_POST['t'] ?? ''))) { http_response_code(400); exit('Sesión vencida. Recargá la página.'); }
     $a = $_POST['a'] ?? ''; $c = (int)($_POST['cid'] ?? 0);
@@ -134,10 +145,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare('INSERT INTO entregas (cliente_id,tipo,titulo,descripcion,link_hd,link_4k,preview,poster,proyecto_id) VALUES (?,?,?,?,?,?,?,?,?)')->execute([$c, $tipoEn, $t, $d, $hd, $k4, $mp4, $pos, $pj]);
             }
             $nid = $id ?: (int)$pdo->lastInsertId();
+            $crearTrabajo = isset($_POST['crear_trabajo']);
+            if ($crearTrabajo) registrar_trabajo_entrega($pdo, $c, $nid, $t, $tipoEn);
             if (!$id && $tipoEn === 'video' && ($d === '' || $tituloAuto) && trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== '') {
                 try { lanzar_worker($nid, 'entrega'); } catch (Throwable $x2) { error_log('[blens clientes] ' . $x2->getMessage()); }
             }
-            $_SESSION['flash'] = 'Entrega guardada.'; header("Location: clientes.php?c=$c" . ($id ? '' : "&avisar=$nid")); exit;
+            $_SESSION['flash'] = 'Entrega guardada.' . ($crearTrabajo ? ' Trabajo registrado para cobro.' : ''); header("Location: clientes.php?c=$c" . ($id ? '' : "&avisar=$nid")); exit;
         }
         if ($a === 'ia_entrega') {
             $eid = (int)($_POST['id'] ?? 0);
@@ -169,10 +182,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $titulo = trim(pathinfo($name, PATHINFO_FILENAME)); if ($titulo === '') $titulo = $name;
                 $titulo = mb_substr($titulo, 0, 120);
                 $ins->execute([$c, $titulo, '', 'https://drive.google.com/file/d/' . $vid . '/view', '']);
+                $nid = (int)$pdo->lastInsertId();
+                if (isset($_POST['crear_trabajo'])) registrar_trabajo_entrega($pdo, $c, $nid, $titulo, 'video');
                 @file_put_contents(COLA . '/drive_' . $vid . '.name', $titulo);
                 $n++;
             }
-            $_SESSION['flash'] = 'Se importaron ' . $n . ' videos a las entregas.';
+            $_SESSION['flash'] = 'Se importaron ' . $n . ' videos a las entregas.' . (isset($_POST['crear_trabajo']) ? ' Trabajos registrados para cobro.' : '');
             header("Location: clientes.php?c=$c"); exit;
         }
         if ($a === 'del_entrega') {
@@ -200,15 +215,40 @@ else {
         $nomCli = trim((string)$cli['nombre']); $empCli = trim((string)$cli['empresa']);
         $sp = $pdo->prepare("SELECT DISTINCT p.* FROM presupuestos p LEFT JOIN trabajos t ON t.id=p.trabajo_id WHERE p.cliente_nombre=? OR (p.empresa<>'' AND p.empresa=?) OR t.cliente_id=? ORDER BY p.creado_en DESC LIMIT 5");
         $sp->execute([$nomCli, $empCli, $cli['id']]); $presus = $sp->fetchAll();
-        $sa = $pdo->prepare('SELECT * FROM agenda WHERE cliente_id=? AND completado=0 AND fecha>=CURDATE() ORDER BY fecha, hora IS NULL, hora, id LIMIT 8');
+        $sa = $pdo->prepare('SELECT * FROM agenda WHERE cliente_id=? ORDER BY fecha DESC, id DESC LIMIT 30');
         $sa->execute([$cli['id']]); $agendaCli = $sa->fetchAll();
+        $hoy = date('Y-m-d');
+        $agendaFuturos = array_values(array_filter($agendaCli, fn($r) => (string)$r['fecha'] >= $hoy));
+        $agendaPasados = array_values(array_filter($agendaCli, fn($r) => (string)$r['fecha'] < $hoy));
         $s = $pdo->prepare('SELECT * FROM entregas WHERE cliente_id=? ORDER BY id DESC'); $s->execute([$cli['id']]); $ents = $s->fetchAll();
         $entsList = $ft === 'todos' ? $ents : array_values(array_filter($ents, fn($r) => $tipoDe($r) === $ft));
         if ($ve !== null) { $ent = ['id' => 0, 'tipo' => 'video', 'titulo' => '', 'descripcion' => '', 'link_hd' => '', 'link_4k' => '', 'preview' => '', 'poster' => '', 'proyecto_id' => null];
             foreach ($ents as $r) if ((int)$r['id'] === $ve) $ent = $r; }
     }
 }
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=25"></head><body>
+$formCliente = function (bool $conBorrar = false) use ($e, $cli, $T): string {
+    ob_start(); ?>
+<form class="f cli-form" method="post" enctype="multipart/form-data"><input type="hidden" name="a" value="cliente"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>">
+<label><span class="lbl">Empresa <span class="opt">(opcional)</span></span><input name="empresa" value="<?= $e($cli['empresa'] ?? '') ?>" maxlength="100"></label>
+<label><span class="lbl">Persona de contacto <span class="req">* obligatorio</span></span><input name="nombre" value="<?= $e($cli['nombre']) ?>" maxlength="80" required></label>
+<label><span class="lbl">Usuario para entrar <span class="req">* obligatorio</span></span><input name="usuario" value="<?= $e($cli['usuario']) ?>" maxlength="60" autocapitalize="none" required></label>
+<label><span class="lbl">WhatsApp de esa persona <span class="opt">(opcional)</span></span><input name="telefono" value="<?= $e($cli['telefono']) ?>" maxlength="30"></label>
+<label><span class="lbl">Clave <span class="opt">(opcional)</span> <?= $cli['id'] ? '(vacío = no cambiar)' : '(vacío = se genera una clave temporal fácil de dictar)' ?></span><input name="clave" type="text" autocomplete="off" placeholder="mínimo 6 caracteres"></label>
+<label><span class="lbl">Tarifa por video ($) <span class="opt">(opcional)</span></span><input name="tarifa_video" inputmode="numeric" value="<?= $e($cli['tarifa_video'] ?? '') ?>"></label>
+<label><span class="lbl">Tarifa por foto ($) <span class="opt">(opcional)</span></span><input name="tarifa_foto" inputmode="numeric" value="<?= $e($cli['tarifa_foto'] ?? '') ?>"></label>
+<label class="full"><span class="lbl">Logo del cliente <span class="opt">(opcional)</span> (PNG, JPG o WebP; mejor con fondo transparente)</span><input type="file" name="logo" accept="image/png,image/jpeg,image/webp"></label>
+<?php if (!empty($cli['logo'])): ?><div class="full"><img class="clogo" src="../media/logos/<?= $e($cli['logo']) ?>" alt=""><label class="chk"><input type="checkbox" name="quitar_logo">Quitar el logo actual <span class="opt">(opcional)</span></label></div><?php endif; ?>
+<label class="chk full"><input type="checkbox" name="logo_web" <?= !empty($cli['logo_web']) ? 'checked' : '' ?>>Mostrar el logo en la página principal <span class="opt">(opcional)</span></label>
+<label class="chk full"><input type="checkbox" name="activo" <?= $cli['activo'] ? 'checked' : '' ?>>Puede entrar al portal <span class="opt">(opcional)</span></label>
+<div class="row full"><button>Guardar cliente</button><a class="btn g" href="clientes.php">Volver</a></div></form>
+<?php if ($conBorrar): ?>
+<details class="del-cli"><summary>Eliminar cliente</summary>
+<form method="post" class="row"><input type="hidden" name="a" value="del_cliente"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><label class="chk"><input type="checkbox" required>Confirmo: se borran el cliente y todas sus entregas <span class="req">* obligatorio</span></label><button class="r">Eliminar</button></form>
+</details>
+<?php endif; ?>
+<?php return ob_get_clean();
+};
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=26"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Proyectos</a><a href="consultas.php">Consultas<?php if ($consN > 0): ?><span class="nav-badge soft"><?= $consN ?></span><?php endif; ?></a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a><a href="../portal/" target="_blank" rel="noopener">Ver portal</a></nav>
 <form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
@@ -244,6 +284,7 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
 <label class="full only-video"><span class="lbl">Video para la vista previa <span class="opt">(opcional)</span> (si no subís nada, el portal muestra el video desde el link de Drive) <?= $ent['preview'] ? '· ya cargado; dejá vacío para mantenerlo' : '' ?></span><input type="file" name="mp4" accept="video/*"></label>
 <p class="mut full only-video">Se convierte solo a 720p y solo lo ve este cliente al entrar con su usuario. Puede tardar unos minutos: no cierres la página.</p>
 <label class="full only-video"><span class="lbl">Portada propia <span class="opt">(opcional)</span></span><input type="file" name="poster" accept="image/jpeg,image/png,image/webp"></label>
+<label class="full chk"><input type="checkbox" name="crear_trabajo" checked> Registrar también como trabajo a cobrar <span class="opt">(usa la tarifa del cliente y lo vincula a esta entrega)</span></label>
 <div class="row full"><button>Guardar</button><a class="btn g" href="?c=<?= (int)$cli['id'] ?>">Cancelar</a></div></form>
 <?php if ($tipoActual === 'video' && $ent['id'] && trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== ''): ?>
 <div class="row"><form method="post"><input type="hidden" name="a" value="ia_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$ent['id'] ?>"><button class="g">Generar título y copy con IA</button></form></div>
@@ -252,81 +293,85 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
 <?php if ($ent['id']): ?><h2>Eliminar entrega</h2><form method="post" class="row"><input type="hidden" name="a" value="del_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$ent['id'] ?>"><label class="chk"><input type="checkbox" required>Confirmo que quiero eliminarla <span class="req">* obligatorio</span></label><button class="r">Eliminar</button></form><?php endif; ?>
 
 <?php else: ?>
-<h1><?= $cli['id'] ? $e(($cli['empresa'] ? $cli['empresa'] . ' · ' : '') . $cli['nombre']) : 'Nuevo cliente' ?></h1>
+<h1 class="cli-title"><?= $cli['id'] ? $e(($cli['empresa'] ? $cli['empresa'] . ' · ' : '') . $cli['nombre']) : 'Nuevo cliente' ?></h1>
 <?php if ($cli['id']): ?>
-<div class="c360">
-  <section class="c360-card">
-    <h2>Resumen financiero</h2>
-    <div class="c360-stats">
-      <div><span>Cobrado histórico</span><b><?= $e(peso((float)$fin['cob'])) ?></b></div>
-      <div><span>Pendiente de cobro</span><b class="<?= (float)$fin['pend'] > 0 ? 'warn' : '' ?>"><?= $e(peso((float)$fin['pend'])) ?></b></div>
-      <div><span>Recibos emitidos</span><b><?= $nRec ?></b></div>
+<nav class="tabs" id="cli-tabs" role="tablist" aria-label="Ficha del cliente">
+  <a class="tab on" href="#tab-resumen" role="tab" aria-selected="true" aria-controls="tab-resumen">Resumen y Entregas</a>
+  <a class="tab" href="#tab-datos" role="tab" aria-selected="false" aria-controls="tab-datos">Datos y Tarifas</a>
+  <a class="tab" href="#tab-historial" role="tab" aria-selected="false" aria-controls="tab-historial">Historial</a>
+</nav>
+<section class="tab-panel" id="tab-resumen" role="tabpanel">
+  <div class="c360 resumen-grid">
+    <section class="c360-card">
+      <div class="c360-stats">
+        <div><span>Cobrado</span><b><?= $e(peso((float)$fin['cob'])) ?></b></div>
+        <div><span>Pendiente</span><b class="<?= (float)$fin['pend'] > 0 ? 'warn' : '' ?>"><?= $e(peso((float)$fin['pend'])) ?></b></div>
+        <div><span>Recibos</span><b><?= $nRec ?></b></div>
+      </div>
+      <p class="mut">Modo prueba <?= $mpCli ? 'activo' : 'desactivado' ?> · Último acceso: <?= !empty($cli['portal_ultima_visita']) ? $e(date('d/m/Y H:i', strtotime((string)$cli['portal_ultima_visita']))) : 'Nunca ingresó' ?></p>
+    </section>
+    <section class="c360-card">
+      <div class="c360-actions">
+        <?php if (!empty($cli['telefono']) && ($w = wa_url((string)$cli['telefono'], 'Hola ' . explode(' ', trim($cli['nombre']))[0] . ', '))): ?><a class="btn" href="<?= $e($w) ?>" target="_blank" rel="noopener">WhatsApp</a><?php else: ?><span class="mut">Sin teléfono cargado</span><?php endif; ?>
+        <form method="post"><input type="hidden" name="a" value="ver_como"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><button class="g">Ver portal</button></form>
+        <a class="btn g" href="cobros.php?cliente=<?= (int)$cli['id'] ?>">Cobros</a>
+        <form method="post"><input type="hidden" name="a" value="nueva_clave"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><button class="g">Regenerar clave</button></form>
+      </div>
+    </section>
+  </div>
+  <div class="lh2 ent-head">
+    <h2>Entregas</h2>
+    <div class="row">
+      <button type="button" class="g" data-importar="#impe">Importar carpeta de Drive</button>
+      <?php if (trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== ''): ?><form method="post"><input type="hidden" name="a" value="ia_entregas"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><button class="g">Generar textos con IA</button></form><?php endif; ?>
+      <a class="btn" href="?c=<?= (int)$cli['id'] ?>&e=0">+ Nueva entrega</a>
     </div>
-    <p class="mut">Datos del modo prueba <?= $mpCli ? 'activo' : 'desactivado' ?>.</p>
-  </section>
-  <section class="c360-card">
-    <h2>Entregas del portal</h2>
-    <p class="mut">Último acceso: <?= !empty($cli['portal_ultima_visita']) ? $e(date('d/m/Y H:i', strtotime((string)$cli['portal_ultima_visita']))) : 'Nunca ingresó' ?></p>
-    <div class="c360-list">
-    <?php foreach (array_slice($ents, 0, 8) as $r): $est = (string)($r['estado_cliente'] ?? 'pendiente'); $com = trim((string)($r['comentario_cliente'] ?? '')); ?>
-      <div class="c360-item"><div class="c360-ent"><span class="b tipo-<?= $tipoDe($r) ?>"><?= $tipoDe($r) === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span> <b><?= $e($r['titulo']) ?></b><br><span class="mut"><?= $e(substr((string)$r['creado'], 0, 10)) ?></span>
-        <?php if ($est === 'ajuste'): ?><blockquote class="c360-quote"><?= nl2br($e($com)) ?></blockquote>
-        <form method="post" class="c360-resolve"><input type="hidden" name="accion" value="resolver_ajuste"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="g">Marcar resuelto</button></form><?php endif; ?></div>
-        <span class="c360-est"><?php if ($est === 'ajuste'): ?><span class="b adj">Pidió ajuste</span><?php elseif ($est === 'aprobado'): ?><span class="badge ok">Aprobado</span><?php endif; ?></span></div>
-    <?php endforeach; if (!$ents) echo '<p class="mut">Sin entregas todavía.</p>'; ?>
-    </div>
-  </section>
-  <section class="c360-card">
-    <h2>Presupuestos y agenda</h2>
-    <p class="lbl">Últimos presupuestos</p>
-    <div class="c360-list">
-    <?php foreach ($presus as $r): ?><div class="c360-item"><span><b><?= $e($r['numero'] ?: ('Presupuesto #' . (int)$r['id'])) ?></b><br><span class="mut"><?= $e((string)$r['cliente_nombre'] . ((string)$r['empresa'] !== '' ? ' · ' . (string)$r['empresa'] : '')) ?> · <?= $e(substr((string)$r['creado_en'], 0, 10)) ?></span></span><b><?= $e(peso((float)$r['total'])) ?></b></div><?php endforeach; if (!$presus) echo '<p class="mut">Sin presupuestos vinculados.</p>'; ?>
-    </div>
-    <p class="lbl">Próximos eventos</p>
-    <div class="c360-list">
-    <?php foreach ($agendaCli as $r): ?><div class="c360-item"><span><b><?= $e($r['titulo']) ?></b><br><span class="mut"><?= $e(date('d/m', strtotime((string)$r['fecha']))) ?><?= !empty($r['hora']) ? ' · ' . $e(substr((string)$r['hora'], 0, 5)) : '' ?> · <?= $e(AGENDA_TIPOS[$r['tipo']] ?? $r['tipo']) ?></span></span></div><?php endforeach; if (!$agendaCli) echo '<p class="mut">Sin eventos próximos.</p>'; ?>
-    </div>
-  </section>
-  <section class="c360-card">
-    <h2>Acciones rápidas</h2>
-    <div class="c360-actions">
-      <?php if (!empty($cli['telefono']) && ($w = wa_url((string)$cli['telefono'], 'Hola ' . explode(' ', trim((string)$cli['nombre']))[0] . ', '))): ?><a class="btn" href="<?= $e($w) ?>" target="_blank" rel="noopener">WhatsApp</a><?php else: ?><span class="mut">Sin teléfono cargado</span><?php endif; ?>
-      <form method="post"><input type="hidden" name="a" value="ver_como"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><button class="g">Ver portal</button></form>
-      <form method="post"><input type="hidden" name="a" value="nueva_clave"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><button class="g">Regenerar clave</button></form>
-      <a class="btn g" href="cobros.php?cliente=<?= (int)$cli['id'] ?>">Cobros del cliente</a>
-      <a class="btn g" href="cobros.php?c=<?= (int)$cli['id'] ?>#nuevo">+ Nuevo cobro</a>
-      <a class="btn g" href="?c=<?= (int)$cli['id'] ?>&e=0">+ Nueva entrega</a>
-    </div>
-  </section>
-</div>
+  </div>
+  <dialog id="impe" class="imp">
+  <form method="post" class="f">
+  <input type="hidden" name="a" value="importar_carpeta"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>">
+  <h2 class="full">Importar carpeta de Google Drive</h2>
+  <p class="mut full">Pegá el link de una carpeta pública. Se crea una entrega por cada video encontrado, con el nombre del archivo como título y su link individual. No se sube ningún archivo al servidor.</p>
+  <label class="full"><span class="lbl">Link de la carpeta <span class="req">* obligatorio</span></span><input name="carpeta" type="url" required placeholder="https://drive.google.com/drive/folders/…"></label>
+  <label class="full chk"><input type="checkbox" name="crear_trabajo" checked> Registrar también como trabajo a cobrar <span class="opt">(uno por cada video importado)</span></label>
+  <div class="row full"><button>Importar videos</button><button type="button" class="g" data-cerrar>Cancelar</button></div>
+  </form>
+  </dialog>
+  <?php $nVidEnt = count(array_filter($ents, fn($r) => $tipoDe($r) === 'video')); $nFotEnt = count($ents) - $nVidEnt; ?>
+  <div class="lf-filtros"><a class="lf-pill<?= $ft === 'todos' ? ' on' : '' ?>" href="?c=<?= (int)$cli['id'] ?>&ft=todos#tab-resumen">Todos <b><?= count($ents) ?></b></a><a class="lf-pill<?= $ft === 'video' ? ' on' : '' ?>" href="?c=<?= (int)$cli['id'] ?>&ft=video#tab-resumen">Videos <b><?= $nVidEnt ?></b></a><a class="lf-pill<?= $ft === 'fotos' ? ' on' : '' ?>" href="?c=<?= (int)$cli['id'] ?>&ft=fotos#tab-resumen">Fotos <b><?= $nFotEnt ?></b></a></div>
+  <table class="cards ent-table"><tr><th>Tipo</th><th>Título</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr>
+  <?php foreach ($entsList as $r): $est = (string)($r['estado_cliente'] ?? 'pendiente'); $com = trim((string)($r['comentario_cliente'] ?? '')); ?>
+  <tr><td data-label="Tipo"><span class="b tipo-<?= $tipoDe($r) ?>"><?= $tipoDe($r) === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span></td><td data-label="Título"><?= $e($r['titulo']) ?></td><td class="mut" data-label="Fecha"><?= $e(substr((string)$r['creado'], 0, 10)) ?></td>
+  <td data-label="Estado"><span class="c360-est"><?php if ($est === 'ajuste'): ?><span class="b adj" title="<?= $e($com) ?>">Pidió ajuste</span><?php elseif ($est === 'aprobado'): ?><span class="badge ok">Aprobado</span><?php else: ?><span class="badge pend">Pendiente</span><?php endif; ?></span>
+    <?php if ($est === 'ajuste'): ?><?php if ($com !== ''): ?><div class="mut ent-com" title="<?= $e($com) ?>"><?= $e(mb_substr($com, 0, 55)) ?></div><?php endif; ?><form method="post" class="resolver-f"><input type="hidden" name="accion" value="resolver_ajuste"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="g">Marcar resuelto</button></form><?php endif; ?></td>
+  <td data-label="Acciones"><div class="ent-actions"><a class="btn g" href="?c=<?= (int)$cli['id'] ?>&e=<?= (int)$r['id'] ?>">Editar</a><?php if ($tipoDe($r) === 'video' && trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== ''): ?><form method="post" class="ia-f"><input type="hidden" name="a" value="ia_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="g">IA</button></form><?php endif; ?><form method="post" class="del-f"><input type="hidden" name="a" value="del_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="r" data-confirm="¿Borrar esta entrega?">Borrar</button></form></div></td></tr>
+  <?php endforeach; if (!$entsList) echo '<tr><td colspan="5" class="mut">Sin entregas todavía.</td></tr>'; ?></table>
+</section>
+<section class="tab-panel" id="tab-datos" role="tabpanel" hidden>
+  <?= $formCliente(true) ?>
+</section>
+<section class="tab-panel" id="tab-historial" role="tabpanel" hidden>
+  <div class="c360 hist-grid">
+    <section class="c360-card">
+      <h2>Presupuestos vinculados</h2>
+      <div class="c360-list">
+      <?php foreach ($presus as $r): ?><div class="c360-item"><span><a href="presupuesto_ver.php?id=<?= (int)$r['id'] ?>"><b><?= $e($r['numero'] ?: ('Presupuesto #' . (int)$r['id'])) ?></b></a><br><span class="mut"><?= $e(substr((string)$r['creado_en'], 0, 10)) ?></span></span><b><?= $e(peso((float)$r['total'])) ?></b></div><?php endforeach; if (!$presus) echo '<p class="mut">Sin presupuestos vinculados.</p>'; ?>
+      </div>
+    </section>
+    <section class="c360-card">
+      <h2>Agenda</h2>
+      <p class="lbl">Próximos</p>
+      <div class="c360-list">
+      <?php foreach ($agendaFuturos as $r): ?><div class="c360-item"><span><b><?= $e($r['titulo']) ?></b><br><span class="mut"><?= $e(date('d/m/Y', strtotime((string)$r['fecha']))) ?><?= !empty($r['hora']) ? ' · ' . $e(substr((string)$r['hora'], 0, 5)) : '' ?></span></span><span class="badge <?= $e($r['tipo']) ?>"><?= $e(AGENDA_TIPOS[$r['tipo']] ?? $r['tipo']) ?></span></div><?php endforeach; if (!$agendaFuturos) echo '<p class="mut">Sin eventos próximos.</p>'; ?>
+      </div>
+      <p class="lbl">Pasados</p>
+      <div class="c360-list">
+      <?php foreach ($agendaPasados as $r): ?><div class="c360-item"><span><b><?= $e($r['titulo']) ?></b><br><span class="mut"><?= $e(date('d/m/Y', strtotime((string)$r['fecha']))) ?><?= $r['completado'] ? ' · Completado' : '' ?></span></span><span class="badge <?= $e($r['tipo']) ?>"><?= $e(AGENDA_TIPOS[$r['tipo']] ?? $r['tipo']) ?></span></div><?php endforeach; if (!$agendaPasados) echo '<p class="mut">Sin eventos pasados.</p>'; ?>
+      </div>
+    </section>
+  </div>
+</section>
+<?php else: ?>
+<?= $formCliente(false) ?>
 <?php endif; ?>
-<form class="f" method="post" enctype="multipart/form-data"><input type="hidden" name="a" value="cliente"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>">
-<label><span class="lbl">Empresa <span class="opt">(opcional)</span></span><input name="empresa" value="<?= $e($cli['empresa'] ?? '') ?>" maxlength="100"></label>
-<label><span class="lbl">Persona de contacto <span class="req">* obligatorio</span></span><input name="nombre" value="<?= $e($cli['nombre']) ?>" maxlength="80" required></label>
-<label><span class="lbl">Usuario para entrar <span class="req">* obligatorio</span></span><input name="usuario" value="<?= $e($cli['usuario']) ?>" maxlength="60" autocapitalize="none" required></label>
-<label><span class="lbl">WhatsApp de esa persona <span class="opt">(opcional)</span></span><input name="telefono" value="<?= $e($cli['telefono']) ?>" maxlength="30"></label>
-<label><span class="lbl">Clave <span class="opt">(opcional)</span> <?= $cli['id'] ? '(vacío = no cambiar)' : '(vacío = se genera una clave temporal fácil de dictar)' ?></span><input name="clave" type="text" autocomplete="off" placeholder="mínimo 6 caracteres"></label>
-<label><span class="lbl">Tarifa por video ($) <span class="opt">(opcional)</span></span><input name="tarifa_video" inputmode="numeric" value="<?= $e($cli['tarifa_video'] ?? '') ?>"></label>
-<label><span class="lbl">Tarifa por foto ($) <span class="opt">(opcional)</span></span><input name="tarifa_foto" inputmode="numeric" value="<?= $e($cli['tarifa_foto'] ?? '') ?>"></label>
-<label class="full"><span class="lbl">Logo del cliente <span class="opt">(opcional)</span> (PNG, JPG o WebP; mejor con fondo transparente)</span><input type="file" name="logo" accept="image/png,image/jpeg,image/webp"></label>
-<?php if (!empty($cli['logo'])): ?><div class="full"><img class="clogo" src="../media/logos/<?= $e($cli['logo']) ?>" alt=""><label class="chk"><input type="checkbox" name="quitar_logo">Quitar el logo actual <span class="opt">(opcional)</span></label></div><?php endif; ?>
-<label class="chk full"><input type="checkbox" name="logo_web" <?= !empty($cli['logo_web']) ? 'checked' : '' ?>>Mostrar el logo en la página principal <span class="opt">(opcional)</span></label>
-<label class="chk full"><input type="checkbox" name="activo" <?= $cli['activo'] ? 'checked' : '' ?>>Puede entrar al portal <span class="opt">(opcional)</span></label>
-<div class="row full"><button>Guardar cliente</button><a class="btn g" href="clientes.php">Volver</a></div></form>
-<?php if ($cli['id']): ?>
-<div class="lh2"><h2>Entregas</h2><div class="row"><button type="button" class="g" data-importar="#impe">Importar carpeta de Drive</button><?php if (trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== ''): ?><form method="post"><input type="hidden" name="a" value="ia_entregas"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><button class="g">Generar textos con IA</button></form><?php endif; ?><a class="btn" href="?c=<?= (int)$cli['id'] ?>&e=0">Agregar entrega</a></div></div>
-<dialog id="impe" class="imp">
-<form method="post" class="f">
-<input type="hidden" name="a" value="importar_carpeta"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>">
-<h2 class="full">Importar carpeta de Google Drive</h2>
-<p class="mut full">Pegá el link de una carpeta pública. Se crea una entrega por cada video encontrado, con el nombre del archivo como título y su link individual. No se sube ningún archivo al servidor.</p>
-<label class="full"><span class="lbl">Link de la carpeta <span class="req">* obligatorio</span></span><input name="carpeta" type="url" required placeholder="https://drive.google.com/drive/folders/…"></label>
-<div class="row full"><button>Importar videos</button><button type="button" class="g" data-cerrar>Cancelar</button></div>
-</form>
-</dialog>
-<?php $nVidEnt = count(array_filter($ents, fn($r) => $tipoDe($r) === 'video')); $nFotEnt = count($ents) - $nVidEnt; ?>
-<div class="lf-filtros"><a class="lf-pill<?= $ft === 'todos' ? ' on' : '' ?>" href="?c=<?= (int)$cli['id'] ?>&ft=todos">Todos <b><?= count($ents) ?></b></a><a class="lf-pill<?= $ft === 'video' ? ' on' : '' ?>" href="?c=<?= (int)$cli['id'] ?>&ft=video">Videos <b><?= $nVidEnt ?></b></a><a class="lf-pill<?= $ft === 'fotos' ? ' on' : '' ?>" href="?c=<?= (int)$cli['id'] ?>&ft=fotos">Fotos <b><?= $nFotEnt ?></b></a></div>
-<table class="cards"><tr><th>Tipo</th><th>Título</th><th>Fecha</th><th>Links</th><th>Copy</th><th></th></tr>
-<?php foreach ($entsList as $r): ?><tr><td data-label="Tipo"><span class="b tipo-<?= $tipoDe($r) ?>"><?= $tipoDe($r) === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span></td><td data-label="Título"><?= $e($r['titulo']) ?></td><td class="mut" data-label="Fecha"><?= $e(substr($r['creado'], 0, 10)) ?></td><td data-label="Links"><?= $r['link_hd'] ? 'HD ' : '' ?><?= $r['link_4k'] ? '4K' : '' ?></td><td class="mut" data-label="Copy"><?= trim((string)$r['descripcion']) !== '' ? 'Sí' : '—' ?></td><td data-label=""><a class="btn g" href="?c=<?= (int)$cli['id'] ?>&e=<?= (int)$r['id'] ?>">Editar</a><?php if ($tipoDe($r) === 'video' && trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== ''): ?><form method="post" class="ia-f"><input type="hidden" name="a" value="ia_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="g">IA</button></form><?php endif; ?></td></tr><?php endforeach; if (!$entsList) echo '<tr><td colspan="6" class="mut">Sin entregas todavía.</td></tr>'; ?></table>
-<h2>Eliminar cliente</h2><form method="post" class="row"><input type="hidden" name="a" value="del_cliente"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><label class="chk"><input type="checkbox" required>Confirmo: se borran el cliente y todas sus entregas <span class="req">* obligatorio</span></label><button class="r">Eliminar</button></form>
-<?php endif; endif; ?><script src="admin.js?v=21"></script></body></html>
+<?php endif; ?><script src="admin.js?v=22"></script></body></html>
