@@ -78,13 +78,13 @@ $render = function (array $items, bool $done) use ($e, $T, $hoy): void {
         <?php
     }
 };
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Agenda | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=20"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Agenda | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=21"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Proyectos</a><a href="./?v=consultas">Consultas</a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a class="on" href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a><a href="../" target="_blank" rel="noopener">Ver web</a></nav>
 <form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
 <?php if ($ok) echo '<p class="ok">' . $e($ok) . '</p>'; if ($err) echo '<p class="err">' . $e($err) . '</p>'; ?>
 <div class="lh2"><h1>Agenda de rodajes y entregas</h1><span class="mut"><?= $agN ?> evento(s) pendiente(s) para hoy o los próximos 3 días</span></div>
-<form class="agenda-form" method="post">
+<form class="agenda-form" id="nuevo" method="post">
 <input type="hidden" name="a" value="add"><input type="hidden" name="t" value="<?= $T ?>">
 <label><span class="lbl">Tipo</span><select name="tipo"><?php foreach (AGENDA_TIPOS as $k => $n) echo '<option value="' . $e($k) . '">' . $e($n) . '</option>'; ?></select></label>
 <label><span class="lbl">Cliente <span class="opt">(opcional)</span></span><select name="cliente_id"><option value="0">— Sin cliente —</option><?php foreach ($clientes as $c): ?><option value="<?= (int)$c['id'] ?>"><?= $e($c['empresa'] ?: $c['nombre']) ?></option><?php endforeach; ?></select></label>
@@ -102,4 +102,4 @@ $render = function (array $items, bool $done) use ($e, $T, $hoy): void {
 <?php if (!$gProx): ?><p class="mut">No hay eventos próximos.</p><?php else: ?><div class="ag-list"><?php $render($gProx, false); ?></div><?php endif; ?>
 <h2>Completados</h2>
 <?php if (!$gDone): ?><p class="mut">Todavía no completaste eventos.</p><?php else: ?><div class="ag-list"><?php $render($gDone, true); ?></div><?php endif; ?>
-<script src="admin.js?v=20"></script></body></html>
+<script src="admin.js?v=21"></script></body></html>

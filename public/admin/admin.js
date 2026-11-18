@@ -218,6 +218,39 @@ if (cobroEstado && cobroSumar) {
 }
 // ---- Dashboard: cambiar de mes al elegir otro ----
 document.querySelectorAll('.msel input[type=month]').forEach(inp => inp.addEventListener('change', () => { if (inp.form) inp.form.submit(); }));
+document.querySelectorAll('[data-open-finanzas]').forEach(b => b.addEventListener('click', () => {
+  const box = document.querySelector('.dash .accd'); if (!box) return;
+  box.open = true;
+  box.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  const input = box.querySelector('input[name=concepto]');
+  if (input) setTimeout(() => input.focus(), 150);
+}));
+const pfSearch = document.getElementById('portfolio-search');
+const pfList = document.getElementById('portfolio-list');
+const pfFilters = document.getElementById('portfolio-filters');
+if (pfList && pfFilters) {
+  let filtro = 'all';
+  const aplicar = () => {
+    const q = (pfSearch ? pfSearch.value : '').trim().toLocaleLowerCase('es-AR');
+    let visibles = 0;
+    pfList.querySelectorAll(':scope > .pi[data-id]').forEach(card => {
+      const texto = (card.dataset.search || '').toLocaleLowerCase('es-AR');
+      const okQ = !q || texto.includes(q);
+      const okF = filtro === 'all' || (filtro === 'visible' && card.dataset.visible === '1') || (filtro === 'hidden' && card.dataset.visible === '0') || (filtro.indexOf('cat:') === 0 && card.dataset.cat === filtro.slice(4));
+      const ok = okQ && okF;
+      card.hidden = !ok;
+      if (ok) visibles++;
+    });
+    const empty = document.getElementById('portfolio-empty');
+    if (empty) empty.hidden = visibles > 0;
+  };
+  if (pfSearch) pfSearch.addEventListener('input', aplicar);
+  pfFilters.addEventListener('click', e => {
+    const b = e.target.closest('.pill'); if (!b) return;
+    pfFilters.querySelectorAll('.pill').forEach(x => x.classList.toggle('on', x === b));
+    filtro = b.dataset.filter || 'all'; aplicar();
+  });
+}
 
 // ---- Presupuestos: filas dinámicas, subtotales y total ----
 const presuForm = document.getElementById('presu-form');

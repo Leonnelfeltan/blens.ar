@@ -10,6 +10,8 @@ header('X-Robots-Tag: noindex'); header('Cache-Control: no-store'); header('X-Fr
 $cfg = blens_cfg(); $pdo = blens_db(); $mp = modo_prueba($pdo);
 blens_migrar();                                          // migración automática (columnas nuevas y tabla de gastos)
 $agN = agenda_pendientes($pdo);
+$consN = consultas_pendientes($pdo);
+$cobN = cobros_pendientes($pdo);
 if (!empty($_SESSION['ok'])) blens_acreditar_tna($pdo);  // acreditación diaria de intereses (idempotente)
 $faltaMig = false; try { $faltaMig = !$pdo->query("SHOW COLUMNS FROM proyectos LIKE 'video_1080'")->fetch(); } catch (Throwable $x0) { }
 const MIG_CMD = "sudo mysql blens_web -e \"ALTER TABLE proyectos ADD COLUMN video_1080 VARCHAR(255) NULL, ADD COLUMN video_480 VARCHAR(255) NULL, ADD COLUMN calidades VARCHAR(40) NULL, ADD COLUMN estado VARCHAR(12) NOT NULL DEFAULT 'listo', ADD COLUMN error_msg VARCHAR(255) NULL, ADD COLUMN fuente_drive VARCHAR(500) NULL, ADD COLUMN cola_src VARCHAR(255) NULL, ADD COLUMN poster_auto TINYINT(1) NOT NULL DEFAULT 0;\"";
@@ -289,7 +291,7 @@ if ($post) {
 }
 $auth = !empty($_SESSION['ok']);
 ?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>Panel | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=20"></head><body>
+<title>Panel | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=21"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <?php if (!$auth): ?>
 <form class="login" method="post"><h1 class="lh"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span> · panel</h1>
@@ -299,7 +301,7 @@ $auth = !empty($_SESSION['ok']);
 <?php else:
 $view = $_GET['v'] ?? 'proyectos'; $edit = isset($_GET['e']) ? (int)$_GET['e'] : null; ?>
 <div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
-<nav><a href="./">Proyectos</a><a href="?v=consultas">Consultas</a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a><a href="../" target="_blank" rel="noopener">Ver web</a></nav>
+<nav><a href="./">Proyectos</a><a href="?v=consultas">Consultas<?php if ($consN > 0): ?><span class="nav-badge soft"><?= $consN ?></span><?php endif; ?></a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros<?php if ($cobN > 0): ?><span class="nav-badge soft"><?= $cobN ?></span><?php endif; ?></a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a><a href="../" target="_blank" rel="noopener">Ver web</a></nav>
 <form method="post"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>"><button class="g">Salir</button></form></div>
 <?php if (isset($_GET['ok'])) { $imp = (int)($_GET['imp'] ?? 0); $impErr = (int)($_GET['imp_err'] ?? 0); echo '<p class="ok">' . ($imp > 0 ? 'Se importaron ' . $imp . ' videos a la cola de procesamiento.' : 'Cambios guardados.') . ' Pueden tardar hasta un minuto en verse en la web.' . ($impErr > 0 ? ' ' . $impErr . ' no se pudieron iniciar; revisá la lista.' : '') . '</p>'; } if ($msg) echo '<p class="err">' . $e($msg) . '</p>'; ?>
 <?php
@@ -315,6 +317,7 @@ $esMesActual = ($ym === date('Y-m'));
 $cobMes = cobrar_mes($pdo, $ym); $gasMes = total_gastos_mes($pdo, $ym); $neto = $cobMes - $gasMes;
 $saldo = saldo_cuenta($pdo); $tna = tna_cuenta($pdo); $rend = rend_estimado($saldo, $tna);
 $gastos = gastos_mes($pdo, $ym);
+$porCobrar = por_cobrar($pdo);
 $tnaTxt = rtrim(rtrim(number_format($tna, 2, '.', ''), '0'), '.');
 $rendidoMes = (float)str_replace(',', '.', (string)ajuste($pdo, 'tna_ganado_mes', '0'));
 $urlMes = fn(string $m): string => './?' . ($view !== 'proyectos' ? 'v=' . rawurlencode($view) . '&' : '') . 'mes=' . $m . '#finanzas';
@@ -331,13 +334,20 @@ $urlMes = fn(string $m): string => './?' . ($view !== 'proyectos' ? 'v=' . rawur
     <span class="mut"><?= $esMesActual ? 'Estás viendo el mes actual' : 'Estás viendo ' . $e($mesTxt) ?></span>
   </form>
   <div class="kpis fin">
-    <div class="kpi"><span class="k">Cobrado en <?= $e($mesTxt) ?></span><b><?= $e(peso($cobMes)) ?></b><span class="mut"><?= $e($mesTxt) ?></span></div>
-    <div class="kpi"><span class="k">Gastos en <?= $e($mesTxt) ?></span><b><?= $e(peso($gasMes)) ?></b><span class="mut"><?= count($gastos) ?> gasto(s) registrado(s)</span></div>
+    <a class="kpi fin link" href="cobros.php" title="Ver cobros"><span class="k">Cobrado en <?= $e($mesTxt) ?></span><b><?= $e(peso($cobMes)) ?></b><span class="mut">Ver cobros →</span></a>
+    <a class="kpi fin link" href="cobros.php" title="Ver pendientes de cobro"><span class="k">Por cobrar</span><b class="<?= $porCobrar > 0 ? 'warn' : '' ?>"><?= $e(peso($porCobrar)) ?></b><span class="mut"><?= $cobN ?> trabajo(s) pendiente(s)</span></a>
+    <button type="button" class="kpi fin link" data-open-finanzas title="Ver gastos y registrar uno"><span class="k">Gastos en <?= $e($mesTxt) ?></span><b><?= $e(peso($gasMes)) ?></b><span class="mut"><?= count($gastos) ?> gasto(s) · abrir detalle</span></button>
     <div class="kpi"><span class="k">Ganancia neta de <?= $e($mesTxt) ?></span><b class="<?= $neto < 0 ? 'warn' : '' ?>"><?= $e(peso($neto)) ?></b><span class="mut">cobrado menos gastos</span></div>
     <div class="kpi"><span class="k">Saldo en cuenta</span><b><?= $e(peso($saldo)) ?></b>
       <?php if ($tna > 0): ?><span class="chip-r">+<?= $e(peso($rend['diario'])) ?>/día · ~<?= $e(peso($rend['mensual'])) ?>/mes (TNA <?= $e($tnaTxt) ?>%)</span>
         <span class="mut">Rendido en el mes: +<?= $e(peso(round($rendidoMes, 2))) ?></span>
       <?php else: ?><span class="mut">cargá tu TNA para ver el rendimiento</span><?php endif; ?></div>
+  </div>
+  <div class="quick-actions">
+    <a class="btn g" href="cobros.php#nuevo">+ Nuevo cobro</a>
+    <button type="button" class="btn g" data-open-finanzas>+ Registrar gasto</button>
+    <a class="btn g" href="agenda.php#nuevo">+ Evento en agenda</a>
+    <a class="btn g" href="presupuestos.php#nuevo">+ Nuevo presupuesto</a>
   </div>
   <details class="accd" <?= isset($_GET['d']) || isset($_GET['g']) ? 'open' : '' ?>><summary>Saldo en cuenta, TNA y gastos de <?= $e($mesTxt) ?></summary>
     <div class="cols">
@@ -457,7 +467,7 @@ if ($faltaCat) echo '<p class="err">Falta ampliar la columna de categorías a 40
 <?php else:
 if ($faltaMig) echo '<p class="err">Falta actualizar la base de datos. En el servidor corré:<br><code>' . $e(MIG_CMD) . '</code></p>';
 if ($faltaCat) echo '<p class="err">Falta ampliar la columna de categorías a 40 caracteres. En el servidor corré:<br><code>' . $e(MIG_CAT_CMD) . '</code></p>';
-$rows = $pdo->query('SELECT * FROM proyectos ORDER BY orden ASC, id DESC')->fetchAll();
+$rows = $pdo->query('SELECT p.*, c.empresa AS cliente_nombre FROM proyectos p LEFT JOIN clientes c ON c.id=p.cliente_id ORDER BY p.orden ASC, p.id DESC')->fetchAll();
 $show = array_values(array_filter($rows, fn($r) => ($r['categoria'] ?? '') === 'showreel'));
 $port = array_values(array_filter($rows, fn($r) => ($r['categoria'] ?? '') !== 'showreel'));
 $cls = $pdo->query('SELECT id,empresa,nombre FROM clientes ORDER BY empresa,nombre')->fetchAll();
@@ -469,10 +479,10 @@ try {
         if (!isset($fbs[$fpid])) $fbs[$fpid] = $fb;
     }
 } catch (Throwable $x0) { }
-$card = function (array $r, bool $drag) use ($cats, $e, $fbs): void { $est = $r['estado'] ?? 'listo'; $fb = $fbs[(int)$r['id']] ?? null; ?>
-<article class="pi <?= $r['visible'] ? '' : 'off' ?>"<?= $drag ? ' draggable="true" data-id="' . (int)$r['id'] . '" title="Arrastrá para cambiar el orden"' : '' ?>>
+$card = function (array $r, bool $drag) use ($cats, $e, $fbs): void { $est = $r['estado'] ?? 'listo'; $fb = $fbs[(int)$r['id']] ?? null; $cli = (string)($r['cliente_nombre'] ?? '') ?: (string)($r['cliente'] ?? ''); ?>
+<article class="pi <?= $r['visible'] ? '' : 'off' ?>" data-search="<?= $e(mb_strtolower(trim((string)$r['titulo'] . ' ' . $cli), 'UTF-8')) ?>" data-visible="<?= $r['visible'] ? 1 : 0 ?>" data-cat="<?= $e((string)$r['categoria']) ?>"<?= $drag ? ' draggable="true" data-id="' . (int)$r['id'] . '" title="Arrastrá para cambiar el orden"' : '' ?>>
   <div class="th"><?= $r['poster'] ? '<img src="../' . $e($r['poster']) . '" alt="">' : '<div></div>' ?></div>
-  <div class="in"><b><?= $e($r['titulo']) ?></b><span class="mut"><?= $e(trim(($r['cliente'] ? $r['cliente'] . ' · ' : '') . ($cats[$r['categoria']] ?? $r['categoria']))) ?></span>
+  <div class="in"><b><?= $e($r['titulo']) ?></b><span class="mut"><?= $e(trim(($cli ? $cli . ' · ' : '') . ($cats[$r['categoria']] ?? $r['categoria']))) ?></span>
     <div class="tags">
       <?php if ($est === 'procesando'): ?><span class="b proc" data-proc>⏳ Procesando…</span>
       <?php elseif ($est === 'error'): ?><span class="b err2">Error al procesar</span>
@@ -513,8 +523,19 @@ $card = function (array $r, bool $drag) use ($cats, $e, $fbs): void { $est = $r[
 <?php foreach ($show as $r) $card($r, false); if (!$show) echo '<p class="mut">Todavía no cargaste el video de presentación.</p>'; ?>
 </div>
 <h2>Proyectos del portfolio</h2>
+<div class="pf-tools">
+  <label class="pf-search"><span class="lbl">Buscar por título o cliente</span><input type="search" id="portfolio-search" placeholder="Título o cliente…" autocomplete="off"></label>
+  <div class="pf-filters" id="portfolio-filters">
+    <button type="button" class="pill on" data-filter="all">Todos</button>
+    <button type="button" class="pill" data-filter="visible">Visibles</button>
+    <button type="button" class="pill" data-filter="hidden">Ocultos</button>
+    <?php foreach ($catsImp as $k => $n): ?><button type="button" class="pill" data-filter="cat:<?= $e($k) ?>"><?= $e($n) ?></button><?php endforeach; ?>
+  </div>
+</div>
 <p class="mut">Arrastrá las tarjetas para cambiar el orden; se guarda solo.</p>
 <div class="plist plist-portfolio" id="portfolio-list" data-t="<?= $e($_SESSION['t']) ?>">
-<?php foreach ($port as $r) $card($r, true); if (!$port) echo '<p class="mut">Todavía no cargaste proyectos del portfolio.</p>'; ?>
+<?php foreach ($port as $r) $card($r, true); ?>
 </div>
-<?php endif; endif; ?><script src="admin.js?v=20"></script></body></html>
+<p class="mut" id="portfolio-empty" hidden>No hay proyectos con ese filtro.</p>
+<?php if (!$port) echo '<p class="mut">Todavía no cargaste proyectos del portfolio.</p>'; ?>
+<?php endif; endif; ?><script src="admin.js?v=21"></script></body></html>

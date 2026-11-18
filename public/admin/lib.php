@@ -115,6 +115,24 @@ function comprobante_boton(string $tipo, int $id): string {
 
 /* ---- Agenda de rodajes, entregas y reuniones ---- */
 const AGENDA_TIPOS = ['rodaje' => 'Rodaje', 'entrega' => 'Entrega', 'reunion' => 'Reunión'];
+function por_cobrar(PDO $pdo): float {
+    $s = $pdo->prepare("SELECT COALESCE(SUM(cantidad*monto_unit),0) FROM trabajos WHERE estado='pendiente' AND prueba=?");
+    $s->execute([modo_prueba($pdo)]); return round((float)$s->fetchColumn(), 2);
+}
+function cobros_pendientes(PDO $pdo): int {
+    $s = $pdo->prepare("SELECT COUNT(*) FROM trabajos WHERE estado='pendiente' AND prueba=?");
+    $s->execute([modo_prueba($pdo)]); return (int)$s->fetchColumn();
+}
+function consultas_pendientes(PDO $pdo): int {
+    try {
+        $cols = [];
+        foreach ($pdo->query('SHOW COLUMNS FROM consultas')->fetchAll(PDO::FETCH_ASSOC) as $c) $cols[strtolower((string)$c['Field'])] = true;
+        foreach (['respondida', 'respondido', 'leida', 'leido', 'vista'] as $col) {
+            if (isset($cols[$col])) return (int)$pdo->query("SELECT COUNT(*) FROM consultas WHERE `$col` IS NULL OR `$col`=0 OR `$col`=''")->fetchColumn();
+        }
+    } catch (Throwable $x) { }
+    return 0;
+}
 function agenda_pendientes(PDO $pdo): int {
     try {
         return (int)$pdo->query("SELECT COUNT(*) FROM agenda WHERE completado=0 AND fecha BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 3 DAY)")->fetchColumn();
