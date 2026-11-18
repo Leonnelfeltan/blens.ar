@@ -125,13 +125,8 @@ function cobros_pendientes(PDO $pdo): int {
 }
 function consultas_pendientes(PDO $pdo): int {
     try {
-        $cols = [];
-        foreach ($pdo->query('SHOW COLUMNS FROM consultas')->fetchAll(PDO::FETCH_ASSOC) as $c) $cols[strtolower((string)$c['Field'])] = true;
-        foreach (['respondida', 'respondido', 'leida', 'leido', 'vista'] as $col) {
-            if (isset($cols[$col])) return (int)$pdo->query("SELECT COUNT(*) FROM consultas WHERE `$col` IS NULL OR `$col`=0 OR `$col`=''")->fetchColumn();
-        }
-    } catch (Throwable $x) { }
-    return 0;
+        return (int)$pdo->query('SELECT COUNT(*) FROM consultas WHERE respondida=0')->fetchColumn();
+    } catch (Throwable $x) { return 0; }
 }
 function agenda_pendientes(PDO $pdo): int {
     try {

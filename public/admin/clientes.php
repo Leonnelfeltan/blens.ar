@@ -9,6 +9,7 @@ header('X-Robots-Tag: noindex'); header('Cache-Control: no-store'); header('X-Fr
 if (empty($_SESSION['ok'])) { header('Location: ./'); exit; }
 $pdo = blens_db();
 $agN = agenda_pendientes($pdo);
+$consN = consultas_pendientes($pdo);
 $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 $msg = $_SESSION['flash'] ?? ''; unset($_SESSION['flash']);
 $acc = $_SESSION['acceso'] ?? null; unset($_SESSION['acceso']);
@@ -167,14 +168,23 @@ else {
     $cli = ['id' => 0, 'nombre' => '', 'empresa' => '', 'usuario' => '', 'telefono' => '', 'activo' => 1, 'logo' => null, 'logo_web' => 1, 'tarifa_video' => null, 'tarifa_foto' => null, 'portal_visitas' => 0, 'portal_ultima_visita' => null];
     if ($vc) { $s = $pdo->prepare('SELECT * FROM clientes WHERE id=?'); $s->execute([$vc]); $cli = $s->fetch() ?: $cli; }
     if ($cli['id']) {
+        $mpCli = modo_prueba($pdo);
+        $sf = $pdo->prepare("SELECT COALESCE(SUM(CASE WHEN estado='cobrado' THEN cantidad*monto_unit ELSE 0 END),0) cob, COALESCE(SUM(CASE WHEN estado='pendiente' THEN cantidad*monto_unit ELSE 0 END),0) pend FROM trabajos WHERE cliente_id=? AND prueba=?");
+        $sf->execute([$cli['id'], $mpCli]); $fin = $sf->fetch() ?: ['cob' => 0, 'pend' => 0];
+        $sr = $pdo->prepare('SELECT COUNT(*) FROM recibos WHERE cliente_id=? AND prueba=?'); $sr->execute([$cli['id'], $mpCli]); $nRec = (int)$sr->fetchColumn();
+        $nomCli = trim((string)$cli['nombre']); $empCli = trim((string)$cli['empresa']);
+        $sp = $pdo->prepare("SELECT DISTINCT p.* FROM presupuestos p LEFT JOIN trabajos t ON t.id=p.trabajo_id WHERE p.cliente_nombre=? OR (p.empresa<>'' AND p.empresa=?) OR t.cliente_id=? ORDER BY p.creado_en DESC LIMIT 5");
+        $sp->execute([$nomCli, $empCli, $cli['id']]); $presus = $sp->fetchAll();
+        $sa = $pdo->prepare('SELECT * FROM agenda WHERE cliente_id=? AND completado=0 AND fecha>=CURDATE() ORDER BY fecha, hora IS NULL, hora, id LIMIT 8');
+        $sa->execute([$cli['id']]); $agendaCli = $sa->fetchAll();
         $s = $pdo->prepare('SELECT * FROM entregas WHERE cliente_id=? ORDER BY id DESC'); $s->execute([$cli['id']]); $ents = $s->fetchAll();
         if ($ve !== null) { $ent = ['id' => 0, 'titulo' => '', 'descripcion' => '', 'link_hd' => '', 'link_4k' => '', 'preview' => '', 'poster' => '', 'proyecto_id' => null];
             foreach ($ents as $r) if ((int)$r['id'] === $ve) $ent = $r; }
     }
 }
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=21"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="../assets/apple-touch-icon.png"><link rel="stylesheet" href="admin.css?v=22"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
-<div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Proyectos</a><a href="./?v=consultas">Consultas</a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a><a href="../portal/" target="_blank" rel="noopener">Ver portal</a></nav>
+<div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Proyectos</a><a href="consultas.php">Consultas<?php if ($consN > 0): ?><span class="nav-badge soft"><?= $consN ?></span><?php endif; ?></a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a><a href="../portal/" target="_blank" rel="noopener">Ver portal</a></nav>
 <form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
 <?php if (isset($_GET['avisar']) && $cli && $cli['telefono']) { $s2 = $pdo->prepare('SELECT titulo FROM entregas WHERE id=? AND cliente_id=?'); $s2->execute([(int)$_GET['avisar'], $cli['id']]); if ($t2 = $s2->fetchColumn()) { $w = wa_url($cli['telefono'], 'Hola ' . explode(' ', trim($cli['nombre']))[0] . ', ya tenés una nueva entrega disponible en tu portal: «' . $t2 . '». Ingresá acá: ' . (blens_cfg()['sitio'] ?? 'https://blens.ar') . '/portal/'); if ($w) echo '<p class="ok">¿Avisamos al cliente? <a class="btn" href="' . $e($w) . '" target="_blank" rel="noopener">Enviar aviso por WhatsApp</a></p>'; } } ?>
 <?php if ($msg) echo '<p class="' . (str_contains($msg, 'guardad') || str_contains($msg, 'eliminad') ? 'ok' : 'err') . '">' . $e($msg) . '</p>'; ?>
@@ -214,8 +224,52 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
 
 <?php else: ?>
 <h1><?= $cli['id'] ? $e(($cli['empresa'] ? $cli['empresa'] . ' · ' : '') . $cli['nombre']) : 'Nuevo cliente' ?></h1>
-<?php if ($cli['id']): ?><p class="mut">Portal de clientes: <?= $e(portal_info($cli)) ?>.</p><?php endif; ?>
-<?php if ($cli['id'] && $cli['telefono'] && ($w = wa_url($cli['telefono'], 'Hola ' . explode(' ', trim($cli['nombre']))[0] . ', '))) echo '<p><a class="btn g" href="' . $e($w) . '" target="_blank" rel="noopener">Escribir por WhatsApp</a></p>'; ?>
+<?php if ($cli['id']): ?>
+<div class="c360">
+  <section class="c360-card">
+    <h2>Resumen financiero</h2>
+    <div class="c360-stats">
+      <div><span>Cobrado histórico</span><b><?= $e(peso((float)$fin['cob'])) ?></b></div>
+      <div><span>Pendiente de cobro</span><b class="<?= (float)$fin['pend'] > 0 ? 'warn' : '' ?>"><?= $e(peso((float)$fin['pend'])) ?></b></div>
+      <div><span>Recibos emitidos</span><b><?= $nRec ?></b></div>
+    </div>
+    <p class="mut">Datos del modo prueba <?= $mpCli ? 'activo' : 'desactivado' ?>.</p>
+  </section>
+  <section class="c360-card">
+    <h2>Entregas del portal</h2>
+    <p class="mut">Último acceso: <?= !empty($cli['portal_ultima_visita']) ? $e(date('d/m/Y H:i', strtotime((string)$cli['portal_ultima_visita']))) : 'Nunca ingresó' ?></p>
+    <div class="c360-list">
+    <?php foreach (array_slice($ents, 0, 8) as $r): $est = (string)($r['estado_cliente'] ?? 'pendiente'); ?>
+      <div class="c360-item"><span><b><?= $e($r['titulo']) ?></b><br><span class="mut"><?= $e(substr((string)$r['creado'], 0, 10)) ?></span></span>
+        <span><?php if ($est === 'aprobado'): ?><span class="badge ok">Aprobado</span>
+        <?php elseif ($est === 'ajuste'): ?><span class="b adj" title="<?= $e((string)($r['comentario_cliente'] ?? '')) ?>">Pidió ajuste: "<?= $e(mb_substr(trim((string)($r['comentario_cliente'] ?? '')), 0, 60)) ?>"</span>
+        <?php else: ?><span class="badge pend">Pendiente</span><?php endif; ?></span></div>
+    <?php endforeach; if (!$ents) echo '<p class="mut">Sin entregas todavía.</p>'; ?>
+    </div>
+  </section>
+  <section class="c360-card">
+    <h2>Presupuestos y agenda</h2>
+    <p class="lbl">Últimos presupuestos</p>
+    <div class="c360-list">
+    <?php foreach ($presus as $r): ?><div class="c360-item"><span><b><?= $e($r['numero'] ?: ('Presupuesto #' . (int)$r['id'])) ?></b><br><span class="mut"><?= $e((string)$r['cliente_nombre'] . ((string)$r['empresa'] !== '' ? ' · ' . (string)$r['empresa'] : '')) ?> · <?= $e(substr((string)$r['creado_en'], 0, 10)) ?></span></span><b><?= $e(peso((float)$r['total'])) ?></b></div><?php endforeach; if (!$presus) echo '<p class="mut">Sin presupuestos vinculados.</p>'; ?>
+    </div>
+    <p class="lbl">Próximos eventos</p>
+    <div class="c360-list">
+    <?php foreach ($agendaCli as $r): ?><div class="c360-item"><span><b><?= $e($r['titulo']) ?></b><br><span class="mut"><?= $e(date('d/m', strtotime((string)$r['fecha']))) ?><?= !empty($r['hora']) ? ' · ' . $e(substr((string)$r['hora'], 0, 5)) : '' ?> · <?= $e(AGENDA_TIPOS[$r['tipo']] ?? $r['tipo']) ?></span></span></div><?php endforeach; if (!$agendaCli) echo '<p class="mut">Sin eventos próximos.</p>'; ?>
+    </div>
+  </section>
+  <section class="c360-card">
+    <h2>Acciones rápidas</h2>
+    <div class="c360-actions">
+      <?php if (!empty($cli['telefono']) && ($w = wa_url((string)$cli['telefono'], 'Hola ' . explode(' ', trim((string)$cli['nombre']))[0] . ', '))): ?><a class="btn" href="<?= $e($w) ?>" target="_blank" rel="noopener">WhatsApp</a><?php else: ?><span class="mut">Sin teléfono cargado</span><?php endif; ?>
+      <form method="post"><input type="hidden" name="a" value="ver_como"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><button class="g">Ver portal</button></form>
+      <form method="post"><input type="hidden" name="a" value="nueva_clave"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><button class="g">Regenerar clave</button></form>
+      <a class="btn g" href="cobros.php?c=<?= (int)$cli['id'] ?>#nuevo">+ Nuevo cobro</a>
+      <a class="btn g" href="?c=<?= (int)$cli['id'] ?>&e=0">+ Nueva entrega</a>
+    </div>
+  </section>
+</div>
+<?php endif; ?>
 <form class="f" method="post" enctype="multipart/form-data"><input type="hidden" name="a" value="cliente"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>">
 <label><span class="lbl">Empresa <span class="opt">(opcional)</span></span><input name="empresa" value="<?= $e($cli['empresa'] ?? '') ?>" maxlength="100"></label>
 <label><span class="lbl">Persona de contacto <span class="req">* obligatorio</span></span><input name="nombre" value="<?= $e($cli['nombre']) ?>" maxlength="80" required></label>
@@ -230,7 +284,6 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
 <label class="chk full"><input type="checkbox" name="activo" <?= $cli['activo'] ? 'checked' : '' ?>>Puede entrar al portal <span class="opt">(opcional)</span></label>
 <div class="row full"><button>Guardar cliente</button><a class="btn g" href="clientes.php">Volver</a></div></form>
 <?php if ($cli['id']): ?>
-<div class="row"><a class="btn" href="cobros.php?c=<?= (int)$cli['id'] ?>">Cobros y trabajos</a><form method="post"><input type="hidden" name="a" value="ver_como"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><button class="g">Ver el portal como este cliente</button></form><form method="post"><input type="hidden" name="a" value="nueva_clave"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><button class="g">Generar clave temporal</button></form></div>
 <div class="lh2"><h2>Entregas</h2><div class="row"><button type="button" class="g" data-importar="#impe">Importar carpeta de Drive</button><?php if (trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== ''): ?><form method="post"><input type="hidden" name="a" value="ia_entregas"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><button class="g">Generar textos con IA</button></form><?php endif; ?><a class="btn" href="?c=<?= (int)$cli['id'] ?>&e=0">Agregar entrega</a></div></div>
 <dialog id="impe" class="imp">
 <form method="post" class="f">

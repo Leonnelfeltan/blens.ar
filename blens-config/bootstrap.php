@@ -148,6 +148,11 @@ function blens_migrar(?PDO $p = null): void {
             'comentario_fecha'   => 'DATETIME NULL',
         ];
         foreach ($nuevasE as $col => $def) if (!isset($colsE[$col])) $p->exec("ALTER TABLE entregas ADD COLUMN `$col` $def");
+        if ($p->query("SHOW TABLES LIKE 'consultas'")->fetch()) {
+            $colsC = [];
+            foreach ($p->query('SHOW COLUMNS FROM consultas')->fetchAll(PDO::FETCH_ASSOC) as $c) $colsC[$c['Field']] = true;
+            if (!isset($colsC['respondida'])) $p->exec('ALTER TABLE consultas ADD COLUMN respondida TINYINT(1) NOT NULL DEFAULT 0');
+        }
         // Adjuntos de comprobantes: siempre fuera de /public
         if (!is_dir(COMPROBANTES_DIR)) @mkdir(COMPROBANTES_DIR, 02770, true);
         @chmod(COMPROBANTES_DIR, 02770);

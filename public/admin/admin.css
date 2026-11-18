@@ -40,7 +40,7 @@ code{background:#0d0b0a;padding:.15rem .4rem;border-radius:3px;font-size:.78rem;
 .pf-search{display:grid;gap:.3rem;flex:1 1 220px;color:var(--m);font-size:.82rem}
 .pf-search input{max-width:320px}
 .pf-filters{display:flex;gap:.35rem;flex-wrap:wrap}
-.pill{background:none;color:var(--m);border:1px solid var(--l);border-radius:99px;padding:.35rem .7rem;font:600 12px system-ui;cursor:pointer}
+.pill{background:none;color:var(--m);border:1px solid var(--l);border-radius:99px;padding:.35rem .7rem;font:600 12px system-ui;cursor:pointer;text-decoration:none;display:inline-block;line-height:1.2}
 .pill:hover{color:var(--h);border-color:var(--o)}
 .pill.on{background:rgba(255,90,31,.12);color:var(--o);border-color:rgba(255,90,31,.5)}
 .pi .th img,.pi .th div{width:78px;height:104px;object-fit:cover;background:#0d0b0a;border-radius:3px;display:block}
@@ -83,6 +83,19 @@ dialog.imp::backdrop{background:rgba(0,0,0,.65)}
 dialog.imp h2{margin:0;font-size:1.1rem}
 dialog.imp form.f{max-width:none;margin:0}
 .ia-f{display:inline}
+.c360{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;margin:1rem 0 1.5rem}
+.c360 .c360-card{background:var(--c2);border:1px solid var(--l);border-radius:8px;padding:1rem;min-width:0}
+.c360 .c360-card h2{margin:0 0 .7rem;font-size:.95rem;color:var(--o)}
+.c360-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.5rem}
+.c360-stats div{background:var(--c);border:1px solid var(--l);border-radius:6px;padding:.6rem;display:grid;gap:.2rem;min-width:0}
+.c360-stats span{color:var(--m);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em}
+.c360-stats b{font-size:1.05rem;word-break:break-word}
+.c360-list{display:grid;gap:.45rem;margin-top:.5rem}
+.c360-item{display:flex;justify-content:space-between;align-items:flex-start;gap:.6rem;border-bottom:1px solid var(--l);padding:.4rem 0;font-size:.88rem}
+.c360-item:last-child{border-bottom:0}
+.c360-item .mut{font-size:.76rem}
+.c360-actions{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.6rem}
+.c360-actions .btn,.c360-actions button{width:100%;text-align:center;font-size:.85rem;padding:.55rem .4rem}
 
 /* ===== abono mensual / resumen por WhatsApp ===== */
 .plan{display:grid;grid-template-columns:1fr auto;gap:1rem;align-items:center;background:var(--c2);border:1px solid var(--l);border-left:6px solid var(--o);border-radius:6px;padding:1rem 1.2rem;margin:1rem 0}
@@ -199,6 +212,7 @@ body{overflow-x:hidden}
   /* billetera / dashboard en una columna */
   .kpis,.kpis.fin{grid-template-columns:1fr 1fr}
   .quick-actions{grid-template-columns:1fr 1fr}
+  .c360{grid-template-columns:1fr}
   .quick{grid-template-columns:1fr 1fr}
   .quick label:first-child{grid-column:1/-1}
   .quick button{grid-column:1/-1}
@@ -207,7 +221,7 @@ body{overflow-x:hidden}
   .form2,.form2.s{grid-template-columns:1fr}
   .form2 button,.form2.s button{grid-column:1/-1}
 }
-@media(max-width:480px){.kpis,.kpis.fin{grid-template-columns:1fr}}
+@media(max-width:480px){.kpis,.kpis.fin,.c360-stats{grid-template-columns:1fr}}
 
 /* ===== Comprobantes y feedback de clientes ===== */
 .ic{width:15px;height:15px;vertical-align:-2px;margin-right:.35rem;flex:none}
