@@ -47,7 +47,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($eid <= 0 || $c <= 0) throw new RuntimeException('Datos de entrega inválidos.');
             $s = $pdo->prepare("SELECT id FROM entregas WHERE id=? AND cliente_id=? AND estado_cliente='ajuste'"); $s->execute([$eid, $c]);
             if (!$s->fetch()) throw new RuntimeException('No hay un pedido de ajuste pendiente.');
-            $pdo->prepare("UPDATE entregas SET estado_cliente='pendiente', comentario_cliente=NULL, comentario_fecha=NULL WHERE id=? AND cliente_id=?")->execute([$eid, $c]);
+            $estado = 'pendiente';
+            $pdo->prepare("UPDATE entregas SET estado_cliente=COALESCE(?, 'pendiente'), comentario_cliente=NULL, comentario_fecha=NULL WHERE id=? AND cliente_id=? AND estado_cliente='ajuste'")->execute([$estado, $eid, $c]);
             $_SESSION['flash'] = 'Ajuste marcado como resuelto.'; header("Location: clientes.php?c=$c"); exit;
         }
         if ($a === 'cliente') {

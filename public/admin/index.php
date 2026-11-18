@@ -80,22 +80,6 @@ function borrar_archivos(array $r): void {
     $ds = drive_sidecar((string)($r['fuente_drive'] ?? '')); if ($ds) @unlink($ds);
 }
 
-// Convierte el teléfono (como lo escriba el cliente) al formato de WhatsApp Argentina: 549 + área + número
-function wa_link(string $tel, string $nombre, string $servicio): ?string {
-    $d = preg_replace('/\D+/', '', $tel) ?? ''; if ($d === '') return null;
-    if (str_starts_with($d, '00')) $d = substr($d, 2);
-    if (str_starts_with($d, '54')) { if (!str_starts_with($d, '549')) $d = '549' . substr($d, 2); }
-    else {
-        $d = ltrim($d, '0');
-        if (strlen($d) === 12) foreach (str_starts_with($d, '11') ? [2] : [3, 4] as $a) { if (substr($d, $a, 2) === '15') { $d = substr($d, 0, $a) . substr($d, $a + 2); break; } }
-        if (strlen($d) !== 10) return null;
-        $d = '549' . $d;
-    }
-    $p = explode(' ', trim($nombre))[0];
-    $txt = "Hola $p, te escribimos de blens.ar por tu consulta" . ($servicio !== '' ? " sobre $servicio" : '') . ". ¿Cuándo podemos hablar para contarte cómo trabajamos?";
-    return 'https://wa.me/' . $d . '?text=' . rawurlencode($txt);
-}
-
 if ($post) {
     $a = $_POST['a'] ?? '';
     if ($a === 'login') {

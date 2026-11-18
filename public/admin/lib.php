@@ -227,10 +227,20 @@ function wa_guardar_plantillas(PDO $pdo, array $vals): void {
 }
 function wa_render(string $plantilla, array $datos): string { return strtr($plantilla, $datos); }
 function wa_link_portal(): string { return rtrim((string)(blens_cfg()['sitio'] ?? 'https://blens.ar'), '/') . '/portal/'; }
-function wa_link(?string $tel, string $plantilla, array $datos): ?string {
-    if ($tel === null || trim($tel) === '') return null;
-    $n = wa_num($tel);
-    return $n ? 'https://wa.me/' . $n . '?text=' . rawurlencode(wa_render($plantilla, $datos)) : null;
+if (!function_exists('wa_link')) {
+    function wa_link(?string $tel, string $plantilla = '', array|string $datos = []): ?string {
+        if ($tel === null || trim($tel) === '') return null;
+        $n = wa_num($tel);
+        if (!$n) return null;
+        if (is_array($datos)) {
+            $texto = wa_render($plantilla, $datos);
+        } else {
+            $nombre = explode(' ', trim($plantilla))[0];
+            $servicio = trim($datos);
+            $texto = 'Hola' . ($nombre !== '' ? ' ' . $nombre : '') . ', te escribimos de blens.ar por tu consulta' . ($servicio !== '' ? ' sobre ' . $servicio : '') . '. ¿Cuándo podemos hablar para contarte cómo trabajamos?';
+        }
+        return 'https://wa.me/' . $n . '?text=' . rawurlencode($texto);
+    }
 }
 
 // Número en formato WhatsApp Argentina (549 + área + número)
