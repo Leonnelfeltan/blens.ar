@@ -94,6 +94,7 @@ dialog.imp form.f{max-width:none;margin:0}
 .c360-item{display:flex;justify-content:space-between;align-items:flex-start;gap:.6rem;border-bottom:1px solid var(--l);padding:.4rem 0;font-size:.88rem}
 .c360-item:last-child{border-bottom:0}
 .c360-ent{min-width:0}
+.c360-est{white-space:nowrap;flex-shrink:0}
 .c360-item .mut{font-size:.76rem}
 .c360-actions{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.6rem}
 .c360-actions .btn,.c360-actions button{width:100%;text-align:center;font-size:.85rem;padding:.55rem .4rem}
