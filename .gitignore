@@ -1,4 +1,5 @@
 blens-config/config.php
+blens-config/vapid.json
 blens-config/comprobantes/*
 !blens-config/comprobantes/.gitkeep
 !blens-config/comprobantes/.htaccess

@@ -234,6 +234,19 @@ function blens_migrar(?PDO $p = null): void {
             INDEX p_estado (estado),
             INDEX p_trabajo (trabajo_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        $p->exec("CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            tipo ENUM('admin','cliente') NOT NULL,
+            cliente_id INT NULL,
+            endpoint TEXT NOT NULL,
+            p256dh VARCHAR(255) NOT NULL,
+            auth VARCHAR(255) NOT NULL,
+            user_agent VARCHAR(255) NULL,
+            endpoint_hash CHAR(64) NOT NULL,
+            creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_push_endpoint (endpoint_hash),
+            INDEX idx_push_tipo_cliente (tipo, cliente_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         // Comprobantes opcionales en cobros (trabajos) y gastos, también para bases existentes
         foreach (['trabajos', 'gastos', 'recibos'] as $tabla) {
             if (!$p->query("SHOW TABLES LIKE '$tabla'")->fetch()) continue;
@@ -251,3 +264,4 @@ function blens_db(): PDO {
     return $p = new PDO('mysql:host=' . $c['db_host'] . ';dbname=' . $c['db_name'] . ';charset=utf8mb4', $c['db_user'], $c['db_pass'], [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
 }
+require_once __DIR__ . '/push.php';

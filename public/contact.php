@@ -4,7 +4,8 @@ header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
 
 // ---- Configuración: vive FUERA de la carpeta pública (ver config.example.php) ----
-$cfg = require __DIR__ . '/../blens-config/config.php';
+require __DIR__ . '/../blens-config/bootstrap.php';
+$cfg = blens_cfg();
 define('DB_HOST', $cfg['db_host']); define('DB_NAME', $cfg['db_name']);
 define('DB_USER', $cfg['db_user']); define('DB_PASS', $cfg['db_pass']);
 define('MAIL_TO', $cfg['mail_to']); define('MAX_POR_HORA', $cfg['max_por_hora']);
@@ -49,6 +50,7 @@ try {
         PDO::ATTR_EMULATE_PREPARES => false,
     ]);
 
+    blens_migrar($pdo);
     // Límite por IP
     $q = $pdo->prepare('SELECT COUNT(*) FROM consultas WHERE ip = ? AND creado > (NOW() - INTERVAL 1 HOUR)');
     $q->execute([$ip]);
@@ -56,6 +58,13 @@ try {
 
     $ins = $pdo->prepare('INSERT INTO consultas (nombre, empresa, email, telefono, servicio, mensaje, ip) VALUES (?,?,?,?,?,?,?)');
     $ins->execute([$nombre, $empresa, $email, $telefono, $servicio, $mensaje, $ip]);
+    $consultaId = (int)$pdo->lastInsertId();
+    blens_push_notify($pdo, 'admin', null, [
+        'title' => 'Nueva consulta · blens.ar',
+        'body' => trim(($empresa !== '' ? $empresa : $nombre) . ($servicio !== '' ? ' · ' . $servicio : '') . ': ' . mb_substr($mensaje, 0, 140)),
+        'url' => '/admin/consultas.php',
+        'tag' => 'blens-consulta-' . $consultaId,
+    ]);
 } catch (Throwable $e) {
     error_log('[blens contact] ' . $e->getMessage());
     out(false, 'No pudimos guardar tu consulta. Escribinos a ' . MAIL_TO . '.', 500);

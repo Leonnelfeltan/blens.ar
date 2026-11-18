@@ -133,10 +133,9 @@ $agN = agenda_pendientes($pdo);
 $consN = consultas_pendientes($pdo);
 $plantillas = wa_plantillas($pdo);
 $list = $pdo->query('SELECT p.*, t.cliente_id AS cobro_cliente_id FROM presupuestos p LEFT JOIN trabajos t ON t.id=p.trabajo_id ORDER BY p.id DESC')->fetchAll();
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Presupuestos | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=29"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Presupuestos | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=30"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
-<div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Inicio</a><a href="consultas.php">Consultas<?php if ($consN > 0): ?><span class="nav-badge soft"><?= $consN ?></span><?php endif; ?></a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a class="on" href="presupuestos.php">Presupuestos</a><a href="../" target="_blank" rel="noopener">Ver web</a></nav>
-<div class="pwa-wrap" data-pwa-wrap hidden><button type="button" class="pwa-install" data-pwa-install>Instalar app</button><span class="pwa-hint" data-pwa-hint hidden>Tocá Compartir y luego “Agregar a inicio”.</span></div><form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
+<?php require __DIR__ . '/nav.php'; ?>
 <?php if ($ok) echo '<p class="ok">' . $e($ok) . '</p>'; if ($err) echo '<p class="err">' . $e($err) . '</p>'; ?>
 <div class="lh2" id="nuevo"><h1>Presupuestos rápidos</h1><span class="mut">Armá, imprimí y enviá un presupuesto desde el celular en menos de 30 segundos.</span></div>
 <form class="f presu-form" id="presu-form" method="post" autocomplete="off">
@@ -188,4 +187,4 @@ $list = $pdo->query('SELECT p.*, t.cliente_id AS cobro_cliente_id FROM presupues
 <?php endforeach; ?>
 </table>
 <?php endif; ?>
-<script src="admin.js?v=25"></script></body></html>
+<script src="admin.js?v=26"></script><script src="../assets/push.js?v=1"></script></body></html>

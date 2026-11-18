@@ -376,35 +376,55 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('/admin/sw.js', { scope: '/admin/' }).catch(() => {}));
 }
 (function () {
-  const wrap = document.querySelector('[data-pwa-wrap]');
-  if (!wrap) return;
-  const btn = wrap.querySelector('[data-pwa-install]');
-  const hint = wrap.querySelector('[data-pwa-hint]');
-  const key = 'blens-admin-pwa-tip';
-  const leida = () => { try { return localStorage.getItem(key) === '1'; } catch (_) { return false; } };
-  const guardar = () => { try { localStorage.setItem(key, '1'); } catch (_) {} };
-  if (leida()) return;
+  const buttons = Array.from(document.querySelectorAll('[data-pwa-install]'));
+  if (!buttons.length) return;
   let prompt = null;
-  window.addEventListener('beforeinstallprompt', e => {
-    e.preventDefault();
-    prompt = e;
-    wrap.hidden = false;
-  });
+  const aviso = msg => {
+    let box = document.querySelector('.push-toast');
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'push-toast';
+      box.setAttribute('role', 'status');
+      document.body.appendChild(box);
+    }
+    box.textContent = msg;
+    box.hidden = false;
+    clearTimeout(box._timer);
+    box._timer = setTimeout(() => { box.hidden = true; }, 6000);
+  };
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); prompt = e; });
   const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  if (ios) wrap.hidden = false;
-  window.addEventListener('appinstalled', () => { guardar(); wrap.hidden = true; });
-  if (btn) btn.addEventListener('click', async () => {
+  window.addEventListener('appinstalled', () => {
+    prompt = null;
+    try { localStorage.setItem('blens-admin-pwa-tip', '1'); } catch (_) {}
+    aviso('App instalada ✓');
+  });
+  buttons.forEach(btn => btn.addEventListener('click', async () => {
     if (prompt) {
       await prompt.prompt();
       await prompt.userChoice;
       prompt = null;
-      guardar();
-      wrap.hidden = true;
       return;
     }
-    if (hint) {
-      hint.hidden = false;
-      setTimeout(() => { hint.hidden = true; }, 6000);
-    }
-  });
+    aviso(ios ? 'Tocá Compartir y luego “Agregar a inicio” para instalar el panel.' : 'Usá el menú del navegador para instalar esta app.');
+  }));
+})();
+
+(function () {
+  const toggles = Array.from(document.querySelectorAll('[data-more-toggle]'));
+  const panel = document.querySelector('[data-more-panel]');
+  if (!toggles.length || !panel) return;
+  const cerrar = () => {
+    panel.hidden = true;
+    toggles.forEach(b => b.setAttribute('aria-expanded', 'false'));
+  };
+  toggles.forEach(btn => btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const abrir = panel.hidden;
+    panel.hidden = !abrir;
+    toggles.forEach(b => b.setAttribute('aria-expanded', abrir ? 'true' : 'false'));
+  }));
+  document.addEventListener('click', e => { if (!panel.hidden && !panel.contains(e.target) && !toggles.some(b => b.contains(e.target))) cerrar(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrar(); });
+  panel.addEventListener('click', e => { if (e.target.closest('a,button,form')) cerrar(); });
 })();

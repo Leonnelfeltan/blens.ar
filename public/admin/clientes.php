@@ -144,6 +144,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare('INSERT INTO entregas (cliente_id,tipo,titulo,descripcion,link_hd,link_4k,preview,poster,proyecto_id) VALUES (?,?,?,?,?,?,?,?,?)')->execute([$c, $tipoEn, $t, $d, $hd, $k4, $mp4, $pos, $pj]);
             }
             $nid = $id ?: (int)$pdo->lastInsertId();
+            if (!$id) {
+                blens_push_notify($pdo, 'cliente', $c, [
+                    'title' => 'Nuevo material en blens.ar',
+                    'body' => $t,
+                    'url' => '/portal/',
+                    'tag' => 'blens-entrega-' . $nid,
+                ]);
+            }
             $crearTrabajo = isset($_POST['crear_trabajo']);
             if ($crearTrabajo) registrar_trabajo_entrega($pdo, $c, $nid, $t, $tipoEn);
             if (!$id && $tipoEn === 'video' && ($d === '' || $tituloAuto) && trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== '') {
@@ -184,6 +192,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $nid = (int)$pdo->lastInsertId();
                 if (isset($_POST['crear_trabajo'])) registrar_trabajo_entrega($pdo, $c, $nid, $titulo, 'video');
                 @file_put_contents(COLA . '/drive_' . $vid . '.name', $titulo);
+                blens_push_notify($pdo, 'cliente', $c, [
+                    'title' => 'Nuevo material en blens.ar',
+                    'body' => $titulo,
+                    'url' => '/portal/',
+                    'tag' => 'blens-entrega-' . $nid,
+                ]);
                 $n++;
             }
             $_SESSION['flash'] = 'Se importaron ' . $n . ' videos a las entregas.' . (isset($_POST['crear_trabajo']) ? ' Trabajos registrados para cobro.' : '');
@@ -247,10 +261,9 @@ $formCliente = function (bool $conBorrar = false) use ($e, $cli, $T): string {
 <?php endif; ?>
 <?php return ob_get_clean();
 };
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=29"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=30"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
-<div class="top"><a class="brand" href="./"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a><nav><a href="./">Inicio</a><a href="consultas.php">Consultas<?php if ($consN > 0): ?><span class="nav-badge soft"><?= $consN ?></span><?php endif; ?></a><a href="clientes.php">Clientes</a><a href="cobros.php">Cobros</a><a href="agenda.php">Agenda<?php if ($agN > 0): ?><span class="nav-badge"><?= $agN ?></span><?php endif; ?></a><a href="presupuestos.php">Presupuestos</a><a href="../portal/" target="_blank" rel="noopener">Ver portal</a></nav>
-<div class="pwa-wrap" data-pwa-wrap hidden><button type="button" class="pwa-install" data-pwa-install>Instalar app</button><span class="pwa-hint" data-pwa-hint hidden>Tocá Compartir y luego “Agregar a inicio”.</span></div><form method="post" action="./"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $T ?>"><button class="g">Salir</button></form></div>
+<?php require __DIR__ . '/nav.php'; ?>
 <?php if (isset($_GET['avisar']) && $cli && $cli['telefono']) { $s2 = $pdo->prepare('SELECT titulo FROM entregas WHERE id=? AND cliente_id=?'); $s2->execute([(int)$_GET['avisar'], $cli['id']]); if ($t2 = $s2->fetchColumn()) { $w = wa_url($cli['telefono'], 'Hola ' . explode(' ', trim($cli['nombre']))[0] . ', ya tenés una nueva entrega disponible en tu portal: «' . $t2 . '». Ingresá acá: ' . (blens_cfg()['sitio'] ?? 'https://blens.ar') . '/portal/'); if ($w) echo '<p class="ok">¿Avisamos al cliente? <a class="btn" href="' . $e($w) . '" target="_blank" rel="noopener">Enviar aviso por WhatsApp</a></p>'; } } ?>
 <?php if ($msg) echo '<p class="' . (str_contains($msg, 'guardad') || str_contains($msg, 'eliminad') ? 'ok' : 'err') . '">' . $e($msg) . '</p>'; ?>
 <?php if ($acc): $sitio = rtrim((string)(blens_cfg()['sitio'] ?? 'https://blens.ar'), '/'); $pn = explode(' ', trim($acc['n']))[0];
@@ -387,4 +400,4 @@ $waLinks = [
 <?php else: ?>
 <?= $formCliente(false) ?>
 <?php endif; ?>
-<?php endif; ?><script src="admin.js?v=25"></script></body></html>
+<?php endif; ?><script src="admin.js?v=26"></script><script src="../assets/push.js?v=1"></script></body></html>
