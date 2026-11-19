@@ -6,9 +6,20 @@ session_start();
 header('X-Robots-Tag: noindex'); header('Cache-Control: no-store'); header('X-Frame-Options: DENY');
 $pdo = blens_db(); blens_migrar($pdo); $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 $tipoDe = fn(array $r): string => ((string)($r['tipo'] ?? 'video') === 'fotos') ? 'fotos' : 'video';
+$ajaxFeedback = (string)($_POST['ajax'] ?? '') === '1' || strtolower((string)($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'fetch';
+$jsonOut = function (int $code, array $data): never {
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    http_response_code($code);
+    echo json_encode($data, JSON_UNESCAPED_UNICODE);
+    exit;
+};
 $_SESSION['t'] ??= bin2hex(random_bytes(16)); $msg = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!hash_equals($_SESSION['t'], (string)($_POST['t'] ?? ''))) { http_response_code(400); exit('Sesión vencida. Recargá la página.'); }
+    if (!hash_equals($_SESSION['t'], (string)($_POST['t'] ?? ''))) {
+        if ($ajaxFeedback) $jsonOut(400, ['ok' => false, 'error' => 'Sesión vencida. Recargá la página.']);
+        http_response_code(400); exit('Sesión vencida. Recargá la página.');
+    }
     $a = $_POST['a'] ?? '';
     if ($a === 'salir') { blens_session_expire(); header('Location: ./'); exit; }
     if ($a === 'entrar' && ($w = blens_bloqueado('portal'))) { $msg = 'Demasiados intentos. Probá de nuevo en ' . (int)ceil($w / 60) . ' min.'; }
@@ -86,56 +97,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array((string)($_POST['a'] ?? ''
 // ---- Feedback del cliente sobre una entrega (pedir ajuste) ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['a'] ?? '') === 'ajuste') {
     $eid = (int)($_POST['e'] ?? 0);
-    $com = mb_substr(trim((string)($_POST['comentario'] ?? '')), 0, 1000);
-    if (!$cid || $vista || $eid <= 0) { http_response_code(403); exit('Acceso denegado.'); }
+    $com = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/u', '', trim((string)($_POST['comentario'] ?? ''))) ?? '';
+    $com = mb_substr($com, 0, 1000);
+    if (!$cid || $vista || $eid <= 0) {
+        if ($ajaxFeedback) $jsonOut(403, ['ok' => false, 'error' => 'Acceso denegado.']);
+        http_response_code(403); exit('Acceso denegado.');
+    }
     $q = $pdo->prepare('SELECT id,titulo,tipo FROM entregas WHERE id=? AND cliente_id=?'); $q->execute([$eid, $cid]); $enFb = $q->fetch();
-    if (!$enFb) { http_response_code(404); exit('Entrega inexistente.'); }
+    if (!$enFb) {
+        if ($ajaxFeedback) $jsonOut(404, ['ok' => false, 'error' => 'Entrega inexistente.']);
+        http_response_code(404); exit('Entrega inexistente.');
+    }
     if ($com === '') {
+        if ($ajaxFeedback) $jsonOut(422, ['ok' => false, 'error' => 'Escribí qué ajuste necesitás antes de enviar.']);
         $_SESSION['pflash'] = 'Escribí qué ajuste necesitás antes de enviar.';
-        header('Location: ./?e=' . $eid); exit;
+        header('Location: ./'); exit;
     }
     try {
         $pdo->prepare("UPDATE entregas SET estado_cliente='ajuste', comentario_cliente=?, comentario_fecha=NOW() WHERE id=? AND cliente_id=?")->execute([$com, $eid, $cid]);
+    } catch (Throwable $x) {
+        error_log('[blens portal feedback] ' . $x->getMessage());
+        if ($ajaxFeedback) $jsonOut(500, ['ok' => false, 'error' => 'No pudimos guardar tu respuesta. Probá de nuevo en un momento.']);
+        $_SESSION['pflash'] = 'No pudimos guardar tu respuesta. Probá de nuevo en un momento.';
+        header('Location: ./'); exit;
+    }
+    try {
         $qc = $pdo->prepare('SELECT nombre,empresa FROM clientes WHERE id=?'); $qc->execute([$cid]); $cf = $qc->fetch() ?: [];
         $empresa = trim((string)($cf['empresa'] ?? '')) ?: trim((string)($cf['nombre'] ?? '')) ?: 'Cliente';
-        $tipoFb = $tipoDe($enFb) === 'fotos' ? 'Pack de fotos' : 'Video';
-        $cuerpo = 'Empresa: ' . $empresa . "\n" . $tipoFb . ': ' . (string)$enFb['titulo'] . "\n\n" . 'Pidió un ajuste: ' . $com;
-        blens_ntfy('Feedback de cliente · blens.ar', $cuerpo, 'high', 'speech_balloon', ['view, Abrir panel, https://blens.ar/admin/']);
         blens_push_notify($pdo, 'admin', null, [
             'title' => 'Pedido de ajuste · blens.ar',
             'body' => $empresa . ' — ' . (string)$enFb['titulo'] . ': ' . $com,
             'url' => '/admin/clientes.php?c=' . $cid . '&e=' . $eid,
             'tag' => 'blens-feedback-' . $eid,
         ]);
-        $_SESSION['pflash'] = 'Recibimos tu pedido de ajuste.';
     } catch (Throwable $x) {
-        error_log('[blens portal feedback] ' . $x->getMessage());
-        $_SESSION['pflash'] = 'No pudimos guardar tu respuesta. Probá de nuevo en un momento.';
+        error_log('[blens portal push ajuste] ' . $x->getMessage());
     }
-    header('Location: ./?e=' . $eid); exit;
+    $msj = 'Recibimos tu pedido de ajuste.';
+    $_SESSION['pflash'] = $msj;
+    if ($ajaxFeedback) $jsonOut(200, ['ok' => true, 'estado' => 'ajuste', 'badge' => 'Pidió ajuste: "' . $com . '"', 'message' => $msj]);
+    header('Location: ./'); exit;
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['a'] ?? '') === 'aprobar') {
     $eid = (int)($_POST['e'] ?? 0);
-    if (!$cid || $vista || $eid <= 0) { http_response_code(403); exit('Acceso denegado.'); }
+    if (!$cid || $vista || $eid <= 0) {
+        if ($ajaxFeedback) $jsonOut(403, ['ok' => false, 'error' => 'Acceso denegado.']);
+        http_response_code(403); exit('Acceso denegado.');
+    }
     $q = $pdo->prepare('SELECT id,titulo FROM entregas WHERE id=? AND cliente_id=?'); $q->execute([$eid, $cid]); $enAp = $q->fetch();
-    if (!$enAp) { http_response_code(404); exit('Entrega inexistente.'); }
+    if (!$enAp) {
+        if ($ajaxFeedback) $jsonOut(404, ['ok' => false, 'error' => 'Entrega inexistente.']);
+        http_response_code(404); exit('Entrega inexistente.');
+    }
     try {
         $pdo->prepare("UPDATE entregas SET estado_cliente='aprobado', comentario_cliente=NULL, comentario_fecha=NOW() WHERE id=? AND cliente_id=?")->execute([$eid, $cid]);
+    } catch (Throwable $x) {
+        error_log('[blens portal aprobación] ' . $x->getMessage());
+        if ($ajaxFeedback) $jsonOut(500, ['ok' => false, 'error' => 'No pudimos guardar tu respuesta. Probá de nuevo en un momento.']);
+        $_SESSION['pflash'] = 'No pudimos guardar tu respuesta. Probá de nuevo en un momento.';
+        header('Location: ./'); exit;
+    }
+    try {
         $qc = $pdo->prepare('SELECT nombre,empresa FROM clientes WHERE id=?'); $qc->execute([$cid]); $cf = $qc->fetch() ?: [];
         $empresa = trim((string)($cf['empresa'] ?? '')) ?: trim((string)($cf['nombre'] ?? '')) ?: 'Cliente';
-        blens_ntfy('Entrega aprobada · blens.ar', 'Empresa: ' . $empresa . "\n" . 'Entrega: ' . (string)$enAp['titulo'], 'default', 'white_check_mark', ['view, Abrir panel, https://blens.ar/admin/']);
         blens_push_notify($pdo, 'admin', null, [
             'title' => 'Entrega aprobada · blens.ar',
             'body' => $empresa . ' — ' . (string)$enAp['titulo'],
             'url' => '/admin/clientes.php?c=' . $cid . '&e=' . $eid,
             'tag' => 'blens-aprobada-' . $eid,
         ]);
-        $_SESSION['pflash'] = 'Marcamos la entrega como aprobada.';
     } catch (Throwable $x) {
-        error_log('[blens portal aprobación] ' . $x->getMessage());
-        $_SESSION['pflash'] = 'No pudimos guardar tu respuesta. Probá de nuevo en un momento.';
+        error_log('[blens portal push aprobación] ' . $x->getMessage());
     }
-    header('Location: ./?e=' . $eid); exit;
+    $msj = 'Marcamos la entrega como aprobada.';
+    $_SESSION['pflash'] = $msj;
+    if ($ajaxFeedback) $jsonOut(200, ['ok' => true, 'estado' => 'aprobado', 'badge' => 'Aprobado ✓', 'message' => $msj]);
+    header('Location: ./'); exit;
 }
 $pflash = (string)($_SESSION['pflash'] ?? ''); unset($_SESSION['pflash']);
 // ---- Actividad del portal: una visita por sesión (no por recarga) ----
@@ -154,17 +191,17 @@ $SQL = 'SELECT e.*, COALESCE(p.video_480, p.video_mp4, p.video_1080) AS pv, p.po
 $fb = function (array $r) use ($e, $T, $vista): string {
     $est = (string)($r['estado_cliente'] ?? 'pendiente'); $com = trim((string)($r['comentario_cliente'] ?? '')); $id = (int)$r['id'];
     $h = '<div class="fb" id="fb-' . $id . '">';
-    if ($est === 'aprobado') $h .= '<p class="fb-badge ok">Aprobado por el cliente</p>';
-    elseif ($est === 'ajuste') $h .= '<p class="fb-badge adj">Pidió ajuste: "' . $e($com) . '"</p>';
-    else $h .= '<p class="fb-badge pend">Esperando tu respuesta</p>';
+    if ($est === 'aprobado') $h .= '<p class="fb-badge ok" aria-live="polite">Aprobado ✓</p>';
+    elseif ($est === 'ajuste') $h .= '<p class="fb-badge adj" aria-live="polite">Pidió ajuste: "' . $e($com) . '"</p>';
+    else $h .= '<p class="fb-badge pend" aria-live="polite">Esperando tu respuesta</p>';
     if (!$vista) {
-        $h .= '<div class="fb-acts"><form method="post" class="fb-ap">'
+        $h .= '<div class="fb-acts"><form method="post" action="./" class="fb-ap" data-feedback-form="aprobar">'
             . '<input type="hidden" name="a" value="aprobar"><input type="hidden" name="t" value="' . $T . '"><input type="hidden" name="e" value="' . $id . '">'
-            . '<button class="fb-btn ok" type="submit">Aprobar</button>'
-            . '</form><div class="fb-adj"><form method="post">'
+            . '<button class="fb-btn ok" type="submit" data-feedback-btn="aprobar">Aprobar</button>'
+            . '</form><div class="fb-adj"><form method="post" action="./" data-feedback-form="ajuste">'
             . '<input type="hidden" name="a" value="ajuste"><input type="hidden" name="t" value="' . $T . '"><input type="hidden" name="e" value="' . $id . '">'
             . '<label>¿Qué querés ajustar?<textarea name="comentario" rows="3" maxlength="1000" required placeholder="Contanos brevemente qué cambio necesitás…"></textarea></label>'
-            . '<button class="fb-btn adj" type="submit">Pedir ajuste</button>'
+            . '<button class="fb-btn adj" type="submit" data-feedback-btn="ajuste">Pedir ajuste</button>'
             . '</form></div></div>';
     }
     return $h . '</div>';
@@ -195,12 +232,12 @@ $locForm = function (array $r, bool $nueva) use ($e, $T): string {
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" media="print" data-fonts>
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap"></noscript>
-<link rel="stylesheet" href="../styles.css?v=20"><link rel="stylesheet" href="portal.css?v=16"></head><body>
+<link rel="stylesheet" href="../styles.css?v=20"><link rel="stylesheet" href="portal.css?v=17"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol><symbol id="photos" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m4 17 5-5 3.5 3.5L16 12l4 4"/></symbol></svg>
 <header class="ph"><a class="brand" href="../" aria-label="blens.ar, inicio"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
 <?php if ($cli): ?><div class="phr"><span class="mut">Portal de clientes</span><?= $vista ? '<span class="perr">Vista de administrador</span>' : '' ?><button type="button" class="push-btn" data-push data-push-tipo="cliente" data-push-token="<?= $T ?>" data-push-key="<?= $e(blens_vapid_public()) ?>">Activar avisos de nuevas entregas</button><form method="post"><input type="hidden" name="a" value="salir"><input type="hidden" name="t" value="<?= $T ?>"><button class="out">Salir</button></form></div>
 <?php else: ?><a class="link" href="../">Volver a la web</a><?php endif; ?></header>
-<?php if ($pflash): ?><p class="pflash"><?= $e($pflash) ?></p><?php endif; ?>
+<?php if ($pflash): ?><p class="pflash" role="status" aria-live="polite"><?= $e($pflash) ?></p><?php endif; ?>
 <?php if ($cli && $locOK): ?>
 <nav class="loc-tabs" aria-label="Secciones del portal">
   <a class="loc-tab<?= $tabLoc ? '' : ' on' ?>" href="./"<?= $tabLoc ? '' : ' aria-current="page"' ?>>Mis entregas</a>
@@ -287,4 +324,4 @@ $esView = $ft === 'todos' ? $es : array_values(array_filter($es, fn($r) => $tipo
 <?php endif; endif; endif; ?>
 <aside class="pwa-tip" data-pwa-tip hidden><span data-pwa-msg>Instalá el portal en tu celular para entrar más rápido.</span><button type="button" class="pwa-tip-btn" data-pwa-install hidden>Instalar app</button><button type="button" class="pwa-tip-close" data-pwa-close aria-label="Cerrar">×</button></aside>
 <footer class="foot"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span><span class="loc">Posadas, Misiones · Argentina</span><nav class="social"><a href="../">Web</a><a href="<?= $e($contacto) ?>">Contacto</a></nav><span class="mut">© 2026 blens.ar</span></footer>
-<script src="../assets/fonts.js?v=2" defer></script><script src="../assets/player.js?v=13" defer></script><script src="dfr.js?v=12" defer></script><script src="../assets/push.js?v=3" defer></script></body></html>
+<script src="../assets/fonts.js?v=2" defer></script><script src="../assets/player.js?v=13" defer></script><script src="dfr.js?v=12" defer></script><script src="feedback.js?v=1" defer></script><script src="../assets/push.js?v=4" defer></script></body></html>

@@ -24,13 +24,15 @@
     box.textContent = msg;
     box.hidden = false;
     clearTimeout(box._timer);
-    box._timer = setTimeout(() => { box.hidden = true; }, 4500);
+    box._timer = setTimeout(() => { box.hidden = true; }, 6000);
   }
 
   function bytes(key) {
-    const txt = key.replace(/-/g, '+').replace(/_/g, '/');
+    const txt = (key || '').replace(/-/g, '+').replace(/_/g, '/');
     const bin = atob(txt + '='.repeat((4 - txt.length % 4) % 4));
-    return Uint8Array.from(bin, c => c.charCodeAt(0));
+    const out = Uint8Array.from(bin, c => c.charCodeAt(0));
+    if (out.length !== 65 || out[0] !== 4) throw new Error('Clave de notificaciones inválida.');
+    return out;
   }
 
   function state(active) {
@@ -47,23 +49,27 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, tipo, token, subscription: sub.toJSON() }),
     });
-    return res.json();
+    let data = {};
+    try { data = await res.json(); } catch (_) {}
+    if (!res.ok || data.ok === false) throw new Error(data.error || ('Error HTTP ' + res.status));
+    return data;
   }
 
-  async function setup() {
-    if (!supported) { state(false); return null; }
-    const reg = await navigator.serviceWorker.register(sw, { scope });
-    return reg;
+  async function ready() {
+    if (!supported) throw new Error('Tu navegador no admite notificaciones push.');
+    await navigator.serviceWorker.register(sw, { scope });
+    return await navigator.serviceWorker.ready;
   }
 
   async function sync() {
-    if (!supported) return;
+    if (!supported || Notification.permission !== 'granted') return;
     try {
-      const reg = await setup();
-      const sub = reg && await reg.pushManager.getSubscription();
+      const reg = await ready();
+      const sub = await reg.pushManager.getSubscription();
       state(!!sub);
-      if (sub) await send('subscribe', sub);
-    } catch (_) { state(false); }
+    } catch (_) {
+      state(false);
+    }
   }
 
   async function toggle() {
@@ -73,8 +79,7 @@
       let permission = Notification.permission;
       if (permission !== 'granted') permission = await Notification.requestPermission();
       if (permission !== 'granted') { toast('Permiso de notificaciones denegado.'); return; }
-      const reg = await setup();
-      if (!reg) return;
+      const reg = await ready();
       let sub = await reg.pushManager.getSubscription();
       if (sub) {
         await send('unsubscribe', sub);
@@ -83,14 +88,18 @@
         toast('Avisos desactivados.');
         return;
       }
-      if (!publicKey) { toast('Falta configuración de notificaciones.'); return; }
-      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes(publicKey) });
-      const res = await send('subscribe', sub);
-      if (!res || !res.ok) { await sub.unsubscribe(); toast('No se pudo activar. Recargá e intentá de nuevo.'); return; }
+      const key = bytes(publicKey);
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+      try {
+        await send('subscribe', sub);
+      } catch (err) {
+        await sub.unsubscribe();
+        throw err;
+      }
       state(true);
-      toast('Avisos activados ✓');
-    } catch (_) {
-      toast('No se pudo activar. Recargá e intentá de nuevo.');
+      toast(tipo === 'admin' ? 'Notificaciones activadas ✓' : 'Avisos activados ✓');
+    } catch (err) {
+      toast(err && err.message ? err.message : 'No se pudo activar. Intentá de nuevo.');
     }
   }
 

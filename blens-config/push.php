@@ -25,11 +25,10 @@ function blens_vapid_keys(): array {
         $plain = openssl_decrypt(substr($raw, 12, -16), 'aes-256-gcm', $secret, OPENSSL_RAW_DATA, substr($raw, 0, 12), substr($raw, -16));
         if ($plain !== false) $private = $plain;
     }
-    $mail = trim((string)($cfg['mail_to'] ?? ''));
     return $keys = [
         'publicKey' => (string)($data['publicKey'] ?? ''),
         'privateKey' => $private,
-        'subject' => (string)($data['subject'] ?? ($mail !== '' && str_contains($mail, '@') ? 'mailto:' . $mail : 'mailto:admin@blens.ar')),
+        'subject' => 'mailto:hola@blens.ar',
     ];
 }
 
@@ -49,6 +48,22 @@ function blens_ec_pem_from_point(string $point): string {
     return "-----BEGIN PUBLIC KEY-----\n" . chunk_split(base64_encode((string)$der), 64, "\n") . "-----END PUBLIC KEY-----\n";
 }
 
+function blens_push_origin(string $endpoint): string {
+    $u = parse_url($endpoint);
+    if (!is_array($u) || strtolower((string)($u['scheme'] ?? '')) !== 'https') return '';
+    $host = strtolower(trim((string)($u['host'] ?? '')));
+    if ($host === '') return '';
+    $port = (int)($u['port'] ?? 443);
+    return 'https://' . $host . ($port > 0 && $port !== 443 ? ':' . $port : '');
+}
+
+function blens_push_endpoint_valido(string $endpoint): bool {
+    $host = strtolower((string)parse_url(blens_push_origin($endpoint), PHP_URL_HOST));
+    if ($host === '') return false;
+    if (in_array($host, ['fcm.googleapis.com', 'web.push.apple.com'], true)) return true;
+    return (bool)preg_match('/^updates\d*\.push\.services\.mozilla\.com$/', $host);
+}
+
 function blens_hkdf_extract(string $salt, string $ikm): string {
     return hash_hmac('sha256', $ikm, $salt, true);
 }
@@ -64,47 +79,63 @@ function blens_hkdf_expand(string $prk, string $info, int $length): string {
 }
 
 function blens_der_length(string $der, int &$pos): int {
-    $n = ord($der[$pos++]);
-    if ($n < 128) return $n;
-    $bytes = $n & 0x7f; $len = 0;
-    for ($i = 0; $i < $bytes; $i++) $len = ($len << 8) | ord($der[$pos++]);
+    $n = ord($der[$pos++] ?? "\x00");
+    if (($n & 0x80) === 0) return $n;
+    $bytes = $n & 0x7f;
+    if ($bytes < 1 || $bytes > 4) return -1;
+    $len = 0;
+    for ($i = 0; $i < $bytes; $i++) {
+        if ($pos >= strlen($der)) return -1;
+        $len = ($len << 8) | ord($der[$pos++]);
+    }
     return $len;
 }
 
-function blens_der_integer(string $der, int &$pos): string {
-    if (ord($der[$pos++]) !== 0x02) return '';
+function blens_der_integer(string $der, int &$pos, int $size): string {
+    if ($pos >= strlen($der) || ord($der[$pos++]) !== 0x02) return '';
     $len = blens_der_length($der, $pos);
+    if ($len < 1 || $len > $size + 1 || $pos + $len > strlen($der)) return '';
     $v = substr($der, $pos, $len);
     $pos += $len;
-    return ltrim($v, "\x00");
+    if (strlen($v) === $size + 1) {
+        if ($v[0] !== "\x00" || (ord($v[1]) & 0x80) === 0) return '';
+        $v = substr($v, 1);
+    }
+    $v = ltrim($v, "\x00");
+    if ($v === '' || strlen($v) > $size) return '';
+    return str_pad($v, $size, "\x00", STR_PAD_LEFT);
 }
 
 function blens_ecdsa_der_to_raw(string $der, int $size = 32): string {
-    $pos = 0;
-    if (ord($der[$pos++] ?? "\x00") !== 0x30) return '';
-    blens_der_length($der, $pos);
-    $r = blens_der_integer($der, $pos);
-    $s = blens_der_integer($der, $pos);
-    if ($r === '' || $s === '') return '';
-    return str_pad(substr($r, -$size), $size, "\x00", STR_PAD_LEFT) . str_pad(substr($s, -$size), $size, "\x00", STR_PAD_LEFT);
+    $pos = 0; $len = strlen($der);
+    if ($len < 8 || ord($der[$pos++]) !== 0x30) return '';
+    $seqLen = blens_der_length($der, $pos);
+    if ($seqLen < 0 || $seqLen !== $len - $pos) return '';
+    $r = blens_der_integer($der, $pos, $size);
+    $s = blens_der_integer($der, $pos, $size);
+    if ($r === '' || $s === '' || $pos !== $len) return '';
+    return $r . $s;
 }
 
 function blens_vapid_jwt(string $endpoint): string {
+    $origin = blens_push_origin($endpoint);
     $keys = blens_vapid_keys();
     $private = openssl_pkey_get_private($keys['privateKey']);
-    if ($private === false || $keys['publicKey'] === '') return '';
-    $aud = preg_match('#^https://([^/]+)#', $endpoint, $m) ? 'https://' . $m[1] : 'https://fcm.googleapis.com';
+    if ($origin === '' || $private === false || $keys['publicKey'] === '') return '';
     $header = blens_b64url_encode((string)json_encode(['alg' => 'ES256', 'typ' => 'JWT'], JSON_UNESCAPED_SLASHES));
-    $payload = blens_b64url_encode((string)json_encode(['aud' => $aud, 'exp' => time() + 43200, 'sub' => $keys['subject']], JSON_UNESCAPED_SLASHES));
+    $payload = blens_b64url_encode((string)json_encode(['aud' => $origin, 'exp' => time() + 43200, 'sub' => $keys['subject']], JSON_UNESCAPED_SLASHES));
     $data = $header . '.' . $payload;
     if (!openssl_sign($data, $der, $private, OPENSSL_ALGO_SHA256)) return '';
-    return $data . '.' . blens_b64url_encode(blens_ecdsa_der_to_raw($der));
+    $raw = blens_ecdsa_der_to_raw($der);
+    if (strlen($raw) !== 64) return '';
+    return $data . '.' . blens_b64url_encode($raw);
 }
 
 function blens_push_encrypt(string $plain, string $p256dh, string $auth, ?string $ephemeralPem = null): array {
+    if (strlen($plain) > 4079) return [];
     $uaPublic = blens_b64url_decode($p256dh);
     $authSecret = blens_b64url_decode($auth);
-    if (strlen($uaPublic) !== 65 || strlen($authSecret) !== 16) return [];
+    if (strlen($uaPublic) !== 65 || $uaPublic[0] !== "\x04" || strlen($authSecret) !== 16) return [];
     $uaPem = blens_ec_pem_from_point($uaPublic);
     $uaKey = $uaPem !== '' ? openssl_pkey_get_public($uaPem) : false;
     if ($uaKey === false) return [];
@@ -118,7 +149,7 @@ function blens_push_encrypt(string $plain, string $p256dh, string $auth, ?string
         if ($ephemeral === false) return [];
     }
     $asPublic = blens_ec_public_point($ephemeral);
-    if ($asPublic === '') return [];
+    if ($asPublic === '' || strlen($asPublic) !== 65) return [];
     $shared = openssl_pkey_derive($uaKey, $ephemeral, 32);
     if ($shared === false || strlen($shared) !== 32) return [];
 
@@ -138,11 +169,14 @@ function blens_push_send(array $sub, array $payload): array {
     $endpoint = trim((string)($sub['endpoint'] ?? ''));
     $p256dh = trim((string)($sub['p256dh'] ?? ''));
     $auth = trim((string)($sub['auth'] ?? ''));
-    if (!str_starts_with($endpoint, 'https://') || $p256dh === '' || $auth === '') return ['ok' => false, 'status' => 0, 'delete' => false];
+    if (!blens_push_endpoint_valido($endpoint) || strlen($endpoint) > 2000 || $p256dh === '' || $auth === '') {
+        return ['ok' => false, 'status' => 0, 'delete' => false, 'error' => 'Endpoint inválido.', 'response' => ''];
+    }
     $jwt = blens_vapid_jwt($endpoint);
-    if ($jwt === '') return ['ok' => false, 'status' => 0, 'delete' => false];
-    $enc = blens_push_encrypt((string)json_encode($payload, JSON_UNESCAPED_UNICODE), $p256dh, $auth);
-    if (!isset($enc['body'])) return ['ok' => false, 'status' => 0, 'delete' => false];
+    if ($jwt === '') return ['ok' => false, 'status' => 0, 'delete' => false, 'error' => 'JWT VAPID inválido.', 'response' => ''];
+    $plain = (string)json_encode($payload, JSON_UNESCAPED_UNICODE);
+    $enc = blens_push_encrypt($plain, $p256dh, $auth);
+    if (!isset($enc['body'])) return ['ok' => false, 'status' => 0, 'delete' => false, 'error' => 'No se pudo cifrar el payload.', 'response' => ''];
 
     $ch = curl_init($endpoint);
     curl_setopt_array($ch, [
@@ -159,11 +193,20 @@ function blens_push_send(array $sub, array $payload): array {
             'Urgency: high',
         ],
     ]);
-    curl_exec($ch);
+    $response = (string)curl_exec($ch);
     $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     $error = curl_error($ch);
     curl_close($ch);
-    return ['ok' => $status >= 200 && $status < 300, 'status' => $status, 'delete' => in_array($status, [404, 410], true), 'error' => $error];
+    if ($status >= 400 || $status === 0) {
+        error_log('[blens push] HTTP ' . $status . ' body=' . substr($response, 0, 500) . ' error=' . $error);
+    }
+    return [
+        'ok' => $status >= 200 && $status < 300,
+        'status' => $status,
+        'delete' => in_array($status, [404, 410], true),
+        'error' => $error,
+        'response' => substr($response, 0, 500),
+    ];
 }
 
 function blens_push_subscriptions(PDO $pdo, string $tipo, ?int $clienteId): array {
@@ -179,13 +222,32 @@ function blens_push_delete(PDO $pdo, int $id): void {
     $pdo->prepare('DELETE FROM push_subscriptions WHERE id=?')->execute([$id]);
 }
 
-function blens_push_notify(PDO $pdo, string $tipo, ?int $clienteId, array $payload): void {
-    if (blens_vapid_public() === '') return;
+function blens_push_notify_detailed(PDO $pdo, string $tipo, ?int $clienteId, array $payload): array {
+    $res = ['ok' => false, 'intentados' => 0, 'enviados' => 0, 'eliminados' => 0, 'estados' => [], 'errores' => []];
+    if (blens_vapid_public() === '') {
+        $res['errores'][] = 'Falta configuración VAPID.';
+        return $res;
+    }
     foreach (blens_push_subscriptions($pdo, $tipo, $clienteId) as $sub) {
         try {
-            $res = blens_push_send($sub, $payload);
-            if ($res['delete']) blens_push_delete($pdo, (int)$sub['id']);
-            elseif (!$res['ok']) error_log('[blens push] HTTP ' . $res['status'] . ' ' . ($res['error'] ?? ''));
-        } catch (Throwable $x) { error_log('[blens push] ' . $x->getMessage()); }
+            $envio = blens_push_send($sub, $payload);
+            $res['intentados']++;
+            $res['estados'][] = $envio['status'];
+            if ($envio['delete']) {
+                blens_push_delete($pdo, (int)$sub['id']);
+                $res['eliminados']++;
+            }
+            if ($envio['ok']) $res['enviados']++;
+            else $res['errores'][] = 'HTTP ' . $envio['status'] . ' ' . trim(($envio['response'] ?? '') . ' ' . ($envio['error'] ?? ''));
+        } catch (Throwable $x) {
+            $res['errores'][] = $x->getMessage();
+            error_log('[blens push] ' . $x->getMessage());
+        }
     }
+    $res['ok'] = $res['enviados'] > 0;
+    return $res;
+}
+
+function blens_push_notify(PDO $pdo, string $tipo, ?int $clienteId, array $payload): void {
+    blens_push_notify_detailed($pdo, $tipo, $clienteId, $payload);
 }

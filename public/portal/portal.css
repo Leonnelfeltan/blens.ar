@@ -45,9 +45,10 @@ body{min-height:100vh}
 .gal-btn{margin-top:.4rem}
 
 /* Feedback del cliente: aprobar o pedir ajuste */
-.fb{display:grid;gap:.65rem;border-top:1px solid var(--line);padding-top:.9rem;margin-top:1rem}
+.fb{position:relative;z-index:5;display:grid;gap:.65rem;border-top:1px solid var(--line);padding-top:.9rem;margin-top:1rem}
 .pc .fb{padding:0 1rem 1rem;margin-top:0}
 .fb-badge{width:fit-content;font-size:.78rem;font-weight:600;padding:.3rem .65rem;border-radius:99px;border:1px solid var(--line);color:var(--mut)}
+.fb-badge.pend{background:rgba(255,255,255,.03);border-color:var(--line)}
 .fb-badge.ok{background:rgba(46,160,67,.16);border-color:rgba(46,160,67,.5);color:#8fdc9a}
 .fb-badge.adj{background:rgba(255,90,31,.12);border-color:rgba(255,90,31,.45);color:var(--o)}
 .fb-acts{display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-start}
@@ -55,6 +56,7 @@ body{min-height:100vh}
 .fb-btn{display:inline-block;background:var(--o);color:var(--c);border:0;border-radius:2px;padding:.6rem .9rem;font:600 .9rem Sora,sans-serif;cursor:pointer;text-decoration:none}
 .fb-btn.ok{background:#2ea043;color:#fff}
 .fb-btn.adj{background:none;border:1px solid var(--o);color:var(--o)}
+.fb-btn[disabled]{opacity:.55;cursor:wait}
 .fb-adj{flex:1 1 100%}
 .fb-adj summary{display:inline-block;list-style:none}
 .fb-adj summary::-webkit-details-marker{display:none}

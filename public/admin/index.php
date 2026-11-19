@@ -525,4 +525,4 @@ $card = function (array $r, bool $drag) use ($cats, $e, $fbs): void { $est = $r[
 </div>
 <p class="mut" id="portfolio-empty" hidden>No hay proyectos con ese filtro.</p>
 <?php if (!$port) echo '<p class="mut">Todavía no cargaste proyectos del portfolio.</p>'; ?>
-<?php endif; endif; ?><script src="admin.js?v=27"></script><script src="../assets/push.js?v=2"></script></body></html>
+<?php endif; endif; ?><script src="admin.js?v=28"></script><script src="../assets/push.js?v=4"></script></body></html>

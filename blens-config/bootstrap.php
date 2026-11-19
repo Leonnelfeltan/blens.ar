@@ -190,14 +190,18 @@ function blens_migrar(?PDO $p = null): void {
         } catch (Throwable $x) { error_log('[blens locaciones flag] ' . $x->getMessage()); }
         // Feedback del cliente sobre las entregas del portal
         $colsE = [];
-        foreach ($p->query('SHOW COLUMNS FROM entregas')->fetchAll(PDO::FETCH_ASSOC) as $c) $colsE[$c['Field']] = true;
+        foreach ($p->query('SHOW COLUMNS FROM entregas')->fetchAll(PDO::FETCH_ASSOC) as $c) $colsE[$c['Field']] = (string)$c['Type'];
         $nuevasE = [
-            'estado_cliente'     => "VARCHAR(20) NOT NULL DEFAULT 'pendiente'",
+            'estado_cliente'     => "ENUM('pendiente','aprobado','ajuste') NOT NULL DEFAULT 'pendiente'",
             'comentario_cliente' => 'TEXT NULL',
             'comentario_fecha'   => 'DATETIME NULL',
             'tipo'               => "VARCHAR(16) NOT NULL DEFAULT 'video'",
         ];
         foreach ($nuevasE as $col => $def) if (!isset($colsE[$col])) $p->exec("ALTER TABLE entregas ADD COLUMN `$col` $def");
+        if (isset($colsE['estado_cliente']) && (stripos($colsE['estado_cliente'], 'enum(') === false || stripos($colsE['estado_cliente'], "'aprobado'") === false)) {
+            $p->exec("UPDATE entregas SET estado_cliente='pendiente' WHERE estado_cliente NOT IN ('pendiente','aprobado','ajuste')");
+            $p->exec("ALTER TABLE entregas MODIFY COLUMN estado_cliente ENUM('pendiente','aprobado','ajuste') NOT NULL DEFAULT 'pendiente'");
+        }
         if ($p->query("SHOW TABLES LIKE 'consultas'")->fetch()) {
             $colsC = [];
             foreach ($p->query('SHOW COLUMNS FROM consultas')->fetchAll(PDO::FETCH_ASSOC) as $c) $colsC[$c['Field']] = true;

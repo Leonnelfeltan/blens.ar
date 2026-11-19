@@ -51,4 +51,4 @@ $rows = $pdo->query($q)->fetchAll();
 <label class="full"><span class="lbl">Recordatorio de saldo <span class="opt">(usá {nombre}, {monto})</span></span><textarea name="plantillas[cobro]" rows="3" maxlength="1000" required><?= $e($plantillas['cobro']) ?></textarea></label>
 <div class="row full"><button>Guardar plantillas</button></div></form>
 </details>
-<script src="admin.js?v=27"></script><script src="../assets/push.js?v=2"></script></body></html>
+<script src="admin.js?v=28"></script><script src="../assets/push.js?v=4"></script></body></html>

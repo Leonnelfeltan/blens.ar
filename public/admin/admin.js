@@ -412,6 +412,50 @@ if ('serviceWorker' in navigator) {
 })();
 
 (function () {
+  const btn = document.querySelector('[data-push-test]');
+  if (!btn) return;
+  const pushBtn = document.querySelector('[data-push]');
+  const token = pushBtn ? pushBtn.dataset.pushToken || '' : '';
+  const aviso = msg => {
+    let box = document.querySelector('.push-toast');
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'push-toast';
+      box.setAttribute('role', 'status');
+      document.body.appendChild(box);
+    }
+    box.textContent = msg;
+    box.hidden = false;
+    clearTimeout(box._timer);
+    box._timer = setTimeout(() => { box.hidden = true; }, 9000);
+  };
+  btn.addEventListener('click', async e => {
+    e.stopPropagation();
+    const texto = btn.textContent;
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+    btn.textContent = 'Enviando…';
+    try {
+      const res = await fetch('/api/push-test.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      let data = {};
+      try { data = await res.json(); } catch (_) {}
+      if (!res.ok || data.ok === false) throw new Error(data.error || data.message || ('Error HTTP ' + res.status));
+      aviso(data.message || 'Push enviado.');
+    } catch (err) {
+      aviso(err && err.message ? err.message : 'No se pudo probar el push.');
+    } finally {
+      btn.disabled = false;
+      btn.removeAttribute('aria-busy');
+      btn.textContent = texto;
+    }
+  });
+})();
+
+(function () {
   const toggles = Array.from(document.querySelectorAll('[data-more-toggle]'));
   const panel = document.querySelector('[data-more-panel]');
   if (!toggles.length || !panel) return;

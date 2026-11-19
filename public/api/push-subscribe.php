@@ -36,7 +36,7 @@ $sub = is_array($body['subscription'] ?? null) ? $body['subscription'] : [];
 $endpoint = trim((string)($sub['endpoint'] ?? ''));
 $p256dh = trim((string)($sub['keys']['p256dh'] ?? $sub['p256dh'] ?? ''));
 $auth = trim((string)($sub['keys']['auth'] ?? $sub['auth'] ?? ''));
-if (!str_starts_with($endpoint, 'https://') || strlen($endpoint) > 2000) blens_push_out(400, ['ok' => false, 'error' => 'Endpoint inválido.']);
+if (!blens_push_endpoint_valido($endpoint) || strlen($endpoint) > 2000) blens_push_out(400, ['ok' => false, 'error' => 'Endpoint de notificaciones no permitido.']);
 if (strlen(blens_b64url_decode($p256dh)) !== 65 || strlen(blens_b64url_decode($auth)) !== 16) blens_push_out(400, ['ok' => false, 'error' => 'Claves de suscripción inválidas.']);
 
 $hash = hash('sha256', $tipo . '|' . ($clienteId ?? '') . '|' . $endpoint);
@@ -49,6 +49,7 @@ if ($action === 'unsubscribe') {
 if ($action !== 'subscribe') blens_push_out(400, ['ok' => false, 'error' => 'Acción inválida.']);
 
 $ua = substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255);
+$pdo->prepare('DELETE FROM push_subscriptions WHERE tipo=? AND endpoint=? AND endpoint_hash<>?')->execute([$tipo, $endpoint, $hash]);
 $s = $pdo->prepare('INSERT INTO push_subscriptions (tipo,cliente_id,endpoint,p256dh,auth,user_agent,endpoint_hash)
     VALUES (?,?,?,?,?,?,?)
     ON DUPLICATE KEY UPDATE p256dh=VALUES(p256dh), auth=VALUES(auth), user_agent=VALUES(user_agent), cliente_id=VALUES(cliente_id)');
