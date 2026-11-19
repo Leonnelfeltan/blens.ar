@@ -215,6 +215,47 @@ a.kpi.link:hover,button.kpi.link:hover,a.kpi.link:focus-visible,button.kpi.link:
 .form2 label{display:grid;gap:.3rem;color:var(--m);font-size:.82rem}
 .form2 input,.form2 select{width:100%}
 
+/* ===== Finanzas: clasificación, tablero y saldos pendientes ===== */
+.fin-panel{border-top:3px solid var(--o);padding-top:1rem}
+.fin-grid{display:grid;grid-template-columns:1.35fr 1fr;gap:1rem;margin-top:1.1rem}
+.fin-box{background:var(--c2);border:1px solid var(--l);border-radius:8px;padding:1rem;min-width:0}
+.fin-box h2{margin:0 0 .7rem;font-size:1rem;color:var(--o)}
+.fin-legend{display:flex;gap:.9rem;flex-wrap:wrap;font-size:.74rem;color:var(--m);margin-bottom:.5rem}
+.fin-legend span{display:inline-flex;align-items:center;gap:.35rem}
+.fin-dot{display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--m)}
+.fin-dot.ing{background:var(--o)}.fin-dot.gas{background:#6d6259}.fin-dot.net{background:#7fd18a}
+.fin-chart{display:grid;grid-template-columns:repeat(6,minmax(54px,1fr));gap:.5rem;align-items:end;overflow-x:auto;padding-bottom:.2rem}
+.fin-col{min-width:54px;display:grid;gap:.35rem;justify-items:center}
+.fin-bars{height:108px;width:100%;display:flex;align-items:flex-end;justify-content:center;gap:3px;border-bottom:1px solid var(--l)}
+.fin-bar{display:block;width:9px;min-height:3px;border-radius:2px 2px 0 0;background:var(--m);transition:height .2s}
+.fin-bar.ing{background:var(--o)}.fin-bar.gas{background:#6d6259}.fin-bar.net{background:#7fd18a}.fin-bar.net.neg{background:#8f2b12}
+.fin-bar.h-3{height:3%}.fin-bar.h-5{height:5%}.fin-bar.h-10{height:10%}.fin-bar.h-15{height:15%}.fin-bar.h-20{height:20%}
+.fin-bar.h-25{height:25%}.fin-bar.h-30{height:30%}.fin-bar.h-35{height:35%}.fin-bar.h-40{height:40%}.fin-bar.h-45{height:45%}
+.fin-bar.h-50{height:50%}.fin-bar.h-55{height:55%}.fin-bar.h-60{height:60%}.fin-bar.h-65{height:65%}.fin-bar.h-70{height:70%}
+.fin-bar.h-75{height:75%}.fin-bar.h-80{height:80%}.fin-bar.h-85{height:85%}.fin-bar.h-90{height:90%}.fin-bar.h-95{height:95%}.fin-bar.h-100{height:100%}
+.fin-col-txt{font-size:.72rem;color:var(--m);white-space:nowrap}
+.fin-line{display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;border-bottom:1px solid var(--l);padding:.45rem 0;font-size:.85rem}
+.fin-line:last-child{border-bottom:0}
+.fin-line span{color:var(--m);flex:none}
+.fin-line b{text-align:right;font-weight:600;word-break:break-word}
+.fin-pending{margin-top:1.4rem}
+.fin-pending h2{margin-bottom:.6rem}
+.pend-row{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;background:var(--c2);border:1px solid var(--l);border-left:3px solid var(--o);border-radius:6px;padding:.7rem .9rem;margin-bottom:.5rem}
+.pend-l,.pend-r{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;min-width:0}
+.pend-l{display:grid;gap:.2rem;flex:1 1 240px}
+.pend-l b{font-size:.95rem}
+.pend-l .mut,.pend-r .mut{font-size:.78rem}
+.pend-r form{margin:0}
+.pend-r .btn,.pend-r button{padding:.4rem .7rem;font-size:.82rem}
+.badge.sen{background:rgba(255,180,80,.12);color:#ffb36b;border:1px solid rgba(255,180,80,.45)}
+.fin-calc{display:flex;gap:1rem;flex-wrap:wrap;background:var(--c);border:1px solid var(--l);border-radius:4px;padding:.5rem .7rem;font-size:.85rem}
+.fin-opts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.6rem;background:var(--c);border:1px solid var(--l);border-radius:6px;padding:.7rem;margin:.4rem 0}
+.fin-opts[hidden],.f label[hidden]{display:none!important}
+.mv-edit{margin:-.4rem 0 .6rem;background:var(--c2);border:1px solid var(--l);border-radius:6px;padding:.5rem .7rem}
+.mv-edit summary{font-size:.82rem;color:var(--m);cursor:pointer}
+.mv-edit .f{margin-top:.6rem}
+.mv-edit button{max-width:none}
+
 /* ===== panel 100% responsive en celular (vertical) ===== */
 body{overflow-x:hidden}
 .btn,button{max-width:100%}
@@ -279,8 +320,13 @@ body{overflow-x:hidden}
   .mov-form .f{grid-template-columns:1fr}
   .form2,.form2.s{grid-template-columns:1fr}
   .form2 button,.form2.s button{grid-column:1/-1}
+  .fin-grid{grid-template-columns:1fr}
+  .fin-opts{grid-template-columns:1fr}
+  .pend-row{align-items:flex-start}
+  .pend-l,.pend-r{width:100%}
+  .pend-r .warn-t{margin-right:auto}
 }
-@media(max-width:480px){.kpis,.kpis.fin,.c360-stats{grid-template-columns:1fr}}
+@media(max-width:480px){.kpis,.kpis.fin,.c360-stats{grid-template-columns:1fr}.fin-col{min-width:48px}.fin-bar{width:7px}}
 
 /* ===== Comprobantes y feedback de clientes ===== */
 .ic{width:15px;height:15px;vertical-align:-2px;margin-right:.35rem;flex:none}

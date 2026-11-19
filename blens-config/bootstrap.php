@@ -75,22 +75,170 @@ function set_ajuste(PDO $pdo, string $clave, string $valor): void {
 function modo_prueba(PDO $pdo): int { return ajuste($pdo, 'modo_prueba', '0') === '1' ? 1 : 0; }
 
 /* ================= Panel financiero ================= */
+const FIN_UNIDADES = ['audiovisual' => 'Audiovisual', 'web' => 'Desarrollo Web / Apps'];
+const FIN_ESTADOS_PAGO = ['pendiente' => 'Pendiente', 'seniado' => 'Señado / Parcial', 'cobrado' => 'Cobrado total'];
+const FIN_MEDIOS_PAGO = ['Transferencia / MP' => 1, 'Efectivo' => 1, 'USD / Cripto' => 1];
+const FIN_CATEGORIAS_GASTO = ['Equipos / Insumos' => 1, 'Software / Hosting' => 1, 'Movilidad' => 1, 'Tercerizados' => 1, 'Impuestos / Otros' => 1, 'Operativo' => 1];
+const FIN_MEDIO_LEGACY = ['Transferencia / MP' => 'transferencia', 'Efectivo' => 'efectivo', 'USD / Cripto' => 'otro'];
+const FIN_MEDIO_LEGACY_NOMBRE = ['transferencia' => 'Transferencia / MP', 'mercadopago' => 'Transferencia / MP', 'efectivo' => 'Efectivo', 'otro' => 'USD / Cripto'];
 function saldo_cuenta(PDO $pdo): float {
     $val = str_replace(',', '.', trim((string)ajuste($pdo, 'saldo_cuenta', '0')));
     return round((float)$val, 2);
 }
 function tna_cuenta(PDO $pdo): float { $v = (float)str_replace(',', '.', trim(ajuste($pdo, 'tna_cuenta', '0'))); return $v > 0 ? $v : 0.0; }
-function cobrar_mes(PDO $pdo, string $ym): float {
-    $s = $pdo->prepare("SELECT COALESCE(SUM(cantidad*monto_unit),0) FROM trabajos WHERE estado='cobrado' AND fecha_pago IS NOT NULL AND DATE_FORMAT(fecha_pago,'%Y-%m')=? AND prueba=?");
-    $s->execute([$ym, modo_prueba($pdo)]); return round((float)$s->fetchColumn(), 2);
+function fin_unidad(?string $u): string { return $u === 'web' ? 'web' : 'audiovisual'; }
+function fin_unidad_txt(?string $u): string { return FIN_UNIDADES[fin_unidad($u)]; }
+function fin_medio(?string $nuevo, ?string $legacy = null): string {
+    $nuevo = trim((string)$nuevo);
+    if (isset(FIN_MEDIOS_PAGO[$nuevo])) return $nuevo;
+    $legacy = trim((string)$legacy);
+    if ($legacy !== '' && isset(FIN_MEDIO_LEGACY_NOMBRE[$legacy])) return FIN_MEDIO_LEGACY_NOMBRE[$legacy];
+    return '';
 }
+function fin_num(float $n): float { return round(max(0, $n), 2); }
+function fin_total(array $r): float { return fin_num((float)($r['cantidad'] ?? 0) * (float)($r['monto_unit'] ?? 0)); }
+function fin_abonado(array $r): float {
+    if ((string)($r['estado'] ?? '') === 'cobrado') return fin_total($r);
+    return min(fin_total($r), fin_num((float)($r['monto_senia'] ?? 0)));
+}
+function fin_saldo(array $r): float { return fin_num(fin_total($r) - fin_abonado($r)); }
+function fin_estado(array $r): string {
+    if ((string)($r['estado'] ?? '') === 'cobrado' || fin_saldo($r) <= 0) return 'cobrado';
+    if (fin_abonado($r) > 0) return 'seniado';
+    return 'pendiente';
+}
+function fin_estado_txt(array $r): string {
+    return ['cobrado' => 'Cobrado total', 'seniado' => 'Señado / Parcial', 'pendiente' => 'Pendiente'][fin_estado($r)];
+}
+function fin_sql_abonado(): string { return "CASE WHEN estado='cobrado' THEN cantidad*monto_unit ELSE LEAST(COALESCE(monto_senia,0),cantidad*monto_unit) END"; }
+function fin_sql_saldo(): string { return "CASE WHEN estado='cobrado' THEN 0 ELSE GREATEST(cantidad*monto_unit-COALESCE(monto_senia,0),0) END"; }
+function fin_mes_valido(string $ym): string { return preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $ym) ? $ym : date('Y-m'); }
+function fin_cobrado_mes(PDO $pdo, string $ym, ?int $clienteId = null): array {
+    $where = ['t.prueba=?', "DATE_FORMAT(COALESCE(t.fecha_pago,t.fecha),'%Y-%m')=?"];
+    $args = [modo_prueba($pdo), fin_mes_valido($ym)];
+    if ($clienteId) { $where[] = 't.cliente_id=?'; $args[] = $clienteId; }
+    $s = $pdo->prepare('SELECT t.unidad_negocio,t.medio_pago,t.medio,t.monto_senia,t.cantidad,t.monto_unit,t.estado, SUM(' . fin_sql_abonado() . ') AS total FROM trabajos t WHERE ' . implode(' AND ', $where) . ' GROUP BY t.unidad_negocio,t.medio_pago,t.medio');
+    $s->execute($args);
+    $total = 0.0; $porUnidad = ['audiovisual' => 0.0, 'web' => 0.0]; $porMedio = [];
+    foreach ($s->fetchAll() as $r) {
+        $m = fin_num((float)$r['total']); $total += $m;
+        $porUnidad[fin_unidad((string)($r['unidad_negocio'] ?? ''))] += $m;
+        $medio = fin_medio((string)($r['medio_pago'] ?? ''), (string)($r['medio'] ?? ''));
+        $porMedio[$medio] = round(($porMedio[$medio] ?? 0) + $m, 2);
+    }
+    return ['total' => fin_num($total), 'por_unidad' => $porUnidad, 'por_medio' => $porMedio];
+}
+function cobrar_mes(PDO $pdo, string $ym): float { return fin_cobrado_mes($pdo, $ym)['total']; }
 function gastos_mes(PDO $pdo, string $ym): array {
     $s = $pdo->prepare("SELECT * FROM gastos WHERE DATE_FORMAT(fecha,'%Y-%m')=? AND prueba=? ORDER BY fecha DESC,id DESC");
-    $s->execute([$ym, modo_prueba($pdo)]); return $s->fetchAll();
+    $s->execute([fin_mes_valido($ym), modo_prueba($pdo)]); return $s->fetchAll();
 }
 function total_gastos_mes(PDO $pdo, string $ym): float {
     $s = $pdo->prepare("SELECT COALESCE(SUM(monto),0) FROM gastos WHERE DATE_FORMAT(fecha,'%Y-%m')=? AND prueba=?");
-    $s->execute([$ym, modo_prueba($pdo)]); return round((float)$s->fetchColumn(), 2);
+    $s->execute([fin_mes_valido($ym), modo_prueba($pdo)]); return round((float)$s->fetchColumn(), 2);
+}
+function fin_categoria(?string $c): string {
+    $c = trim((string)$c);
+    return ($c === '' || $c === 'general') ? 'Operativo' : mb_substr($c, 0, 50);
+}
+function fin_gastos_resumen(PDO $pdo, string $ym): array {
+    $total = 0.0; $porCategoria = [];
+    foreach (gastos_mes($pdo, $ym) as $g) {
+        $m = fin_num((float)$g['monto']); $cat = fin_categoria((string)($g['categoria'] ?? ''));
+        $total += $m; $porCategoria[$cat] = round(($porCategoria[$cat] ?? 0) + $m, 2);
+    }
+    arsort($porCategoria);
+    return ['total' => fin_num($total), 'por_categoria' => $porCategoria, 'n' => count(gastos_mes($pdo, $ym))];
+}
+function fin_pendientes(PDO $pdo, ?int $clienteId = null, ?string $ym = null): array {
+    $where = ['t.prueba=?', "t.estado<>'cobrado'", '(' . fin_sql_saldo() . ')>0'];
+    $args = [modo_prueba($pdo)];
+    if ($clienteId) { $where[] = 't.cliente_id=?'; $args[] = $clienteId; }
+    if ($ym) { $where[] = "DATE_FORMAT(t.fecha,'%Y-%m')=?"; $args[] = fin_mes_valido($ym); }
+    $s = $pdo->prepare('SELECT t.*, c.empresa,c.nombre,c.telefono, ' . fin_sql_saldo() . ' AS saldo FROM trabajos t LEFT JOIN clientes c ON c.id=t.cliente_id WHERE ' . implode(' AND ', $where) . ' ORDER BY t.fecha,t.id');
+    $s->execute($args); return $s->fetchAll();
+}
+function fin_pendiente_mes(PDO $pdo, string $ym, ?int $clienteId = null): float {
+    $t = 0.0; foreach (fin_pendientes($pdo, $clienteId, $ym) as $r) $t += fin_saldo($r); return fin_num($t);
+}
+function fin_movimientos_mes(PDO $pdo, string $ym): array {
+    $ym = fin_mes_valido($ym); $out = [];
+    $s = $pdo->prepare('SELECT t.*, c.empresa,c.nombre, ' . fin_sql_abonado() . ' AS pagado, ' . fin_sql_saldo() . ' AS saldo FROM trabajos t LEFT JOIN clientes c ON c.id=t.cliente_id WHERE t.prueba=? AND DATE_FORMAT(COALESCE(t.fecha_pago,t.fecha),\'%Y-%m\')=? HAVING pagado>0 ORDER BY COALESCE(t.fecha_pago,t.fecha),t.id');
+    $s->execute([modo_prueba($pdo), $ym]);
+    foreach ($s->fetchAll() as $r) {
+        $out[] = [
+            'fecha' => (string)($r['fecha_pago'] ?: $r['fecha']), 'tipo' => 'Ingreso',
+            'concepto' => trim((string)$r['detalle']) !== '' ? (string)$r['detalle'] : ('Trabajo #' . (int)$r['id']),
+            'cliente' => trim((string)($r['empresa'] ?? '')) !== '' ? (string)$r['empresa'] : (string)($r['nombre'] ?? ''),
+            'categoria' => fin_unidad_txt((string)($r['unidad_negocio'] ?? '')),
+            'medio' => fin_medio((string)($r['medio_pago'] ?? ''), (string)($r['medio'] ?? '')),
+            'estado' => fin_estado_txt($r), 'monto' => fin_num((float)$r['pagado']), 'saldo' => fin_saldo($r),
+        ];
+    }
+    foreach (gastos_mes($pdo, $ym) as $g) {
+        $out[] = [
+            'fecha' => (string)$g['fecha'], 'tipo' => 'Egreso', 'concepto' => (string)$g['concepto'],
+            'cliente' => '', 'categoria' => fin_categoria((string)($g['categoria'] ?? '')),
+            'medio' => '', 'estado' => 'Pagado', 'monto' => fin_num((float)$g['monto']), 'saldo' => 0.0,
+        ];
+    }
+    usort($out, fn(array $a, array $b): int => strcmp($a['fecha'], $b['fecha']));
+    return $out;
+}
+function fin_resumen(PDO $pdo, string $ym): array {
+    $ym = fin_mes_valido($ym);
+    $cob = fin_cobrado_mes($pdo, $ym); $gas = fin_gastos_resumen($pdo, $ym);
+    $pend = fin_pendientes($pdo, null, $ym); $porCobrar = 0.0; foreach ($pend as $r) $porCobrar += fin_saldo($r);
+    $saldo = saldo_cuenta($pdo); $tna = tna_cuenta($pdo);
+    return [
+        'ym' => $ym, 'cobrado' => $cob['total'], 'por_unidad' => $cob['por_unidad'], 'por_medio' => $cob['por_medio'],
+        'por_cobrar' => fin_num($porCobrar), 'n_pendientes' => count($pend),
+        'gastos' => $gas['total'], 'por_categoria' => $gas['por_categoria'], 'n_gastos' => $gas['n'],
+        'neto' => fin_num($cob['total'] - $gas['total']), 'saldo' => $saldo, 'tna' => $tna, 'rend' => rend_estimado($saldo, $tna),
+    ];
+}
+function fin_evolucion(PDO $pdo, int $n = 6, ?string $hasta = null): array {
+    $fin = fin_mes_valido((string)$hasta); $meses = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']; $out = [];
+    for ($i = max(0, $n - 1); $i >= 0; $i--) {
+        $ym = date('Y-m', strtotime($fin . '-01 -' . $i . ' month'));
+        $ing = fin_cobrado_mes($pdo, $ym)['total']; $gas = total_gastos_mes($pdo, $ym);
+        $out[] = ['ym' => $ym, 'label' => ($meses[(int)substr($ym, 5, 2)] ?? '') . ' ' . substr($ym, 2, 2), 'ingresos' => $ing, 'gastos' => $gas, 'neto' => fin_num($ing - $gas)];
+    }
+    return $out;
+}
+function fin_csv_celda($v): string {
+    $s = str_replace(["\r", "\n"], ' ', (string)$v);
+    return $s !== '' && preg_match('/^[=+\-@\t]/', $s) ? "'" . $s : $s;
+}
+function fin_datos_pago_post(array $post, float $total, bool $cero = false): array {
+    $total = fin_num($total);
+    $estado = strtolower(trim((string)($post['estado_pago'] ?? ($post['estado'] ?? 'pendiente'))));
+    if ($cero) $estado = 'cobrado';
+    if (!isset(FIN_ESTADOS_PAGO[$estado])) throw new RuntimeException('Estado de pago inválido.');
+    $medio = trim((string)($post['medio_pago'] ?? ''));
+    if ($medio === '' && isset($post['medio'])) {
+        $legacy = trim((string)$post['medio']); $n = array_search($legacy, FIN_MEDIO_LEGACY, true);
+        $medio = $n === false ? '' : (string)$n;
+    }
+    if ($medio !== '' && !isset(FIN_MEDIOS_PAGO[$medio])) throw new RuntimeException('Elegí un medio de pago válido.');
+    if ($estado === 'cobrado') $abonado = $total;
+    elseif ($estado === 'pendiente') $abonado = 0.0;
+    else {
+        $abonado = fin_num((float)str_replace(',', '.', trim((string)($post['monto_senia'] ?? '0'))));
+        if ($abonado <= 0 || $abonado >= $total) throw new RuntimeException('La seña tiene que ser mayor a cero y menor que el total.');
+    }
+    if ($abonado > 0 && $medio === '') $medio = 'Transferencia / MP';
+    $fpg = null;
+    if ($abonado > 0 || $estado === 'cobrado') {
+        $fpg = (string)($post['fecha_pago'] ?? '') ?: date('Y-m-d');
+        $f = DateTime::createFromFormat('Y-m-d', $fpg);
+        if (!$f || $f->format('Y-m-d') !== $fpg) throw new RuntimeException('Fecha de pago inválida.');
+    }
+    return [
+        'estado' => $estado === 'cobrado' ? 'cobrado' : 'pendiente', 'estado_pago' => $estado,
+        'abonado' => $abonado, 'medio_pago' => $medio !== '' ? $medio : null,
+        'medio' => $medio !== '' ? FIN_MEDIO_LEGACY[$medio] : null, 'fecha_pago' => $fpg,
+    ];
 }
 /* Rendimiento estimado de la billetera según la TNA configurada (interés simple anual) */
 function rend_estimado(float $saldo, float $tna): array {
@@ -215,7 +363,7 @@ function blens_migrar(?PDO $p = null): void {
             id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
             fecha DATE NOT NULL,
             concepto VARCHAR(160) NOT NULL,
-            categoria VARCHAR(60) NOT NULL DEFAULT 'general',
+            categoria VARCHAR(50) NOT NULL DEFAULT 'Operativo',
             monto DECIMAL(12,2) NOT NULL DEFAULT 0,
             prueba TINYINT(1) NOT NULL DEFAULT 0,
             comprobante VARCHAR(255) NULL,
@@ -297,6 +445,16 @@ function blens_migrar(?PDO $p = null): void {
             foreach ($p->query("SHOW COLUMNS FROM `$tabla`")->fetchAll(PDO::FETCH_ASSOC) as $c) $colsT[$c['Field']] = strtolower((string)$c['Type']);
             if ($tabla !== 'recibos' && !isset($colsT['comprobante'])) $p->exec("ALTER TABLE `$tabla` ADD COLUMN comprobante VARCHAR(255) NULL");
             if ($tabla === 'gastos' && !isset($colsT['prueba'])) $p->exec('ALTER TABLE gastos ADD COLUMN prueba TINYINT(1) NOT NULL DEFAULT 0');
+            if ($tabla === 'trabajos') {
+                foreach (['unidad_negocio' => "VARCHAR(30) NOT NULL DEFAULT 'audiovisual'", 'medio_pago' => 'VARCHAR(40) NULL', 'monto_senia' => 'DECIMAL(12,2) NOT NULL DEFAULT 0'] as $col => $def) {
+                    if (!isset($colsT[$col])) $p->exec("ALTER TABLE trabajos ADD COLUMN `$col` $def");
+                }
+            }
+            if ($tabla === 'gastos') {
+                if (!isset($colsT['categoria'])) $p->exec("ALTER TABLE gastos ADD COLUMN categoria VARCHAR(50) NOT NULL DEFAULT 'Operativo'");
+                elseif (!str_contains(strtolower((string)$colsT['categoria']), 'varchar(50)')) $p->exec("ALTER TABLE gastos MODIFY COLUMN categoria VARCHAR(50) NOT NULL DEFAULT 'Operativo'");
+                $p->exec("UPDATE gastos SET categoria='Operativo' WHERE categoria='' OR categoria='general'");
+            }
             $moneyCol = $tabla === 'trabajos' ? 'monto_unit' : ($tabla === 'recibos' ? 'total' : 'monto');
             if (isset($colsT[$moneyCol]) && !str_starts_with($colsT[$moneyCol], 'decimal')) $p->exec("ALTER TABLE `$tabla` MODIFY COLUMN `$moneyCol` DECIMAL(12,2) NOT NULL DEFAULT 0");
         }

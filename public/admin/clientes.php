@@ -41,7 +41,7 @@ function loc_agenda_descripcion(array $l): string {
     }
     return mb_substr(implode("\n", $lineas), 0, 4000);
 }
-function registrar_trabajo_entrega(PDO $pdo, int $clienteId, int $entregaId, string $titulo, string $tipo): void {
+function registrar_trabajo_entrega(PDO $pdo, int $clienteId, int $entregaId, string $titulo, string $tipo, array $post = []): void {
     $q = $pdo->prepare('SELECT 1 FROM trabajos WHERE entrega_id=? LIMIT 1'); $q->execute([$entregaId]);
     if ($q->fetchColumn()) return;
     $q = $pdo->prepare('SELECT tarifa_video,tarifa_foto FROM clientes WHERE id=?'); $q->execute([$clienteId]); $cl = $q->fetch();
@@ -50,7 +50,12 @@ function registrar_trabajo_entrega(PDO $pdo, int $clienteId, int $entregaId, str
     $tarifa = $tipo === 'fotos' ? ($cl['tarifa_foto'] ?? 0) : ($cl['tarifa_video'] ?? 0);
     $monto = round(max(0, (float)$tarifa), 2);
     $detalle = mb_substr(trim($titulo), 0, 200); if ($detalle === '') $detalle = $tipo === 'fotos' ? 'Pack de fotos' : 'Video';
-    $pdo->prepare("INSERT INTO trabajos (cliente_id,fecha,tipo,detalle,cantidad,monto_unit,prueba,estado,entrega_id) VALUES (?,?,?,?,1,?,?, 'pendiente',?)")->execute([$clienteId, date('Y-m-d'), $tipoTrabajo, $detalle, $monto, modo_prueba($pdo) ? 1 : 0, $entregaId]);
+    $pago = fin_datos_pago_post($post, $monto);
+    $unidad = fin_unidad((string)($post['unidad_negocio'] ?? 'audiovisual'));
+    $pdo->prepare('INSERT INTO trabajos (cliente_id,fecha,tipo,detalle,cantidad,monto_unit,prueba,estado,medio,fecha_pago,unidad_negocio,medio_pago,monto_senia,entrega_id) VALUES (?,?,?,?,1,?,?,?,?,?,?,?,?,?)')->execute([
+        $clienteId, date('Y-m-d'), $tipoTrabajo, $detalle, $monto, modo_prueba($pdo) ? 1 : 0, $pago['estado'], $pago['medio'], $pago['fecha_pago'],
+        $unidad, $pago['medio_pago'], $pago['abonado'], $entregaId,
+    ]);
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!hash_equals($_SESSION['t'], (string)($_POST['t'] ?? ''))) { http_response_code(400); exit('Sesión vencida. Recargá la página.'); }
@@ -197,7 +202,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
             }
             $crearTrabajo = isset($_POST['crear_trabajo']);
-            if ($crearTrabajo) registrar_trabajo_entrega($pdo, $c, $nid, $t, $tipoEn);
+            if ($crearTrabajo) registrar_trabajo_entrega($pdo, $c, $nid, $t, $tipoEn, $_POST);
             if (!$id && $tipoEn === 'video' && ($d === '' || $tituloAuto) && trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== '') {
                 try { lanzar_worker($nid, 'entrega'); } catch (Throwable $x2) { error_log('[blens clientes] ' . $x2->getMessage()); }
             }
@@ -234,7 +239,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $titulo = mb_substr($titulo, 0, 120);
                 $ins->execute([$c, $titulo, '', 'https://drive.google.com/file/d/' . $vid . '/view', '']);
                 $nid = (int)$pdo->lastInsertId();
-                if (isset($_POST['crear_trabajo'])) registrar_trabajo_entrega($pdo, $c, $nid, $titulo, 'video');
+                if (isset($_POST['crear_trabajo'])) registrar_trabajo_entrega($pdo, $c, $nid, $titulo, 'video', $_POST);
                 @file_put_contents(COLA . '/drive_' . $vid . '.name', $titulo);
                 blens_push_notify($pdo, 'cliente', $c, [
                     'title' => 'Nuevo material en blens.ar',
@@ -266,8 +271,9 @@ else {
     if ($vc) { $s = $pdo->prepare('SELECT * FROM clientes WHERE id=?'); $s->execute([$vc]); $cli = $s->fetch() ?: $cli; }
     if ($cli['id']) {
         $mpCli = modo_prueba($pdo);
-        $sf = $pdo->prepare("SELECT COALESCE(SUM(CASE WHEN estado='cobrado' THEN cantidad*monto_unit ELSE 0 END),0) cob, COALESCE(SUM(CASE WHEN estado='pendiente' THEN cantidad*monto_unit ELSE 0 END),0) pend FROM trabajos WHERE cliente_id=? AND prueba=?");
-        $sf->execute([$cli['id'], $mpCli]); $fin = $sf->fetch() ?: ['cob' => 0, 'pend' => 0];
+        $sf = $pdo->prepare('SELECT * FROM trabajos WHERE cliente_id=? AND prueba=?'); $sf->execute([$cli['id'], $mpCli]); $trabajosCli = $sf->fetchAll();
+        $cobCli = 0.0; $pendCli = 0.0; foreach ($trabajosCli as $tr) { $cobCli += fin_abonado($tr); $pendCli += fin_saldo($tr); }
+        $fin = ['cob' => fin_num($cobCli), 'pend' => fin_num($pendCli)];
         $sr = $pdo->prepare('SELECT COUNT(*) FROM recibos WHERE cliente_id=? AND prueba=?'); $sr->execute([$cli['id'], $mpCli]); $nRec = (int)$sr->fetchColumn();
         $nomCli = trim((string)$cli['nombre']); $empCli = trim((string)$cli['empresa']);
         $sp = $pdo->prepare("SELECT DISTINCT p.* FROM presupuestos p LEFT JOIN trabajos t ON t.id=p.trabajo_id WHERE p.cliente_nombre=? OR (p.empresa<>'' AND p.empresa=?) OR t.cliente_id=? ORDER BY p.creado_en DESC LIMIT 5");
@@ -308,7 +314,7 @@ $formCliente = function (bool $conBorrar = false) use ($e, $cli, $T): string {
 <?php endif; ?>
 <?php return ob_get_clean();
 };
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=32"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=33"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <?php require __DIR__ . '/nav.php'; ?>
 <?php if (isset($_GET['avisar']) && $cli && $cli['telefono']) { $s2 = $pdo->prepare('SELECT titulo FROM entregas WHERE id=? AND cliente_id=?'); $s2->execute([(int)$_GET['avisar'], $cli['id']]); if ($t2 = $s2->fetchColumn()) { $w = wa_url($cli['telefono'], 'Hola ' . explode(' ', trim($cli['nombre']))[0] . ', ya tenés una nueva entrega disponible en tu portal: «' . $t2 . '». Ingresá acá: ' . (blens_cfg()['sitio'] ?? 'https://blens.ar') . '/portal/'); if ($w) echo '<p class="ok">¿Avisamos al cliente? <a class="btn" href="' . $e($w) . '" target="_blank" rel="noopener">Enviar aviso por WhatsApp</a></p>'; } } ?>
@@ -343,7 +349,13 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
 <label class="full only-video"><span class="lbl">Video para la vista previa <span class="opt">(opcional)</span> (si no subís nada, el portal muestra el video desde el link de Drive) <?= $ent['preview'] ? '· ya cargado; dejá vacío para mantenerlo' : '' ?></span><input type="file" name="mp4" accept="video/*"></label>
 <p class="mut full only-video">Se convierte solo a 720p y solo lo ve este cliente al entrar con su usuario. Puede tardar unos minutos: no cierres la página.</p>
 <label class="full only-video"><span class="lbl">Portada propia <span class="opt">(opcional)</span></span><input type="file" name="poster" accept="image/jpeg,image/png,image/webp"></label>
-<label class="full chk"><input type="checkbox" name="crear_trabajo" checked> Registrar también como trabajo a cobrar <span class="opt">(usa la tarifa del cliente y lo vincula a esta entrega)</span></label>
+<div class="full fin-opts" data-crear-opts>
+  <label><span class="lbl">Línea de negocio</span><select name="unidad_negocio"><?= fin_opts(FIN_UNIDADES, 'audiovisual') ?></select></label>
+  <label><span class="lbl">Estado de pago</span><select name="estado_pago"><?= fin_opts(FIN_ESTADOS_PAGO, 'pendiente') ?></select></label>
+  <label><span class="lbl">Medio de pago</span><select name="medio_pago"><option value="">—</option><?= fin_opts(array_combine(array_keys(FIN_MEDIOS_PAGO), array_keys(FIN_MEDIOS_PAGO)), '') ?></select></label>
+  <label><span class="lbl">Seña cobrada <span class="opt">(si es parcial)</span></span><input name="monto_senia" inputmode="numeric" placeholder="0"></label>
+</div>
+<label class="full chk"><input type="checkbox" name="crear_trabajo" checked data-crear-trabajo> Registrar también como trabajo a cobrar <span class="opt">(usa la tarifa del cliente y lo vincula a esta entrega)</span></label>
 <div class="row full"><button>Guardar</button><a class="btn g" href="?c=<?= (int)$cli['id'] ?>">Cancelar</a></div></form>
 <?php if ($tipoActual === 'video' && $ent['id'] && trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== ''): ?>
 <div class="row"><form method="post"><input type="hidden" name="a" value="ia_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$ent['id'] ?>"><button class="g">Generar título y copy con IA</button></form></div>
@@ -407,7 +419,13 @@ $waLinks = [
   <h2 class="full">Importar carpeta de Google Drive</h2>
   <p class="mut full">Pegá el link de una carpeta pública. Se crea una entrega por cada video encontrado, con el nombre del archivo como título y su link individual. No se sube ningún archivo al servidor.</p>
   <label class="full"><span class="lbl">Link de la carpeta <span class="req">* obligatorio</span></span><input name="carpeta" type="url" required placeholder="https://drive.google.com/drive/folders/…"></label>
-  <label class="full chk"><input type="checkbox" name="crear_trabajo" checked> Registrar también como trabajo a cobrar <span class="opt">(uno por cada video importado)</span></label>
+  <div class="full fin-opts" data-crear-opts>
+    <label><span class="lbl">Línea de negocio</span><select name="unidad_negocio"><?= fin_opts(FIN_UNIDADES, 'audiovisual') ?></select></label>
+    <label><span class="lbl">Estado de pago</span><select name="estado_pago"><?= fin_opts(FIN_ESTADOS_PAGO, 'pendiente') ?></select></label>
+    <label><span class="lbl">Medio de pago</span><select name="medio_pago"><option value="">—</option><?= fin_opts(array_combine(array_keys(FIN_MEDIOS_PAGO), array_keys(FIN_MEDIOS_PAGO)), '') ?></select></label>
+    <label><span class="lbl">Seña cobrada <span class="opt">(si es parcial)</span></span><input name="monto_senia" inputmode="numeric" placeholder="0"></label>
+  </div>
+  <label class="full chk"><input type="checkbox" name="crear_trabajo" checked data-crear-trabajo> Registrar también como trabajo a cobrar <span class="opt">(uno por cada video importado)</span></label>
   <div class="row full"><button>Importar videos</button><button type="button" class="g" data-cerrar>Cancelar</button></div>
   </form>
   </dialog>
@@ -480,4 +498,4 @@ $waLinks = [
 <?php else: ?>
 <?= $formCliente(false) ?>
 <?php endif; ?>
-<?php endif; ?><script src="admin.js?v=29"></script><script src="../assets/push.js?v=5"></script></body></html>
+<?php endif; ?><script src="admin.js?v=30"></script><script src="../assets/push.js?v=5"></script></body></html>

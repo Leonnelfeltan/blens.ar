@@ -15,7 +15,7 @@ $items = presu_items((string)$p['items_json']); $total = presu_total($items);
 $wa = wa_url((string)$p['telefono'], presu_wa_texto($p));
 $tieneCobro = !empty($p['cobro_cliente_id']);
 $vence = date('d/m/Y', strtotime((string)$p['creado_en'] . ' +' . (int)$p['validez_dias'] . ' days'));
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title><?= $e($p['numero']) ?> | Presupuesto blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=32"></head><body class="presu-print">
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title><?= $e($p['numero']) ?> | Presupuesto blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=33"></head><body class="presu-print">
 <div class="p-tools">
     <a class="btn g" href="presupuestos.php">&larr; Presupuestos</a>
     <button type="button" data-print>Imprimir / Guardar PDF</button>
@@ -51,4 +51,4 @@ $vence = date('d/m/Y', strtotime((string)$p['creado_en'] . ' +' . (int)$p['valid
     <?php if (trim((string)$p['notas']) !== ''): ?><div class="p-notes"><span class="p-k">Notas y condiciones</span><p><?= nl2br($e($p['notas'])) ?></p></div><?php endif; ?>
     <div class="p-foot"><span>blens.ar</span><span>Presupuesto <?= $e($p['numero']) ?></span></div>
 </div>
-<script src="admin.js?v=29"></script></body></html>
+<script src="admin.js?v=30"></script></body></html>

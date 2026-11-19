@@ -47,7 +47,7 @@ function resumen_cobro(array $cl, array $pend, float $total, string $alias, stri
     $l[] = '';
     $l[] = 'Este es el resumen de tus trabajos y las cuotas pendientes al ' . date('d/m/Y') . ':';
     $l[] = '';
-    if ($pend) { foreach ($pend as $r) { $sub = (float)$r['cantidad'] * (float)$r['monto_unit']; $det = trim((string)$r['detalle']) !== '' ? (string)$r['detalle'] : (TIPOS[$r['tipo']] ?? (string)$r['tipo']); $l[] = '• ' . $det . ' — ' . (int)$r['cantidad'] . ' × ' . peso((float)$r['monto_unit']) . ' = ' . peso($sub); } }
+    if ($pend) { foreach ($pend as $r) { $sub = fin_total($r); $ab = fin_abonado($r); $saldo = fin_saldo($r); $det = trim((string)$r['detalle']) !== '' ? (string)$r['detalle'] : (TIPOS[$r['tipo']] ?? (string)$r['tipo']); $l[] = '• ' . $det . ' — ' . (int)$r['cantidad'] . ' × ' . peso((float)$r['monto_unit']) . ' = ' . peso($sub) . ($ab > 0 ? ' (abonado ' . peso($ab) . ')' : '') . ' · saldo ' . peso($saldo); } }
     else $l[] = '• No tenés trabajos pendientes de pago.';
     $l[] = '';
     $l[] = 'Total a pagar: ' . peso($total);
@@ -116,11 +116,11 @@ function comprobante_boton(string $tipo, int $id): string {
 /* ---- Agenda de rodajes, entregas y reuniones ---- */
 const AGENDA_TIPOS = ['rodaje' => 'Rodaje', 'entrega' => 'Entrega', 'reunion' => 'Reunión'];
 function por_cobrar(PDO $pdo): float {
-    $s = $pdo->prepare("SELECT COALESCE(SUM(cantidad*monto_unit),0) FROM trabajos WHERE estado='pendiente' AND prueba=?");
-    $s->execute([modo_prueba($pdo)]); return round((float)$s->fetchColumn(), 2);
+    $s = $pdo->prepare("SELECT " . fin_sql_saldo() . " AS saldo FROM trabajos WHERE estado<>'cobrado' AND prueba=?");
+    $s->execute([modo_prueba($pdo)]); $t = 0.0; foreach ($s->fetchAll() as $r) $t += fin_saldo($r); return fin_num($t);
 }
 function cobros_pendientes(PDO $pdo): int {
-    $s = $pdo->prepare("SELECT COUNT(*) FROM trabajos WHERE estado='pendiente' AND prueba=?");
+    $s = $pdo->prepare("SELECT COUNT(*) FROM trabajos WHERE estado<>'cobrado' AND prueba=? AND (" . fin_sql_saldo() . ")>0");
     $s->execute([modo_prueba($pdo)]); return (int)$s->fetchColumn();
 }
 function consultas_pendientes(PDO $pdo): int {
@@ -256,6 +256,13 @@ function wa_url(string $tel, string $texto): ?string { $n = wa_num($tel); return
 
 const TIPOS = ['video' => 'Video', 'foto' => 'Foto', 'otro' => 'Otro'];
 const MEDIOS = ['efectivo' => 'Efectivo', 'transferencia' => 'Transferencia', 'mercadopago' => 'Mercado Pago', 'otro' => 'Otro'];
+function fin_opts(array $opts, string $sel = ''): string {
+    $out = '';
+    foreach ($opts as $v => $n) {
+        $out .= '<option value="' . htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8') . '"' . ($sel === (string)$v ? ' selected' : '') . '>' . htmlspecialchars((string)$n, ENT_QUOTES, 'UTF-8') . '</option>';
+    }
+    return $out;
+}
 const MES = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 function mes(string $d): string { return MES[(int)substr($d, 5, 2)] . ' ' . substr($d, 0, 4); }
 function fecha_ok(string $d): bool { $x = DateTime::createFromFormat('Y-m-d', $d); return $x && $x->format('Y-m-d') === $d; }

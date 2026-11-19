@@ -268,13 +268,51 @@ if (document.querySelector('[data-proc]')) {
   else aviso('El procesamiento sigue en marcha. Dejá la página abierta y volvé a revisar en unos minutos.');
 } else sessionStorage.removeItem(procReloadKey);
 
-// ---- Cobros: habilitar el saldo solo cuando el cobro está cobrado ----
+// ---- Cobros: habilitar el saldo cuando hay algún importe cobrado ----
 const cobroEstado = document.querySelector('[data-estado]');
 const cobroSumar = document.querySelector('[data-sumar]');
 if (cobroEstado && cobroSumar) {
-  const updCobro = () => { const esCob = cobroEstado.value === 'cobrado'; cobroSumar.disabled = !esCob; cobroSumar.checked = esCob; };
+  const updCobro = () => { const pendiente = cobroEstado.value === 'pendiente'; cobroSumar.disabled = pendiente; cobroSumar.checked = !pendiente; };
   cobroEstado.addEventListener('change', updCobro); updCobro();
 }
+const finNum = v => {
+  let s = String(v || '').trim().replace(/\s/g, '');
+  if (s.includes(',') && s.includes('.')) s = s.lastIndexOf(',') > s.lastIndexOf('.') ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+  else if (s.includes(',')) s = s.replace(',', '.');
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+};
+const finFmt = n => '$ ' + n.toLocaleString('es-AR', { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
+document.querySelectorAll('[data-fin-form]').forEach(f => {
+  const monto = f.querySelector('[data-fin-monto]');
+  const cantidad = f.querySelector('[data-fin-cantidad]');
+  const estado = f.querySelector('[data-fin-estado]');
+  const senia = f.querySelector('[data-fin-senia]');
+  const seniaWrap = f.querySelector('[data-fin-senia-wrap]');
+  const totalOut = f.querySelector('[data-fin-total]');
+  const saldoOut = f.querySelector('[data-fin-saldo]');
+  if (!monto || !estado) return;
+  const calc = () => {
+    const total = finNum(monto.value) * (cantidad ? finNum(cantidad.value) || 1 : 1);
+    const modo = estado.value;
+    let saldo = total;
+    if (modo === 'cobrado') { saldo = 0; if (senia) senia.value = total.toFixed(2); }
+    else if (modo === 'pendiente') { if (senia) senia.value = '0'; }
+    else saldo = Math.max(0, total - finNum(senia ? senia.value : 0));
+    if (seniaWrap) seniaWrap.hidden = modo !== 'seniado';
+    if (senia) senia.disabled = modo !== 'seniado';
+    if (totalOut) totalOut.textContent = finFmt(total);
+    if (saldoOut) saldoOut.textContent = finFmt(saldo);
+  };
+  [monto, cantidad, estado, senia].forEach(el => { if (el) { el.addEventListener('input', calc); el.addEventListener('change', calc); } });
+  calc();
+});
+document.querySelectorAll('[data-crear-trabajo]').forEach(chk => {
+  const box = chk.closest('form')?.querySelector('[data-crear-opts]');
+  if (!box) return;
+  const upd = () => { box.hidden = !chk.checked; };
+  chk.addEventListener('change', upd); upd();
+});
 const movForm = document.querySelector('.mov-form');
 if (movForm) {
   const mode = movForm.querySelector('[data-mov-mode]');

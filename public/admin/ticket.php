@@ -15,15 +15,15 @@ $sql = "SELECT * FROM trabajos WHERE cliente_id=? AND estado='pendiente' AND pru
 $q = $pdo->prepare($sql); $q->execute(array_merge([$cid, $mp], $ids)); $rows = $q->fetchAll();
 if (!$rows) exit('No hay trabajos pendientes para armar el ticket. <a href="cobros.php?c=' . $cid . '">Volver a cobros</a>');
 $tot = 0; $pru = 0;
-foreach ($rows as $x) { $tot += (float)$x['cantidad'] * (float)$x['monto_unit']; if (!empty($x['prueba'])) $pru = 1; }
+foreach ($rows as $x) { $tot += fin_saldo($x); if (!empty($x['prueba'])) $pru = 1; }
 $tot = round($tot, 2);
-$lineas = implode("\n", array_map(fn($x) => '• ' . ($x['detalle'] ?: (TIPOS[$x['tipo']] ?? '')) . ' (' . $x['cantidad'] . ' × ' . peso((float)$x['monto_unit']) . ')', $rows));
+$lineas = implode("\n", array_map(fn($x) => '• ' . ($x['detalle'] ?: (TIPOS[$x['tipo']] ?? '')) . ' (' . $x['cantidad'] . ' × ' . peso((float)$x['monto_unit']) . ')' . (fin_abonado($x) > 0 ? ' · abonado ' . peso(fin_abonado($x)) : '') . ' · saldo ' . peso(fin_saldo($x)), $rows));
 $pn = explode(' ', trim($cl['nombre']))[0];
 $txt = "Hola $pn, te paso el detalle de lo pendiente de pago:\n$lineas\nTotal a pagar: " . peso($tot) . "\nCuando lo abones, te mando el recibo. ¡Gracias!";
 $w = wa_url((string)$cl['telefono'], $txt);
 $doc = ['titulo' => 'Detalle de cobro', 'fecha' => date('d/m/Y'), 'estado' => 'Pendiente de pago', 'cLabel' => 'Cliente:',
   'cliente' => ($cl['empresa'] ?: $cl['nombre']) . ($cl['empresa'] ? ' (' . $cl['nombre'] . ')' : ''),
-  'items' => array_map(fn($x) => ['d' => $x['detalle'] ?: (TIPOS[$x['tipo']] ?? ''), 'c' => (int)$x['cantidad'], 'p' => peso((float)$x['monto_unit']), 's' => peso((float)$x['cantidad'] * (float)$x['monto_unit'])], $rows),
+  'items' => array_map(fn($x) => ['d' => $x['detalle'] ?: (TIPOS[$x['tipo']] ?? ''), 'c' => (int)$x['cantidad'], 'p' => peso((float)$x['monto_unit']), 's' => peso(fin_saldo($x))], $rows),
   'totalLabel' => 'Total a pagar', 'total' => peso($tot), 'medio' => '', 'prueba' => (bool)$pru, 'pruebaTxt' => 'TICKET DE PRUEBA · sin valor',
   'pie' => 'Detalle de importes pendientes de pago. No es un recibo ni una factura: al recibir el pago se emite el recibo.', 'logo' => '../assets/brand/blens_logo-horizontal_color_fondo-claro.png'];
 ?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Detalle de cobro | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="recibo.css?v=13"></head><body>
@@ -32,6 +32,6 @@ $doc = ['titulo' => 'Detalle de cobro', 'fecha' => date('d/m/Y'), 'estado' => 'P
 <div class="rh"><div><h1>Detalle de cobro</h1><p>Fecha: <?= $e(date('d/m/Y')) ?></p><p><span class="est">Pendiente de pago</span></p></div><div class="rt"><img class="blogo" loading="lazy" width="180" height="48" src="../assets/brand/blens_logo-horizontal_color_fondo-claro.png" alt="blens.ar"><p>Contenido audiovisual para empresas</p></div></div>
 <?= $cl['logo'] ? '<img class="clogo" loading="lazy" width="180" height="80" src="../media/logos/' . $e($cl['logo']) . '" alt="">' : '' ?><p><b>Cliente:</b> <?= $e($cl['empresa'] ?: $cl['nombre']) ?><?= $cl['empresa'] ? ' (' . $e($cl['nombre']) . ')' : '' ?></p>
 <table><tr><th>Fecha</th><th>Detalle</th><th class="n">Cant.</th><th class="n">Precio</th><th class="n">Subtotal</th></tr>
-<?php foreach ($rows as $x): ?><tr><td><?= $e(date('d/m/Y', strtotime($x['fecha']))) ?></td><td><?= $e($x['detalle'] ?: (TIPOS[$x['tipo']] ?? '')) ?></td><td class="n"><?= (int)$x['cantidad'] ?></td><td class="n"><?= $e(peso((float)$x['monto_unit'])) ?></td><td class="n"><?= $e(peso((float)$x['cantidad'] * (float)$x['monto_unit'])) ?></td></tr><?php endforeach; ?></table>
+<?php foreach ($rows as $x): ?><tr><td><?= $e(date('d/m/Y', strtotime($x['fecha']))) ?></td><td><?= $e($x['detalle'] ?: (TIPOS[$x['tipo']] ?? '')) ?><?= fin_abonado($x) > 0 ? '<br><span class="mut">Abonado: ' . $e(peso(fin_abonado($x))) . '</span>' : '' ?></td><td class="n"><?= (int)$x['cantidad'] ?></td><td class="n"><?= $e(peso((float)$x['monto_unit'])) ?></td><td class="n"><?= $e(peso(fin_saldo($x))) ?></td></tr><?php endforeach; ?></table>
 <p class="tot">Total a pagar: <?= $e(peso($tot)) ?></p>
-<p class="leg">Detalle de importes pendientes de pago. No es un recibo ni una factura: al recibir el pago se emite el recibo.</p><script src="admin.js?v=29"></script></body></html>
+<p class="leg">Detalle de importes pendientes de pago. No es un recibo ni una factura: al recibir el pago se emite el recibo.</p><script src="admin.js?v=30"></script></body></html>

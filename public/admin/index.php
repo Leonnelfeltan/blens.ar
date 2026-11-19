@@ -111,7 +111,7 @@ if ($post) {
                 if (!$dx || $dx->format('Y-m-d') !== $f) throw new RuntimeException('Fecha inválida.');
                 if ($con === '') throw new RuntimeException('Escribí el concepto del gasto.');
                 if ($mon <= 0) throw new RuntimeException('El monto tiene que ser mayor a cero.');
-                $cat = mb_substr(trim((string)($_POST['categoria'] ?? 'general')), 0, 60) ?: 'general';
+                $cat = fin_categoria((string)($_POST['categoria'] ?? 'Operativo'));
                 $comp = comprobante_subir();
                 $pdo->prepare('INSERT INTO gastos (fecha,concepto,categoria,monto,prueba,comprobante) VALUES (?,?,?,?,?,?)')->execute([$f, $con, $cat, $mon, $mp, $comp]);
                 if (isset($_POST['descontar'])) set_ajuste($pdo, 'saldo_cuenta', (string)max(0, saldo_cuenta($pdo) - $mon));
@@ -280,7 +280,7 @@ if ($post) {
 }
 $auth = !empty($_SESSION['ok']);
 ?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<title>Panel | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=32"></head><body>
+<title>Panel | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=33"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <?php if (!$auth): ?>
 <form class="login" method="post"><h1 class="lh"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span> · panel</h1>
@@ -301,13 +301,16 @@ $ymPrev = date('Y-m', strtotime($ym . '-01 -1 month'));
 $ymNext = date('Y-m', strtotime($ym . '-01 +1 month'));
 $mesTxt = ($MESES[(int)substr($ym, 5, 2)] ?? '') . ' ' . substr($ym, 0, 4);
 $esMesActual = ($ym === date('Y-m'));
-$cobMes = cobrar_mes($pdo, $ym); $gasMes = total_gastos_mes($pdo, $ym); $neto = $cobMes - $gasMes;
-$saldo = saldo_cuenta($pdo); $tna = tna_cuenta($pdo); $rend = rend_estimado($saldo, $tna);
+$fin = fin_resumen($pdo, $ym);
+$cobMes = $fin['cobrado']; $gasMes = $fin['gastos']; $neto = $fin['neto'];
+$saldo = $fin['saldo']; $tna = $fin['tna']; $rend = $fin['rend'];
 $gastos = gastos_mes($pdo, $ym);
-$porCobrar = por_cobrar($pdo);
+$porCobrar = $fin['por_cobrar']; $nPend = $fin['n_pendientes'];
 $tnaTxt = rtrim(rtrim(number_format($tna, 2, '.', ''), '0'), '.');
 $rendidoMes = (float)str_replace(',', '.', (string)ajuste($pdo, 'tna_ganado_mes', '0'));
 $urlMes = fn(string $m): string => './?' . ($view !== 'proyectos' ? 'v=' . rawurlencode($view) . '&' : '') . 'mes=' . $m . '#finanzas';
+$uniTxt = fn(array $u): string => 'Audiovisual ' . peso((float)($u['audiovisual'] ?? 0)) . ' · Web ' . peso((float)($u['web'] ?? 0));
+$catTxt = fn(array $c): string => $c ? implode(' · ', array_map(fn($k, $v) => $k . ' ' . peso((float)$v), array_slice(array_keys($c), 0, 2), array_slice(array_values($c), 0, 2))) : 'sin gastos cargados';
 ?>
 <div class="dash" id="finanzas">
   <div class="dash-head">
@@ -322,13 +325,13 @@ $urlMes = fn(string $m): string => './?' . ($view !== 'proyectos' ? 'v=' . rawur
     </form>
   </div>
   <div class="kpis fin">
-    <a class="kpi fin link" href="cobros.php" title="Ver cobros"><span class="k">Cobrado</span><b><?= $e(peso($cobMes)) ?></b><span class="mut">en <?= $e($mesTxt) ?> · ver cobros →</span></a>
-    <a class="kpi fin link" href="cobros.php" title="Ver pendientes de cobro"><span class="k">Por cobrar</span><b class="<?= $porCobrar > 0 ? 'warn' : '' ?>"><?= $e(peso($porCobrar)) ?></b><span class="mut"><?= $cobN ?> trabajo(s) pendiente(s)</span></a>
-    <button type="button" class="kpi fin link" data-open-finanzas title="Ver gastos y registrar uno"><span class="k">Gastos</span><b><?= $e(peso($gasMes)) ?></b><span class="mut">en <?= $e($mesTxt) ?> · <?= count($gastos) ?> gasto(s)</span></button>
-    <div class="kpi"><span class="k">Saldo en cuenta / TNA</span><b><?= $e(peso($saldo)) ?></b>
-      <?php if ($tna > 0): ?><span class="chip-r">+<?= $e(peso($rend['diario'])) ?>/día · ~<?= $e(peso($rend['mensual'])) ?>/mes (TNA <?= $e($tnaTxt) ?>%)</span>
+    <a class="kpi fin link" href="cobros.php" title="Ver cobros"><span class="k">Cobrado real</span><b><?= $e(peso($cobMes)) ?></b><span class="mut"><?= $e($uniTxt($fin['por_unidad'])) ?></span></a>
+    <a class="kpi fin link" href="cobros.php#pendientes" title="Ver saldos pendientes"><span class="k">Por cobrar (saldos)</span><b class="<?= $porCobrar > 0 ? 'warn' : '' ?>"><?= $e(peso($porCobrar)) ?></b><span class="mut"><?= (int)$nPend ?> trabajo(s) con saldo</span></a>
+    <button type="button" class="kpi fin link" data-open-finanzas title="Ver gastos y registrar uno"><span class="k">Gastos del mes</span><b><?= $e(peso($gasMes)) ?></b><span class="mut"><?= $e($catTxt($fin['por_categoria'])) ?></span></button>
+    <div class="kpi"><span class="k">Resultado Neto</span><b class="<?= $neto < 0 ? 'warn' : '' ?>"><?= $e(peso($neto)) ?></b>
+      <?php if ($tna > 0): ?><span class="chip-r">Saldo <?= $e(peso($saldo)) ?> · +<?= $e(peso($rend['mensual'])) ?>/mes (TNA <?= $e($tnaTxt) ?>%)</span>
         <span class="mut">Rendido en el mes: +<?= $e(peso(round($rendidoMes, 2))) ?></span>
-      <?php else: ?><span class="mut">cargá tu TNA para ver el rendimiento</span><?php endif; ?></div>
+      <?php else: ?><span class="mut">cargá tu TNA para estimar el rendimiento del saldo</span><?php endif; ?></div>
   </div>
   <div class="quick-actions">
     <a class="btn" href="cobros.php#nuevo">+ Cobro</a>
@@ -352,6 +355,7 @@ $urlMes = fn(string $m): string => './?' . ($view !== 'proyectos' ? 'v=' . rawur
           <label><span class="lbl">Concepto</span><input name="concepto" maxlength="160" placeholder="Equipos, viáticos, hosting…" required></label>
           <label><span class="lbl">Monto ($)</span><input name="monto" inputmode="numeric" placeholder="0" required></label>
           <label><span class="lbl">Fecha</span><input type="date" name="fecha" value="<?= date('Y-m-d') ?>"></label>
+          <label><span class="lbl">Categoría</span><select name="categoria"><?php foreach (array_keys(FIN_CATEGORIAS_GASTO) as $cat): ?><option value="<?= $e($cat) ?>"><?= $e($cat) ?></option><?php endforeach; ?></select></label>
           <label class="full"><span class="lbl">Comprobante <span class="opt">(opcional, máximo 8 MB)</span></span><input type="file" name="comprobante" accept=".jpg,.jpeg,.png,.webp,.pdf"></label>
           <button>Registrar gasto</button>
           <label class="chk"><input type="checkbox" name="descontar" checked> Descontar el gasto del saldo en cuenta</label></form>
@@ -525,4 +529,4 @@ $card = function (array $r, bool $drag) use ($cats, $e, $fbs): void { $est = $r[
 </div>
 <p class="mut" id="portfolio-empty" hidden>No hay proyectos con ese filtro.</p>
 <?php if (!$port) echo '<p class="mut">Todavía no cargaste proyectos del portfolio.</p>'; ?>
-<?php endif; endif; ?><script src="admin.js?v=29"></script><script src="../assets/push.js?v=5"></script></body></html>
+<?php endif; endif; ?><script src="admin.js?v=30"></script><script src="../assets/push.js?v=5"></script></body></html>

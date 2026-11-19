@@ -80,7 +80,7 @@ $render = function (array $items, bool $done) use ($e, $T, $hoy): void {
         <?php
     }
 };
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Agenda | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=32"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Agenda | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=33"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <?php require __DIR__ . '/nav.php'; ?>
 <?php if ($ok) echo '<p class="ok">' . $e($ok) . '</p>'; if ($err) echo '<p class="err">' . $e($err) . '</p>'; ?>
@@ -104,4 +104,4 @@ $render = function (array $items, bool $done) use ($e, $T, $hoy): void {
 <?php if (!$gProx): ?><p class="mut">No hay eventos próximos.</p><?php else: ?><div class="ag-list"><?php $render($gProx, false); ?></div><?php endif; ?>
 <h2>Completados</h2>
 <?php if (!$gDone): ?><p class="mut">Todavía no completaste eventos.</p><?php else: ?><div class="ag-list"><?php $render($gDone, true); ?></div><?php endif; ?>
-<script src="admin.js?v=29"></script><script src="../assets/push.js?v=5"></script></body></html>
+<script src="admin.js?v=30"></script><script src="../assets/push.js?v=5"></script></body></html>
