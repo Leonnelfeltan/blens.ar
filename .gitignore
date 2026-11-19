@@ -5,4 +5,6 @@ blens-config/comprobantes/*
 !blens-config/comprobantes/.htaccess
 public/media/*
 !public/media/.gitkeep
+!public/media/web/
+!public/media/web/*.webp
 public/content/

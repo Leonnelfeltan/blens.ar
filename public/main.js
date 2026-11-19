@@ -140,7 +140,7 @@ function render(d){
   if(d.clientes&&d.clientes.length){ $('#logos').innerHTML=d.clientes.map(c=>`<button class="lg" type="button" data-client="${esc(c.nombre)}" title="Ver proyectos de ${esc(c.nombre)}" aria-label="Ver proyectos de ${esc(c.nombre)}"><img loading="lazy" src="media/logos/${esc(c.logo)}" alt="${esc(c.nombre)}" width="180" height="80"></button>`).join(''); $('#clientes').hidden=false; }
   const waNum=/^\d{8,15}$/.test(d.wa||'')?d.wa:'';
   $$('[data-wa]').forEach(a=>{ a.href=waLink(waNum); });
-  $$('[data-wa-web]').forEach(a=>{ a.href=waLink(waNum,WA_MSG_WEB); });
+  $$('[data-wa-web]').forEach(a=>{ a.href=waLink(waNum,a.dataset.waMsg||WA_MSG_WEB); });
   if(waNum&&!$('#wa')){ const a=document.createElement('a'); a.id='wa'; a.className='wa'; a.target='_blank'; a.rel='noopener';
     a.href=waLink(d.wa); a.setAttribute('aria-label','Escribinos por WhatsApp');
     a.innerHTML='<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M3 3h18v14H9l-4 4v-4H3z"/></svg><span>WhatsApp</span>'; document.body.appendChild(a); }
@@ -238,3 +238,31 @@ form.addEventListener('submit',async e=>{
   }catch{ st.className='err'; st.textContent='No pudimos enviar la consulta. Probá de nuevo en unos minutos.'; }
   btn.disabled=false;
 });
+
+/* ---------- Desarrollo: vista ampliada de las vistas previas ---------- */
+(()=>{
+  const modal=$('[data-web-lightbox]');
+  if(!modal) return;
+  const big=$('[data-web-lightbox-img]',modal), title=$('[data-web-lightbox-title]',modal), link=$('[data-web-lightbox-link]',modal), closeBtn=$('[data-web-lightbox-close]',modal);
+  let opener=null;
+  const close=()=>{
+    if(modal.hidden) return;
+    modal.hidden=true; document.body.classList.remove('web-lightbox-open');
+    if(opener) opener.focus();
+  };
+  const open=btn=>{
+    const shot=$('.shot-img',btn);
+    if(!shot||!big) return;
+    opener=btn;
+    big.src=shot.currentSrc||shot.src;
+    big.alt=shot.alt||'Vista previa ampliada';
+    if(title) title.textContent=btn.dataset.webTitle||'';
+    if(link&&btn.dataset.webUrl) link.href=btn.dataset.webUrl;
+    modal.hidden=false; document.body.classList.add('web-lightbox-open');
+    if(closeBtn) closeBtn.focus();
+  };
+  $$('[data-web-shot]').forEach(btn=>btn.addEventListener('click',()=>open(btn)));
+  if(closeBtn) closeBtn.addEventListener('click',close);
+  modal.addEventListener('click',e=>{ if(e.target===modal) close(); });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape') close(); });
+})();
