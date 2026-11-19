@@ -35,7 +35,7 @@
 
   function state(active) {
     buttons.forEach(b => {
-      b.textContent = active ? labels.on : labels.off;
+      b.textContent = active ? (b.dataset.pushOn || labels.on) : (b.dataset.pushOff || labels.off);
       b.classList.toggle('on', active);
       b.setAttribute('aria-pressed', active ? 'true' : 'false');
     });

@@ -35,7 +35,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 $cid = (int)($_SESSION['cid'] ?? 0); $T = $e($_SESSION['t']); $cli = null; $forzar = !empty($_SESSION['forzar']); $vista = !empty($_SESSION['vista']);
-if ($cid) { $s = $pdo->prepare('SELECT nombre,empresa,logo FROM clientes WHERE id=? AND (activo=1 OR ?=1)'); $s->execute([$cid, $vista ? 1 : 0]); $cli = $s->fetch(); if (!$cli) { blens_session_expire(); header('Location: ./'); exit; } }
+if ($cid) { $s = $pdo->prepare('SELECT nombre,empresa,logo,gestion_locaciones FROM clientes WHERE id=? AND (activo=1 OR ?=1)'); $s->execute([$cid, $vista ? 1 : 0]); $cli = $s->fetch(); if (!$cli) { blens_session_expire(); header('Location: ./'); exit; } }
+$locOK = (int)($cli['gestion_locaciones'] ?? 0) === 1;
+$tabLoc = $locOK && (string)($_GET['tab'] ?? '') === 'locaciones';
+// ---- Propiedades / locaciones del cliente ----
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array((string)($_POST['a'] ?? ''), ['loc_nueva', 'loc_editar', 'loc_borrar'], true)) {
+    $accionLoc = (string)$_POST['a'];
+    if (!$cid || $vista || !$locOK) { http_response_code(403); exit('Acceso denegado.'); }
+    $lid = (int)($_POST['id'] ?? 0);
+    if ($accionLoc === 'loc_borrar') {
+        $q = $pdo->prepare("SELECT nombre FROM cliente_locaciones WHERE id=? AND cliente_id=? AND estado='pendiente'");
+        $q->execute([$lid, $cid]); $locBorrar = $q->fetch();
+        if (!$locBorrar) { http_response_code(404); exit('Propiedad inexistente o no se puede borrar.'); }
+        $pdo->prepare("DELETE FROM cliente_locaciones WHERE id=? AND cliente_id=? AND estado='pendiente'")->execute([$lid, $cid]);
+        $_SESSION['pflash'] = 'Se eliminó la propiedad «' . (string)$locBorrar['nombre'] . '».';
+        header('Location: ./?tab=locaciones'); exit;
+    }
+    $campo = fn(string $k, int $max): string => mb_substr(trim(str_replace("\r\n", "\n", (string)($_POST[$k] ?? ''))), 0, $max);
+    $nombre = $campo('nombre', 160); $ubicacion = $campo('ubicacion', 255); $acceso = $campo('acceso', 160);
+    $admin = $campo('administrador', 120); $tel = $campo('telefono_contacto', 50);
+    $horario = $campo('horario_acordado', 120); $notas = $campo('notas', 4000);
+    $marcados = $_POST['tipo_contenido'] ?? [];
+    if (!is_array($marcados)) $marcados = [];
+    $tipos = array_values(array_intersect(array_map('strval', $marcados), array_keys(locaciones_contenidos())));
+    $tipo = implode(', ', $tipos);
+    if ($nombre === '' || $ubicacion === '') {
+        $_SESSION['pflash'] = 'Completá el nombre y la ubicación de la propiedad.';
+        header('Location: ./?tab=locaciones'); exit;
+    }
+    try {
+        $datos = [$nombre, $ubicacion, $acceso !== '' ? $acceso : null, $admin !== '' ? $admin : null, $tel !== '' ? $tel : null, $horario !== '' ? $horario : null, $tipo !== '' ? $tipo : null, $notas !== '' ? $notas : null];
+        if ($accionLoc === 'loc_nueva') {
+            $pdo->prepare('INSERT INTO cliente_locaciones (cliente_id,nombre,ubicacion,acceso,administrador,telefono_contacto,horario_acordado,tipo_contenido,notas) VALUES (?,?,?,?,?,?,?,?,?)')->execute(array_merge([$cid], $datos));
+            $lid = (int)$pdo->lastInsertId();
+            $_SESSION['pflash'] = 'Propiedad cargada. Ya se avisó al equipo de blens.ar.';
+            locaciones_push($pdo, $cid, $lid, $nombre, 'alta');
+        } else {
+            $q = $pdo->prepare('SELECT id FROM cliente_locaciones WHERE id=? AND cliente_id=?'); $q->execute([$lid, $cid]);
+            if (!$q->fetch()) { http_response_code(404); exit('Propiedad inexistente.'); }
+            $pdo->prepare('UPDATE cliente_locaciones SET nombre=?,ubicacion=?,acceso=?,administrador=?,telefono_contacto=?,horario_acordado=?,tipo_contenido=?,notas=? WHERE id=? AND cliente_id=?')->execute(array_merge($datos, [$lid, $cid]));
+            $_SESSION['pflash'] = 'Propiedad actualizada. Ya se avisó al equipo de blens.ar.';
+            locaciones_push($pdo, $cid, $lid, $nombre, 'modificacion');
+        }
+    } catch (Throwable $x) {
+        error_log('[blens portal locaciones] ' . $x->getMessage());
+        $_SESSION['pflash'] = 'No pudimos guardar la propiedad. Probá de nuevo en un momento.';
+    }
+    header('Location: ./?tab=locaciones'); exit;
+}
 // ---- Feedback del cliente sobre una entrega (pedir ajuste) ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['a'] ?? '') === 'ajuste') {
     $eid = (int)($_POST['e'] ?? 0);
@@ -122,18 +169,44 @@ $fb = function (array $r) use ($e, $T, $vista): string {
     }
     return $h . '</div>';
 };
+$locForm = function (array $r, bool $nueva) use ($e, $T): string {
+    $tipos = array_map('trim', explode(',', (string)($r['tipo_contenido'] ?? '')));
+    ob_start(); ?>
+<form class="loc-form" method="post">
+  <input type="hidden" name="a" value="<?= $nueva ? 'loc_nueva' : 'loc_editar' ?>"><input type="hidden" name="t" value="<?= $T ?>">
+  <?php if (!$nueva): ?><input type="hidden" name="id" value="<?= (int)($r['id'] ?? 0) ?>"><?php endif; ?>
+  <label class="loc-field"><span>Nombre de la propiedad</span><input name="nombre" value="<?= $e($r['nombre'] ?? '') ?>" maxlength="160" required placeholder="Ej. Depto Wind House"></label>
+  <label class="loc-field"><span>Ubicación / Dirección o link Maps</span><input name="ubicacion" value="<?= $e($r['ubicacion'] ?? '') ?>" maxlength="255" required placeholder="Dirección o link de Google Maps" inputmode="url"></label>
+  <label class="loc-field"><span>Piso / Acceso / Llave</span><input name="acceso" value="<?= $e($r['acceso'] ?? '') ?>" maxlength="160" placeholder="Piso 3, timbre 2, llave en portería"></label>
+  <label class="loc-field"><span>Administrador / Encargado</span><input name="administrador" value="<?= $e($r['administrador'] ?? '') ?>" maxlength="120" placeholder="Nombre de quien recibe o administra"></label>
+  <label class="loc-field"><span>Teléfono de contacto</span><input name="telefono_contacto" value="<?= $e($r['telefono_contacto'] ?? '') ?>" maxlength="50" type="tel" placeholder="Número para contactar en el lugar"></label>
+  <label class="loc-field"><span>Horario acordado</span><input name="horario_acordado" value="<?= $e($r['horario_acordado'] ?? '') ?>" maxlength="120" placeholder="Ej. martes 25/11 10:00"></label>
+  <fieldset class="loc-chips"><legend>Qué grabar</legend>
+    <?php foreach (locaciones_contenidos() as $k => $label): ?><label class="loc-chip"><input type="checkbox" name="tipo_contenido[]" value="<?= $e($k) ?>"<?= in_array($k, $tipos, true) ? ' checked' : '' ?>><span><?= $e($label) ?></span></label><?php endforeach; ?>
+  </fieldset>
+  <label class="loc-field"><span>Notas</span><textarea name="notas" rows="3" maxlength="4000" placeholder="Detalles a destacar o evitar"><?= $e($r['notas'] ?? '') ?></textarea></label>
+  <button class="btn loc-submit" type="submit"><?= $nueva ? 'Cargar propiedad' : 'Guardar cambios' ?></button>
+</form>
+<?php return ob_get_clean();
+};
 ?><!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex"><meta name="theme-color" content="#0b0b0b">
 <title>Portal de clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" media="print" data-fonts>
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap"></noscript>
-<link rel="stylesheet" href="../styles.css?v=20"><link rel="stylesheet" href="portal.css?v=15"></head><body>
+<link rel="stylesheet" href="../styles.css?v=20"><link rel="stylesheet" href="portal.css?v=16"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol><symbol id="photos" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m4 17 5-5 3.5 3.5L16 12l4 4"/></symbol></svg>
 <header class="ph"><a class="brand" href="../" aria-label="blens.ar, inicio"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
 <?php if ($cli): ?><div class="phr"><span class="mut">Portal de clientes</span><?= $vista ? '<span class="perr">Vista de administrador</span>' : '' ?><button type="button" class="push-btn" data-push data-push-tipo="cliente" data-push-token="<?= $T ?>" data-push-key="<?= $e(blens_vapid_public()) ?>">Activar avisos de nuevas entregas</button><form method="post"><input type="hidden" name="a" value="salir"><input type="hidden" name="t" value="<?= $T ?>"><button class="out">Salir</button></form></div>
 <?php else: ?><a class="link" href="../">Volver a la web</a><?php endif; ?></header>
 <?php if ($pflash): ?><p class="pflash"><?= $e($pflash) ?></p><?php endif; ?>
+<?php if ($cli && $locOK): ?>
+<nav class="loc-tabs" aria-label="Secciones del portal">
+  <a class="loc-tab<?= $tabLoc ? '' : ' on' ?>" href="./"<?= $tabLoc ? '' : ' aria-current="page"' ?>>Mis entregas</a>
+  <a class="loc-tab<?= $tabLoc ? ' on' : '' ?>" href="./?tab=locaciones"<?= $tabLoc ? ' aria-current="page"' : '' ?>>Propiedades para fotos/videos</a>
+</nav>
+<?php endif; ?>
 <?php if (!$cli): ?>
 <main class="lgbox"><form class="lgf" method="post"><h1 class="lgh">Acceso clientes</h1>
 <?php if ($msg) echo '<p class="perr">' . $e($msg) . '</p>'; ?>
@@ -166,6 +239,41 @@ if ($en): $tipoEn = $tipoDe($en); ?>
 <?php if ($tipoEn !== 'fotos'): ?><?php if ($drive($en)): ?><a class="btn" href="<?= $e($drive($en)) ?>" target="_blank" rel="noopener">Abrir en Drive / Descargar</a><p class="mut sm">El archivo final está en la mejor calidad, en Google Drive.</p><?php else: ?><p class="mut">El archivo final todavía no está disponible.</p><?php endif; ?><?php endif; ?>
 <?= $fb($en) ?></div></div></main>
 <?php else:
+if ($tabLoc):
+$sl = $pdo->prepare("SELECT * FROM cliente_locaciones WHERE cliente_id=? ORDER BY FIELD(estado,'pendiente','agendado','grabado'), id DESC"); $sl->execute([$cid]); $locs = $sl->fetchAll(); ?>
+<main class="pt loc-pt">
+  <h1>Propiedades para fotos/videos</h1>
+  <p class="sub">Cargá cada locación con sus datos de acceso y contacto. Cada cambio avisa a blens.ar.</p>
+  <section class="loc-form-card" id="loc-nueva">
+    <h2>Nueva propiedad / locación</h2>
+    <?= $locForm([], true) ?>
+  </section>
+  <h2>Mis propiedades (<?= count($locs) ?>)</h2>
+  <?php if (!$locs): ?><p class="mut">Todavía no cargaste propiedades. Cargá la primera con el formulario de arriba.</p><?php endif; ?>
+  <div class="loc-grid">
+  <?php foreach ($locs as $l): $est = (string)$l['estado']; $adminNom = trim((string)$l['administrador']) !== '' ? trim((string)$l['administrador']) : 'encargado/a';
+    $nLoc = blens_wa_num((string)$l['telefono_contacto']); $waLoc = $nLoc ? 'https://wa.me/' . $nLoc . '?text=' . rawurlencode('Hola ' . $adminNom . ', te escribo de blens.ar por el rodaje en ' . trim((string)$l['nombre']) . '.') : null; ?>
+  <article class="loc-card" id="loc-<?= (int)$l['id'] ?>">
+    <div class="loc-head"><h3><?= $e($l['nombre']) ?></h3><span class="loc-badge <?= $e($est) ?>"><?= $e(locaciones_estados()[$est] ?? $est) ?></span></div>
+    <dl class="loc-meta">
+      <div><dt>Ubicación</dt><dd><?= $e($l['ubicacion']) ?></dd></div>
+      <?php if (trim((string)$l['acceso']) !== ''): ?><div><dt>Acceso</dt><dd><?= $e($l['acceso']) ?></dd></div><?php endif; ?>
+      <?php if (trim((string)$l['administrador']) !== ''): ?><div><dt>Encargado</dt><dd><?= $e($l['administrador']) ?></dd></div><?php endif; ?>
+      <?php if (trim((string)$l['telefono_contacto']) !== ''): ?><div><dt>Teléfono</dt><dd><?= $e($l['telefono_contacto']) ?></dd></div><?php endif; ?>
+      <?php if (trim((string)$l['horario_acordado']) !== ''): ?><div><dt>Horario</dt><dd><?= $e($l['horario_acordado']) ?></dd></div><?php endif; ?>
+      <?php if (trim((string)$l['tipo_contenido']) !== ''): ?><div><dt>Qué grabar</dt><dd><?= $e($l['tipo_contenido']) ?></dd></div><?php endif; ?>
+      <?php if (trim((string)$l['notas']) !== ''): ?><div class="loc-notes"><dt>Notas</dt><dd><?= nl2br($e($l['notas'])) ?></dd></div><?php endif; ?>
+    </dl>
+    <div class="loc-actions"><a class="btn g" href="<?= $e(locaciones_maps((string)$l['ubicacion'])) ?>" target="_blank" rel="noopener noreferrer">Maps ↗</a><?php if ($waLoc): ?><a class="btn g" href="<?= $e($waLoc) ?>" target="_blank" rel="noopener noreferrer">WhatsApp</a><?php endif; ?></div>
+    <details class="loc-edit"><summary>Editar propiedad</summary><?= $locForm($l, false) ?></details>
+    <?php if ($est === 'pendiente'): ?>
+    <form class="loc-del" method="post"><input type="hidden" name="a" value="loc_borrar"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><label class="loc-chk"><input type="checkbox" required> Confirmo que quiero eliminar esta propiedad</label><button class="loc-del-btn" type="submit">Eliminar</button></form>
+    <?php endif; ?>
+  </article>
+  <?php endforeach; ?>
+  </div>
+</main>
+<?php else:
 $s = $pdo->prepare($SQL . ' ORDER BY e.id DESC'); $s->execute([$cid]); $es = $s->fetchAll();
 $nVideos = count(array_filter($es, fn($r) => $tipoDe($r) === 'video')); $nFotos = count($es) - $nVideos;
 $ft = (string)($_GET['ft'] ?? 'todos'); if (!in_array($ft, ['todos', 'video', 'fotos'], true)) $ft = 'todos';
@@ -176,7 +284,7 @@ $esView = $ft === 'todos' ? $es : array_values(array_filter($es, fn($r) => $tipo
 <div class="pg"><?php foreach ($esView as $r): $tf = $tipoDe($r); ?><article class="pc tipo-<?= $tf ?>"><a class="pc-img" href="?e=<?= (int)$r['id'] ?>" aria-label="Ver <?= $e($r['titulo']) ?>"><?php if ($tf === 'fotos'): ?><span class="pc-gal"><svg class="gal-ico"><use href="#photos"/></svg><b>Galería de fotos</b></span><?php else: ?><?= $pst($r) ? '<img src="' . $e($pst($r)) . '" alt="" loading="lazy" width="800" height="500">' : ($did($r) ? '<img src="https://drive.google.com/thumbnail?id=' . $e($did($r)) . '&amp;sz=w800" alt="" loading="lazy" width="800" height="500" referrerpolicy="no-referrer">' : '') ?><?php endif; ?><span class="pc-date"><?= $e(substr($r['creado'], 0, 10)) ?></span></a>
 <div class="pc-body"><span class="pc-tipo tipo-<?= $tf ?>"><?= $tf === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span><h3><a href="?e=<?= (int)$r['id'] ?>"><?= $e($r['titulo']) ?></a></h3><?php if (trim((string)$r['descripcion']) !== '') echo '<p class="pc-desc">' . $e($r['descripcion']) . '</p>'; ?>
 <?php if ($drive($r)): ?><a class="btn" href="<?= $e($drive($r)) ?>" target="_blank" rel="<?= $tf === 'fotos' ? 'noopener noreferrer' : 'noopener' ?>"><?= $tf === 'fotos' ? 'Ver y descargar fotos (Drive)' : 'Abrir en Drive / Descargar' ?></a><?php endif; ?></div><?= $fb($r) ?></article><?php endforeach; ?></div></main>
-<?php endif; endif; ?>
+<?php endif; endif; endif; ?>
 <aside class="pwa-tip" data-pwa-tip hidden><span data-pwa-msg>Instalá el portal en tu celular para entrar más rápido.</span><button type="button" class="pwa-tip-btn" data-pwa-install hidden>Instalar app</button><button type="button" class="pwa-tip-close" data-pwa-close aria-label="Cerrar">×</button></aside>
 <footer class="foot"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span><span class="loc">Posadas, Misiones · Argentina</span><nav class="social"><a href="../">Web</a><a href="<?= $e($contacto) ?>">Contacto</a></nav><span class="mut">© 2026 blens.ar</span></footer>
-<script src="../assets/fonts.js?v=2" defer></script><script src="../assets/player.js?v=13" defer></script><script src="dfr.js?v=12" defer></script><script src="../assets/push.js?v=2" defer></script></body></html>
+<script src="../assets/fonts.js?v=2" defer></script><script src="../assets/player.js?v=13" defer></script><script src="dfr.js?v=12" defer></script><script src="../assets/push.js?v=3" defer></script></body></html>

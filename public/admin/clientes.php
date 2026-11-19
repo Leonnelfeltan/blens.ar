@@ -26,6 +26,21 @@ function drive_ok(string $u): bool {
     if ($u === '') return true;
     return str_starts_with($u, 'https://') && in_array(strtolower((string)parse_url($u, PHP_URL_HOST)), ['drive.google.com', 'docs.google.com', 'drive.usercontent.google.com'], true);
 }
+function loc_agenda_descripcion(array $l): string {
+    $lineas = [];
+    foreach ([
+        'Administrador' => 'administrador',
+        'Teléfono' => 'telefono_contacto',
+        'Horario acordado' => 'horario_acordado',
+        'Tipo de contenido' => 'tipo_contenido',
+        'Acceso' => 'acceso',
+        'Notas' => 'notas',
+    ] as $titulo => $campo) {
+        $v = trim((string)($l[$campo] ?? ''));
+        if ($v !== '') $lineas[] = $titulo . ': ' . $v;
+    }
+    return mb_substr(implode("\n", $lineas), 0, 4000);
+}
 function registrar_trabajo_entrega(PDO $pdo, int $clienteId, int $entregaId, string $titulo, string $tipo): void {
     $q = $pdo->prepare('SELECT 1 FROM trabajos WHERE entrega_id=? LIMIT 1'); $q->execute([$entregaId]);
     if ($q->fetchColumn()) return;
@@ -50,10 +65,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare("UPDATE entregas SET estado_cliente=COALESCE(?, 'pendiente'), comentario_cliente=NULL, comentario_fecha=NULL WHERE id=? AND cliente_id=? AND estado_cliente='ajuste'")->execute([$estado, $eid, $c]);
             $_SESSION['flash'] = 'Ajuste marcado como resuelto.'; header("Location: clientes.php?c=$c"); exit;
         }
+        if ($a === 'loc_estado') {
+            $lid = (int)($_POST['id'] ?? 0); $estado = (string)($_POST['estado'] ?? '');
+            if ($c <= 0 || $lid <= 0 || !isset(locaciones_estados()[$estado])) throw new RuntimeException('Datos de propiedad inválidos.');
+            $q = $pdo->prepare('SELECT id FROM cliente_locaciones WHERE id=? AND cliente_id=?'); $q->execute([$lid, $c]);
+            if (!$q->fetch()) throw new RuntimeException('Propiedad inexistente.');
+            $pdo->prepare('UPDATE cliente_locaciones SET estado=? WHERE id=? AND cliente_id=?')->execute([$estado, $lid, $c]);
+            $_SESSION['flash'] = 'Estado de la propiedad actualizado.'; header("Location: clientes.php?c=$c#locaciones"); exit;
+        }
+        if ($a === 'loc_agendar') {
+            $lid = (int)($_POST['id'] ?? 0);
+            if ($c <= 0 || $lid <= 0) throw new RuntimeException('Datos de propiedad inválidos.');
+            $q = $pdo->prepare('SELECT * FROM cliente_locaciones WHERE id=? AND cliente_id=?'); $q->execute([$lid, $c]); $loc = $q->fetch();
+            if (!$loc) throw new RuntimeException('Propiedad inexistente.');
+            $qc = $pdo->prepare('SELECT nombre,empresa FROM clientes WHERE id=?'); $qc->execute([$c]); $clAg = $qc->fetch() ?: [];
+            $clienteNom = trim((string)($clAg['empresa'] ?? '')) ?: trim((string)($clAg['nombre'] ?? '')) ?: 'Cliente';
+            $titulo = mb_substr('Rodaje: ' . trim((string)$loc['nombre']) . ' (' . $clienteNom . ')', 0, 160);
+            [$fecha, $hora] = locaciones_fecha_hora((string)$loc['horario_acordado']);
+            $fechaPost = (string)($_POST['fecha'] ?? ''); $horaPost = trim((string)($_POST['hora'] ?? ''));
+            if (fecha_ok($fechaPost)) $fecha = $fechaPost;
+            if ($horaPost !== '') { $h = DateTime::createFromFormat('H:i', $horaPost); if ($h && $h->format('H:i') === $horaPost) $hora = $horaPost; }
+            $dup = $pdo->prepare('SELECT id FROM agenda WHERE cliente_id=? AND titulo=? AND fecha=? LIMIT 1'); $dup->execute([$c, $titulo, $fecha]);
+            if (!$dup->fetch()) {
+                $pdo->prepare('INSERT INTO agenda (cliente_id,tipo,titulo,fecha,hora,lugar_nota,descripcion) VALUES (?,?,?,?,?,?,?)')
+                    ->execute([$c, 'rodaje', $titulo, $fecha, $hora !== '' ? $hora : null, mb_substr(trim((string)$loc['ubicacion']), 0, 255), loc_agenda_descripcion($loc)]);
+            }
+            $pdo->prepare("UPDATE cliente_locaciones SET estado='agendado' WHERE id=? AND cliente_id=?")->execute([$lid, $c]);
+            $_SESSION['flash'] = 'Rodaje agendado para el ' . date('d/m/Y', strtotime($fecha)) . ($hora !== '' ? ' a las ' . $e($hora) : '') . '.';
+            header("Location: clientes.php?c=$c#locaciones"); exit;
+        }
         if ($a === 'cliente') {
             $n = mb_substr(trim((string)($_POST['nombre'] ?? '')), 0, 80); $u = strtolower(trim((string)($_POST['usuario'] ?? '')));
             $tel = mb_substr(trim((string)($_POST['telefono'] ?? '')), 0, 30); $emp = mb_substr(trim((string)($_POST['empresa'] ?? '')), 0, 100);
-            $tar = fn($k) => ($_POST[$k] ?? '') === '' ? null : (int)preg_replace('/\D/', '', (string)$_POST[$k]); $tv = $tar('tarifa_video'); $tf = $tar('tarifa_foto'); $act = isset($_POST['activo']) ? 1 : 0; $k = (string)($_POST['clave'] ?? ''); $gen = '';
+            $tar = fn($k) => ($_POST[$k] ?? '') === '' ? null : (int)preg_replace('/\D/', '', (string)$_POST[$k]); $tv = $tar('tarifa_video'); $tf = $tar('tarifa_foto'); $act = isset($_POST['activo']) ? 1 : 0; $gl = isset($_POST['gestion_locaciones']) ? 1 : 0; $k = (string)($_POST['clave'] ?? ''); $gen = '';
             if ($n === '' || !preg_match('/^[a-z0-9._@-]{3,60}$/', $u)) throw new RuntimeException('Completá el nombre y un usuario de 3 a 60 caracteres (letras, números, punto, guion o @).');
             if ($k !== '' && mb_strlen($k) < 6) throw new RuntimeException('La clave tiene que tener al menos 6 caracteres.');
             $lg = up('logo', ['image/png' => 'png', 'image/jpeg' => 'jpg', 'image/webp' => 'webp'], 5 * 1048576); $lg = $lg ? logo_proc($lg) : null;
@@ -61,10 +105,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($c) { $q0 = $pdo->prepare('SELECT logo FROM clientes WHERE id=?'); $q0->execute([$c]); $oldLogo = $q0->fetchColumn() ?: null; }
             if (!$c) {
                 if ($k === '') { $k = blens_clave_nueva(); $gen = $k; }
-                $pdo->prepare('INSERT INTO clientes (nombre,empresa,usuario,clave_hash,telefono,activo,tarifa_video,tarifa_foto,cambiar_clave,clave_inicial_hasta,logo,logo_web) VALUES (?,?,?,?,?,?,?,?,1,DATE_ADD(NOW(), INTERVAL 7 DAY),?,?)')->execute([$n, $emp, $u, password_hash($k, PASSWORD_DEFAULT), $tel, $act, $tv, $tf, $lg, $lw]);
+                $pdo->prepare('INSERT INTO clientes (nombre,empresa,usuario,clave_hash,telefono,activo,tarifa_video,tarifa_foto,cambiar_clave,clave_inicial_hasta,gestion_locaciones,logo,logo_web) VALUES (?,?,?,?,?,?,?,?,1,DATE_ADD(NOW(), INTERVAL 7 DAY),?,?,?)')->execute([$n, $emp, $u, password_hash($k, PASSWORD_DEFAULT), $tel, $act, $tv, $tf, $gl, $lg, $lw]);
                 $c = (int)$pdo->lastInsertId();
             } else {
-                $pdo->prepare('UPDATE clientes SET nombre=?,empresa=?,usuario=?,telefono=?,activo=?,tarifa_video=?,tarifa_foto=?,logo=COALESCE(?,logo),logo_web=? WHERE id=?')->execute([$n, $emp, $u, $tel, $act, $tv, $tf, $lg, $lw, $c]);
+                $pdo->prepare('UPDATE clientes SET nombre=?,empresa=?,usuario=?,telefono=?,activo=?,tarifa_video=?,tarifa_foto=?,gestion_locaciones=?,logo=COALESCE(?,logo),logo_web=? WHERE id=?')->execute([$n, $emp, $u, $tel, $act, $tv, $tf, $gl, $lg, $lw, $c]);
                 if ($quitar && !$lg) $pdo->prepare('UPDATE clientes SET logo=NULL WHERE id=?')->execute([$c]);
                 if ($oldLogo && ($lg || $quitar)) rmlogo($oldLogo);
                 if ($k !== '') $pdo->prepare('UPDATE clientes SET clave_hash=?,cambiar_clave=1,clave_inicial_hasta=DATE_ADD(NOW(), INTERVAL 7 DAY) WHERE id=?')->execute([password_hash($k, PASSWORD_DEFAULT), $c]);
@@ -215,10 +259,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 $vc = isset($_GET['c']) ? (int)$_GET['c'] : null; $ve = isset($_GET['e']) ? (int)$_GET['e'] : null; $T = $e($_SESSION['t']);
 $ft = (string)($_GET['ft'] ?? 'todos'); if (!in_array($ft, ['todos', 'video', 'fotos'], true)) $ft = 'todos';
-$list = $cli = $ent = null; $ents = []; $entsList = [];
+$list = $cli = $ent = null; $ents = []; $entsList = []; $locs = [];
 if ($vc === null) { $list = $pdo->query('SELECT c.*, (SELECT COUNT(*) FROM entregas x WHERE x.cliente_id = c.id) AS n FROM clientes c ORDER BY c.nombre')->fetchAll(); }
 else {
-    $cli = ['id' => 0, 'nombre' => '', 'empresa' => '', 'usuario' => '', 'telefono' => '', 'activo' => 1, 'logo' => null, 'logo_web' => 1, 'tarifa_video' => null, 'tarifa_foto' => null, 'portal_visitas' => 0, 'portal_ultima_visita' => null];
+    $cli = ['id' => 0, 'nombre' => '', 'empresa' => '', 'usuario' => '', 'telefono' => '', 'activo' => 1, 'logo' => null, 'logo_web' => 1, 'tarifa_video' => null, 'tarifa_foto' => null, 'gestion_locaciones' => 0, 'portal_visitas' => 0, 'portal_ultima_visita' => null];
     if ($vc) { $s = $pdo->prepare('SELECT * FROM clientes WHERE id=?'); $s->execute([$vc]); $cli = $s->fetch() ?: $cli; }
     if ($cli['id']) {
         $mpCli = modo_prueba($pdo);
@@ -235,10 +279,12 @@ else {
         $agendaPasados = array_values(array_filter($agendaCli, fn($r) => (string)$r['fecha'] < $hoy));
         $s = $pdo->prepare('SELECT * FROM entregas WHERE cliente_id=? ORDER BY id DESC'); $s->execute([$cli['id']]); $ents = $s->fetchAll();
         $entsList = $ft === 'todos' ? $ents : array_values(array_filter($ents, fn($r) => $tipoDe($r) === $ft));
+        $sl = $pdo->prepare("SELECT * FROM cliente_locaciones WHERE cliente_id=? ORDER BY FIELD(estado,'pendiente','agendado','grabado'), id DESC"); $sl->execute([$cli['id']]); $locs = $sl->fetchAll();
         if ($ve !== null) { $ent = ['id' => 0, 'tipo' => 'video', 'titulo' => '', 'descripcion' => '', 'link_hd' => '', 'link_4k' => '', 'preview' => '', 'poster' => '', 'proyecto_id' => null];
             foreach ($ents as $r) if ((int)$r['id'] === $ve) $ent = $r; }
     }
 }
+$verLoc = is_array($cli) && (!empty($cli['gestion_locaciones']) || (bool)$locs);
 $formCliente = function (bool $conBorrar = false) use ($e, $cli, $T): string {
     ob_start(); ?>
 <form class="f cli-form" method="post" enctype="multipart/form-data"><input type="hidden" name="a" value="cliente"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>">
@@ -253,6 +299,7 @@ $formCliente = function (bool $conBorrar = false) use ($e, $cli, $T): string {
 <?php if (!empty($cli['logo'])): ?><div class="full"><img class="clogo" loading="lazy" width="180" height="80" src="../media/logos/<?= $e($cli['logo']) ?>" alt=""><label class="chk"><input type="checkbox" name="quitar_logo">Quitar el logo actual <span class="opt">(opcional)</span></label></div><?php endif; ?>
 <label class="chk full"><input type="checkbox" name="logo_web" <?= !empty($cli['logo_web']) ? 'checked' : '' ?>>Mostrar el logo en la página principal <span class="opt">(opcional)</span></label>
 <label class="chk full"><input type="checkbox" name="activo" <?= $cli['activo'] ? 'checked' : '' ?>>Puede entrar al portal <span class="opt">(opcional)</span></label>
+<label class="chk full"><input type="checkbox" name="gestion_locaciones" <?= !empty($cli['gestion_locaciones']) ? 'checked' : '' ?>>Habilitar carga de propiedades / locaciones en su portal <span class="opt">(opcional)</span></label>
 <div class="row full"><button>Guardar cliente</button><a class="btn g" href="clientes.php">Volver</a></div></form>
 <?php if ($conBorrar): ?>
 <details class="del-cli"><summary>Eliminar cliente</summary>
@@ -261,7 +308,7 @@ $formCliente = function (bool $conBorrar = false) use ($e, $cli, $T): string {
 <?php endif; ?>
 <?php return ob_get_clean();
 };
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=30"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=31"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <?php require __DIR__ . '/nav.php'; ?>
 <?php if (isset($_GET['avisar']) && $cli && $cli['telefono']) { $s2 = $pdo->prepare('SELECT titulo FROM entregas WHERE id=? AND cliente_id=?'); $s2->execute([(int)$_GET['avisar'], $cli['id']]); if ($t2 = $s2->fetchColumn()) { $w = wa_url($cli['telefono'], 'Hola ' . explode(' ', trim($cli['nombre']))[0] . ', ya tenés una nueva entrega disponible en tu portal: «' . $t2 . '». Ingresá acá: ' . (blens_cfg()['sitio'] ?? 'https://blens.ar') . '/portal/'); if ($w) echo '<p class="ok">¿Avisamos al cliente? <a class="btn" href="' . $e($w) . '" target="_blank" rel="noopener">Enviar aviso por WhatsApp</a></p>'; } } ?>
@@ -318,6 +365,7 @@ $waLinks = [
 ?>
 <nav class="tabs" id="cli-tabs" role="tablist" aria-label="Ficha del cliente">
   <a class="tab on" href="#tab-resumen" role="tab" aria-selected="true" aria-controls="tab-resumen">Resumen y Entregas</a>
+  <?php if ($verLoc): ?><a class="tab" href="#tab-locaciones" role="tab" aria-selected="false" aria-controls="tab-locaciones">Propiedades y Locaciones <b><?= count($locs) ?></b></a><?php endif; ?>
   <a class="tab" href="#tab-datos" role="tab" aria-selected="false" aria-controls="tab-datos">Datos y Tarifas</a>
   <a class="tab" href="#tab-historial" role="tab" aria-selected="false" aria-controls="tab-historial">Historial</a>
 </nav>
@@ -373,6 +421,38 @@ $waLinks = [
   <td data-label="Acciones"><div class="ent-actions"><a class="btn g" href="?c=<?= (int)$cli['id'] ?>&e=<?= (int)$r['id'] ?>">Editar</a><?php if ($tipoDe($r) === 'video' && trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== ''): ?><form method="post" class="ia-f"><input type="hidden" name="a" value="ia_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="g">IA</button></form><?php endif; ?><form method="post" class="del-f"><input type="hidden" name="a" value="del_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="r" data-confirm="¿Borrar esta entrega?">Borrar</button></form></div></td></tr>
   <?php endforeach; if (!$entsList) echo '<tr><td colspan="5" class="mut">Sin entregas todavía.</td></tr>'; ?></table>
 </section>
+<?php if ($verLoc): ?>
+<section class="tab-panel" id="tab-locaciones" role="tabpanel" hidden>
+  <div id="locaciones" class="loc-admin-head"><h2>Propiedades y Locaciones</h2><p class="mut">Cargadas por el cliente desde su portal. Estado, Maps, WhatsApp y pase a agenda de rodajes.</p></div>
+  <div class="loc-grid">
+  <?php foreach ($locs as $l): $est = (string)$l['estado']; $adminNom = trim((string)$l['administrador']) !== '' ? trim((string)$l['administrador']) : 'encargado/a';
+    $waLoc = wa_link((string)$l['telefono_contacto'], 'Hola {administrador}, te escribo de blens.ar por el rodaje en {nombre}.', ['{administrador}' => $adminNom, '{nombre}' => trim((string)$l['nombre'])]);
+    [$fLoc, $hLoc] = locaciones_fecha_hora((string)$l['horario_acordado']); ?>
+  <article class="loc-card">
+    <div class="loc-head"><h3><?= $e($l['nombre']) ?></h3><span class="loc-badge <?= $e($est) ?>"><?= $e(locaciones_estados()[$est] ?? $est) ?></span></div>
+    <dl class="loc-meta">
+      <div><dt>Ubicación</dt><dd><?= $e($l['ubicacion']) ?></dd></div>
+      <?php if (trim((string)$l['acceso']) !== ''): ?><div><dt>Acceso</dt><dd><?= $e($l['acceso']) ?></dd></div><?php endif; ?>
+      <?php if (trim((string)$l['administrador']) !== ''): ?><div><dt>Administrador</dt><dd><?= $e($l['administrador']) ?></dd></div><?php endif; ?>
+      <?php if (trim((string)$l['telefono_contacto']) !== ''): ?><div><dt>Teléfono</dt><dd><?= $e($l['telefono_contacto']) ?></dd></div><?php endif; ?>
+      <?php if (trim((string)$l['horario_acordado']) !== ''): ?><div><dt>Horario acordado</dt><dd><?= $e($l['horario_acordado']) ?></dd></div><?php endif; ?>
+      <?php if (trim((string)$l['tipo_contenido']) !== ''): ?><div><dt>Tipo de contenido</dt><dd><?= $e($l['tipo_contenido']) ?></dd></div><?php endif; ?>
+      <?php if (trim((string)$l['notas']) !== ''): ?><div class="loc-notes"><dt>Notas</dt><dd><?= nl2br($e($l['notas'])) ?></dd></div><?php endif; ?>
+    </dl>
+    <div class="loc-actions">
+      <a class="btn g" href="<?= $e(locaciones_maps((string)$l['ubicacion'])) ?>" target="_blank" rel="noopener noreferrer">Maps ↗</a>
+      <?php if ($waLoc): ?><a class="btn g" href="<?= $e($waLoc) ?>" target="_blank" rel="noopener noreferrer">WhatsApp</a><?php endif; ?>
+    </div>
+    <form method="post" class="loc-estado-f"><input type="hidden" name="a" value="loc_estado"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>">
+      <label><span class="lbl">Estado</span><select name="estado" data-loc-estado><?php foreach (locaciones_estados() as $k => $label): ?><option value="<?= $e($k) ?>"<?= $est === $k ? ' selected' : '' ?>><?= $e($label) ?></option><?php endforeach; ?></select></label>
+      <button class="g" type="submit">Guardar</button>
+    </form>
+    <form method="post" class="loc-agendar-f"><input type="hidden" name="a" value="loc_agendar"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$l['id'] ?>"><input type="hidden" name="fecha" value="<?= $e($fLoc) ?>"><input type="hidden" name="hora" value="<?= $e($hLoc) ?>"><button type="submit">Agendar rodaje</button><span class="mut">Fecha estimada: <?= $e(date('d/m/Y', strtotime($fLoc))) ?><?= $hLoc !== '' ? ' · ' . $e($hLoc) : '' ?></span></form>
+  </article>
+  <?php endforeach; if (!$locs): ?><p class="mut">Este cliente todavía no cargó propiedades.</p><?php endif; ?>
+  </div>
+</section>
+<?php endif; ?>
 <section class="tab-panel" id="tab-datos" role="tabpanel" hidden>
   <?= $formCliente(true) ?>
 </section>
@@ -400,4 +480,4 @@ $waLinks = [
 <?php else: ?>
 <?= $formCliente(false) ?>
 <?php endif; ?>
-<?php endif; ?><script src="admin.js?v=26"></script><script src="../assets/push.js?v=1"></script></body></html>
+<?php endif; ?><script src="admin.js?v=27"></script><script src="../assets/push.js?v=2"></script></body></html>

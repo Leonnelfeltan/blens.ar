@@ -177,8 +177,17 @@ function blens_migrar(?PDO $p = null): void {
         $nuevas = [
             'portal_visitas'       => 'INT NOT NULL DEFAULT 0', // visitas al portal privado
             'portal_ultima_visita' => 'DATETIME NULL',       // última entrada al portal
+            'gestion_locaciones'   => 'TINYINT(1) NOT NULL DEFAULT 0',
         ];
         foreach ($nuevas as $col => $def) if (!isset($cols[$col])) $p->exec("ALTER TABLE clientes ADD COLUMN `$col` $def");
+        try {
+            $sm = $p->prepare('SELECT valor FROM ajustes WHERE clave=?');
+            $sm->execute(['locaciones_flag_haene_v1']);
+            if (!$sm->fetchColumn()) {
+                $p->exec("UPDATE clientes SET gestion_locaciones=1 WHERE LOWER(nombre) LIKE '%haene%' OR LOWER(empresa) LIKE '%haene%' OR LOWER(nombre) LIKE '%castuariense%' OR LOWER(empresa) LIKE '%castuariense%'");
+                set_ajuste($p, 'locaciones_flag_haene_v1', '1');
+            }
+        } catch (Throwable $x) { error_log('[blens locaciones flag] ' . $x->getMessage()); }
         // Feedback del cliente sobre las entregas del portal
         $colsE = [];
         foreach ($p->query('SHOW COLUMNS FROM entregas')->fetchAll(PDO::FETCH_ASSOC) as $c) $colsE[$c['Field']] = true;
@@ -218,12 +227,16 @@ function blens_migrar(?PDO $p = null): void {
             fecha DATE NOT NULL,
             hora TIME NULL,
             lugar_nota VARCHAR(255) NULL,
+            descripcion TEXT NULL,
             completado TINYINT(1) NOT NULL DEFAULT 0,
             creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             INDEX a_fecha (fecha, completado),
             INDEX a_cliente (cliente_id),
             CONSTRAINT fk_agenda_cliente FOREIGN KEY (cliente_id) REFERENCES clientes (id) ON DELETE SET NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        $colsA = [];
+        foreach ($p->query('SHOW COLUMNS FROM agenda')->fetchAll(PDO::FETCH_ASSOC) as $c) $colsA[$c['Field']] = true;
+        if (!isset($colsA['descripcion'])) $p->exec('ALTER TABLE agenda ADD COLUMN descripcion TEXT NULL AFTER lugar_nota');
         // Presupuestos rápidos (items_json guarda las filas del detalle)
         $p->exec("CREATE TABLE IF NOT EXISTS presupuestos (
             id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -255,6 +268,24 @@ function blens_migrar(?PDO $p = null): void {
             UNIQUE KEY uq_push_endpoint (endpoint_hash),
             INDEX idx_push_tipo_cliente (tipo, cliente_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        $p->exec("CREATE TABLE IF NOT EXISTS cliente_locaciones (
+            id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            cliente_id INT UNSIGNED NOT NULL,
+            nombre VARCHAR(160) NOT NULL,
+            ubicacion VARCHAR(255) NOT NULL,
+            acceso VARCHAR(160) NULL,
+            administrador VARCHAR(120) NULL,
+            telefono_contacto VARCHAR(50) NULL,
+            horario_acordado VARCHAR(120) NULL,
+            tipo_contenido VARCHAR(120) NULL,
+            notas TEXT NULL,
+            estado ENUM('pendiente','agendado','grabado') NOT NULL DEFAULT 'pendiente',
+            creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            actualizado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_loc_cliente (cliente_id, id),
+            INDEX idx_loc_estado (estado),
+            CONSTRAINT fk_locaciones_cliente FOREIGN KEY (cliente_id) REFERENCES clientes (id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         // Comprobantes opcionales en cobros (trabajos) y gastos, también para bases existentes
         foreach (['trabajos', 'gastos', 'recibos'] as $tabla) {
             if (!$p->query("SHOW TABLES LIKE '$tabla'")->fetch()) continue;
@@ -273,3 +304,58 @@ function blens_db(): PDO {
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
 }
 require_once __DIR__ . '/push.php';
+
+function locaciones_estados(): array {
+    return ['pendiente' => 'Pendiente', 'agendado' => 'Agendado', 'grabado' => 'Grabado'];
+}
+function locaciones_contenidos(): array {
+    return ['Reels' => 'Reels', 'Video tour' => 'Video tour', 'Fotos' => 'Fotos', 'Dron' => 'Dron'];
+}
+function locaciones_maps(string $texto): string {
+    $u = trim($texto);
+    if (preg_match('~^https?://~i', $u)) return $u;
+    return 'https://www.google.com/maps/search/?api=1&query=' . rawurlencode($u);
+}
+function locaciones_fecha_hora(string $texto): array {
+    $txt = mb_strtolower($texto, 'UTF-8'); $hoy = new DateTime('today');
+    $hora = '';
+    if (preg_match('/\b([01]?\d|2[0-3]):([0-5]\d)\b/', $txt, $m)) $hora = sprintf('%02d:%02d', (int)$m[1], (int)$m[2]);
+    elseif (preg_match('/\b(\d{1,2})\s*(a|p)\.?\s*m\.?\b/', $txt, $m)) {
+        $hh = (int)$m[1] % 12;
+        if ($m[2] === 'p') $hh += 12;
+        $hora = sprintf('%02d:00', $hh);
+    }
+    $fecha = null;
+    $crear = function (int $y, int $m, int $d) use ($hoy): ?DateTime {
+        if ($y < 100) $y += 2000;
+        $f = DateTime::createFromFormat('!Y-m-d', sprintf('%04d-%02d-%02d', $y, $m, $d));
+        $err = DateTime::getLastErrors();
+        if (!$f || ($err && ($err['warning_count'] || $err['error_count']))) return null;
+        while ($f < $hoy) $f->modify('+1 year');
+        return $f;
+    };
+    if (preg_match('/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/', $txt, $m)) $fecha = $crear((int)$m[1], (int)$m[2], (int)$m[3]);
+    elseif (preg_match('/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/', $txt, $m)) $fecha = $crear(isset($m[3]) && $m[3] !== '' ? (int)$m[3] : (int)$hoy->format('Y'), (int)$m[2], (int)$m[1]);
+    else {
+        $dias = ['lunes' => 1, 'martes' => 2, 'miercoles' => 3, 'miércoles' => 3, 'jueves' => 4, 'viernes' => 5, 'sabado' => 6, 'sábado' => 6, 'domingo' => 7];
+        foreach ($dias as $nombre => $n) {
+            if (!str_contains($txt, $nombre)) continue;
+            $diff = ($n - (int)$hoy->format('N') + 7) % 7;
+            if ($diff === 0) $diff = 7;
+            $fecha = (clone $hoy)->modify('+' . $diff . ' days');
+            break;
+        }
+    }
+    if (!$fecha) $fecha = (clone $hoy)->modify('+1 day');
+    return [$fecha->format('Y-m-d'), $hora];
+}
+function locaciones_push(PDO $pdo, int $clienteId, int $locId, string $nombre, string $accion): void {
+    try {
+        blens_push_notify($pdo, 'admin', null, [
+            'title' => 'Nueva propiedad · Haene Castuariense',
+            'body' => ($accion === 'alta' ? 'Cargó una nueva propiedad: ' : 'Modificó una propiedad: ') . $nombre . ' (#' . $locId . ')',
+            'url' => '/admin/clientes.php?c=' . $clienteId,
+            'tag' => 'blens-locacion-' . $locId . '-' . time(),
+        ]);
+    } catch (Throwable $x) { error_log('[blens locaciones push] ' . $x->getMessage()); }
+}
