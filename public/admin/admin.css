@@ -229,6 +229,8 @@ body{overflow-x:hidden}
   .mobile-more:not([hidden]){position:fixed;left:.6rem;right:.6rem;bottom:calc(82px + env(safe-area-inset-bottom,0px));top:auto;z-index:70;display:grid;gap:.35rem;width:auto;max-width:520px;margin:0 auto;padding:.7rem;background:var(--c2);border:1px solid var(--l);border-top:3px solid var(--accent);border-radius:8px;box-shadow:0 16px 40px rgba(0,0,0,.6)}
   .mobile-more a,.mobile-more button{min-height:44px;padding:.55rem .7rem;font-size:.9rem}
   .toast{bottom:calc(96px + env(safe-area-inset-bottom,0px))}
+  .push-banner{left:.6rem;right:.6rem;padding:.7rem}
+  .push-banner-btn{width:100%}
   form.f{grid-template-columns:1fr;max-width:none}
   .two{grid-template-columns:1fr}
   .pf,.pc{max-width:100%}
@@ -398,6 +400,13 @@ table.p-table{display:table!important;width:100%;border-collapse:collapse;margin
 .pwa-install:hover{background:var(--o);color:var(--c)}
 .pwa-hint{position:absolute;right:0;top:calc(100% + .4rem);z-index:70;width:max-content;max-width:min(280px,80vw);background:var(--c2);border:1px solid var(--o);border-radius:4px;padding:.5rem .65rem;color:var(--h);font-size:.78rem;box-shadow:0 8px 24px rgba(0,0,0,.5)}
 .push-toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:90;max-width:min(92vw,420px);padding:.7rem .9rem;background:var(--c2);border:1px solid var(--accent);border-radius:4px;color:var(--h);font-size:.85rem;line-height:1.35;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.push-banner{position:fixed;left:1rem;right:1rem;bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:80;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;max-width:min(92vw,620px);margin:0 auto;padding:.8rem .9rem;background:var(--c2);border:1px solid var(--o);border-left:4px solid var(--o);border-radius:5px;box-shadow:0 12px 32px rgba(0,0,0,.5);color:var(--h);font-size:.86rem;line-height:1.4}
+.push-banner-text{flex:1 1 260px;min-width:0}
+.push-banner-btn{background:var(--o);color:var(--c);border:0;border-radius:3px;padding:.55rem .8rem;font:600 .8rem system-ui,sans-serif;white-space:nowrap;cursor:pointer}
+.push-banner-btn:hover{filter:brightness(1.08)}
+.push-banner-close{background:none;border:0;color:var(--m);font-size:1.3rem;line-height:1;cursor:pointer;padding:.2rem .35rem}
+.push-banner-close:hover{color:var(--h)}
+body.push-banner-on .push-toast{bottom:calc(162px + env(safe-area-inset-bottom,0px))}
 
 /* ===== Propiedades y locaciones para rodaje ===== */
 .loc-admin-head{margin:0 0 1rem}

@@ -355,9 +355,11 @@ function locaciones_fecha_hora(string $texto): array {
 }
 function locaciones_push(PDO $pdo, int $clienteId, int $locId, string $nombre, string $accion): void {
     try {
+        $q = $pdo->prepare('SELECT nombre,empresa FROM clientes WHERE id=?'); $q->execute([$clienteId]); $c = $q->fetch() ?: [];
+        $cliente = trim((string)($c['empresa'] ?? '')) ?: trim((string)($c['nombre'] ?? '')) ?: ('Cliente #' . $clienteId);
         blens_push_notify($pdo, 'admin', null, [
-            'title' => 'Nueva propiedad · Haene Castuariense',
-            'body' => ($accion === 'alta' ? 'Cargó una nueva propiedad: ' : 'Modificó una propiedad: ') . $nombre . ' (#' . $locId . ')',
+            'title' => ($accion === 'alta' ? 'Nueva propiedad · ' : 'Propiedad modificada · ') . $cliente,
+            'body' => $cliente . ' — ' . ($accion === 'alta' ? 'cargó una nueva propiedad: ' : 'modificó una propiedad: ') . $nombre . ' (#' . $locId . ')',
             'url' => '/admin/clientes.php?c=' . $clienteId,
             'tag' => 'blens-locacion-' . $locId . '-' . time(),
         ]);

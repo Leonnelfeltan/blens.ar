@@ -200,7 +200,7 @@ $fb = function (array $r) use ($e, $T, $vista): string {
             . '<button class="fb-btn ok" type="submit" data-feedback-btn="aprobar">Aprobar</button>'
             . '</form><div class="fb-adj"><form method="post" action="./" data-feedback-form="ajuste">'
             . '<input type="hidden" name="a" value="ajuste"><input type="hidden" name="t" value="' . $T . '"><input type="hidden" name="e" value="' . $id . '">'
-            . '<label>¿Qué querés ajustar?<textarea name="comentario" rows="3" maxlength="1000" required placeholder="Contanos brevemente qué cambio necesitás…"></textarea></label>'
+            . '<label>¿Qué querés ajustar?<span class="fb-help">Indicá el segundo exacto para que encontremos el momento.</span><textarea name="comentario" rows="3" maxlength="1000" required placeholder="Ej: En el segundo 0:12 bajar un poco la música y corregir el texto final..."></textarea></label>'
             . '<button class="fb-btn adj" type="submit" data-feedback-btn="ajuste">Pedir ajuste</button>'
             . '</form></div></div>';
     }
@@ -212,12 +212,13 @@ $locForm = function (array $r, bool $nueva) use ($e, $T): string {
 <form class="loc-form" method="post">
   <input type="hidden" name="a" value="<?= $nueva ? 'loc_nueva' : 'loc_editar' ?>"><input type="hidden" name="t" value="<?= $T ?>">
   <?php if (!$nueva): ?><input type="hidden" name="id" value="<?= (int)($r['id'] ?? 0) ?>"><?php endif; ?>
-  <label class="loc-field"><span>Nombre de la propiedad</span><input name="nombre" value="<?= $e($r['nombre'] ?? '') ?>" maxlength="160" required placeholder="Ej. Depto Wind House"></label>
-  <label class="loc-field"><span>Ubicación / Dirección o link Maps</span><input name="ubicacion" value="<?= $e($r['ubicacion'] ?? '') ?>" maxlength="255" required placeholder="Dirección o link de Google Maps" inputmode="url"></label>
-  <label class="loc-field"><span>Piso / Acceso / Llave</span><input name="acceso" value="<?= $e($r['acceso'] ?? '') ?>" maxlength="160" placeholder="Piso 3, timbre 2, llave en portería"></label>
-  <label class="loc-field"><span>Administrador / Encargado</span><input name="administrador" value="<?= $e($r['administrador'] ?? '') ?>" maxlength="120" placeholder="Nombre de quien recibe o administra"></label>
-  <label class="loc-field"><span>Teléfono de contacto</span><input name="telefono_contacto" value="<?= $e($r['telefono_contacto'] ?? '') ?>" maxlength="50" type="tel" placeholder="Número para contactar en el lugar"></label>
-  <label class="loc-field"><span>Horario acordado</span><input name="horario_acordado" value="<?= $e($r['horario_acordado'] ?? '') ?>" maxlength="120" placeholder="Ej. martes 25/11 10:00"></label>
+  <p class="loc-example"><b>Ejemplo:</b> Depto 4B · Edificio Costanera · Av. Costanera y Bolívar (link Maps) · Portería con llave · Timbre 402 · Juan Pérez · 3764... · Jueves 10:30 hs · Reels + Fotos</p>
+  <label class="loc-field"><span>Nombre de la propiedad</span><input name="nombre" value="<?= $e($r['nombre'] ?? '') ?>" maxlength="160" required placeholder="Ej: Depto 4B · Edificio Costanera"></label>
+  <label class="loc-field"><span>Ubicación / Dirección o link Maps</span><input name="ubicacion" value="<?= $e($r['ubicacion'] ?? '') ?>" maxlength="255" required placeholder="Ej: Av. Costanera y Bolívar (link Maps)" inputmode="url"></label>
+  <label class="loc-field"><span>Piso / Acceso / Llave</span><input name="acceso" value="<?= $e($r['acceso'] ?? '') ?>" maxlength="160" placeholder="Ej: Portería con llave · Timbre 402"></label>
+  <label class="loc-field"><span>Administrador / Encargado</span><input name="administrador" value="<?= $e($r['administrador'] ?? '') ?>" maxlength="120" placeholder="Ej: Juan Pérez"></label>
+  <label class="loc-field"><span>Teléfono de contacto</span><input name="telefono_contacto" value="<?= $e($r['telefono_contacto'] ?? '') ?>" maxlength="50" type="tel" placeholder="Ej: 3764..."></label>
+  <label class="loc-field"><span>Horario acordado</span><input name="horario_acordado" value="<?= $e($r['horario_acordado'] ?? '') ?>" maxlength="120" placeholder="Ej: Jueves 10:30 hs · Reels + Fotos"></label>
   <fieldset class="loc-chips"><legend>Qué grabar</legend>
     <?php foreach (locaciones_contenidos() as $k => $label): ?><label class="loc-chip"><input type="checkbox" name="tipo_contenido[]" value="<?= $e($k) ?>"<?= in_array($k, $tipos, true) ? ' checked' : '' ?>><span><?= $e($label) ?></span></label><?php endforeach; ?>
   </fieldset>
@@ -232,10 +233,10 @@ $locForm = function (array $r, bool $nueva) use ($e, $T): string {
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" media="print" data-fonts>
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap"></noscript>
-<link rel="stylesheet" href="../styles.css?v=21"><link rel="stylesheet" href="portal.css?v=17"></head><body>
+<link rel="stylesheet" href="../styles.css?v=21"><link rel="stylesheet" href="portal.css?v=18"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol><symbol id="photos" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m4 17 5-5 3.5 3.5L16 12l4 4"/></symbol></svg>
 <header class="ph"><a class="brand" href="../" aria-label="blens.ar, inicio"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
-<?php if ($cli): ?><div class="phr"><span class="mut">Portal de clientes</span><?= $vista ? '<span class="perr">Vista de administrador</span>' : '' ?><button type="button" class="push-btn" data-push data-push-tipo="cliente" data-push-token="<?= $T ?>" data-push-key="<?= $e(blens_vapid_public()) ?>">Activar avisos de nuevas entregas</button><form method="post"><input type="hidden" name="a" value="salir"><input type="hidden" name="t" value="<?= $T ?>"><button class="out">Salir</button></form></div>
+<?php if ($cli): ?><div class="phr"><span class="mut">Portal de clientes</span><?= $vista ? '<span class="perr">Vista de administrador</span>' : '' ?><button type="button" class="push-btn" data-push data-push-tipo="cliente" data-push-token="<?= $T ?>" data-push-key="<?= $e(blens_vapid_public()) ?>" data-push-off="Activar notificaciones en este dispositivo" data-push-on="Notificaciones activadas ✓" aria-pressed="false">Activar notificaciones en este dispositivo</button><form method="post"><input type="hidden" name="a" value="salir"><input type="hidden" name="t" value="<?= $T ?>"><button class="out">Salir</button></form></div>
 <?php else: ?><a class="link" href="../">Volver a la web</a><?php endif; ?></header>
 <?php if ($pflash): ?><p class="pflash" role="status" aria-live="polite"><?= $e($pflash) ?></p><?php endif; ?>
 <?php if ($cli && $locOK): ?>
@@ -315,6 +316,23 @@ $s = $pdo->prepare($SQL . ' ORDER BY e.id DESC'); $s->execute([$cid]); $es = $s-
 $nVideos = count(array_filter($es, fn($r) => $tipoDe($r) === 'video')); $nFotos = count($es) - $nVideos;
 $ft = (string)($_GET['ft'] ?? 'todos'); if (!in_array($ft, ['todos', 'video', 'fotos'], true)) $ft = 'todos';
 $esView = $ft === 'todos' ? $es : array_values(array_filter($es, fn($r) => $tipoDe($r) === $ft)); ?>
+<section class="pguide" aria-label="Guía rápida del portal">
+  <details class="pguide-card" open>
+    <summary>¿Cómo usar tu portal? (Guía rápida)</summary>
+    <ol class="pguide-steps">
+      <li><b>Revisá y descargá:</b> tocá el video o el pack de fotos para verlo a pantalla completa o abrir la máxima calidad en Drive.</li>
+      <li><b>Aprobá o pedí cambios:</b> usá <em>Aprobar</em> o <em>Pedir ajuste</em> indicando el segundo exacto del video.</li>
+      <li><b>Recibí avisos en tu celu:</b> tocá «Activar notificaciones en este dispositivo» para enterarte de cada entrega.</li>
+    </ol>
+    <details class="pguide-install">
+      <summary>¿Cómo instalar la app en tu celular?</summary>
+      <div class="pguide-devices">
+        <p><b>iPhone</b><span>Safari: botón Compartir → Agregar a pantalla de inicio</span></p>
+        <p><b>Android</b><span>Chrome: menú ⋮ → Instalar app</span></p>
+      </div>
+    </details>
+  </details>
+</section>
 <main class="pt"><?= $cli['logo'] ? '<img class="clogo" loading="lazy" src="../media/logos/' . $e($cli['logo']) . '" alt="" width="180" height="80">' : '' ?><h1>Hola, <?= $e(explode(' ', trim($cli['nombre']))[0]) ?></h1><p class="sub"><?= $cli['empresa'] ? $e($cli['empresa']) . ' · ' : '' ?>Tus entregas (<?= count($es) ?>)</p>
 <div class="pf-filtros"><a class="pf-pill<?= $ft === 'todos' ? ' on' : '' ?>" href="./?ft=todos">Todos <b><?= count($es) ?></b></a><a class="pf-pill<?= $ft === 'video' ? ' on' : '' ?>" href="./?ft=video">Videos <b><?= $nVideos ?></b></a><a class="pf-pill<?= $ft === 'fotos' ? ' on' : '' ?>" href="./?ft=fotos">Fotos <b><?= $nFotos ?></b></a></div>
 <?php if (!$esView) echo '<p class="mut">' . ($es ? 'No hay entregas de este tipo.' : 'Todavía no hay entregas cargadas.') . '</p>'; ?>
@@ -324,4 +342,4 @@ $esView = $ft === 'todos' ? $es : array_values(array_filter($es, fn($r) => $tipo
 <?php endif; endif; endif; ?>
 <aside class="pwa-tip" data-pwa-tip hidden><span data-pwa-msg>Instalá el portal en tu celular para entrar más rápido.</span><button type="button" class="pwa-tip-btn" data-pwa-install hidden>Instalar app</button><button type="button" class="pwa-tip-close" data-pwa-close aria-label="Cerrar">×</button></aside>
 <footer class="foot"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span><span class="loc">Posadas, Misiones · Argentina</span><nav class="social"><a href="../">Web</a><a href="<?= $e($contacto) ?>">Contacto</a></nav><span class="mut">© 2026 blens.ar</span></footer>
-<script src="../assets/fonts.js?v=2" defer></script><script src="../assets/player.js?v=13" defer></script><script src="dfr.js?v=12" defer></script><script src="feedback.js?v=1" defer></script><script src="../assets/push.js?v=4" defer></script></body></html>
+<script src="../assets/fonts.js?v=2" defer></script><script src="../assets/player.js?v=13" defer></script><script src="dfr.js?v=12" defer></script><script src="feedback.js?v=1" defer></script><script src="../assets/push.js?v=5" defer></script></body></html>

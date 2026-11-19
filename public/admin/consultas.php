@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 $q = $f === 'pendientes' ? 'SELECT * FROM consultas WHERE respondida=0 ORDER BY id DESC LIMIT 300' : 'SELECT * FROM consultas ORDER BY id DESC LIMIT 300';
 $rows = $pdo->query($q)->fetchAll();
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Consultas | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=31"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Consultas | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=32"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <?php require __DIR__ . '/nav.php'; ?>
 <?php if ($msg) echo '<p class="ok">' . $e($msg) . '</p>'; ?>
@@ -51,4 +51,4 @@ $rows = $pdo->query($q)->fetchAll();
 <label class="full"><span class="lbl">Recordatorio de saldo <span class="opt">(usá {nombre}, {monto})</span></span><textarea name="plantillas[cobro]" rows="3" maxlength="1000" required><?= $e($plantillas['cobro']) ?></textarea></label>
 <div class="row full"><button>Guardar plantillas</button></div></form>
 </details>
-<script src="admin.js?v=28"></script><script src="../assets/push.js?v=4"></script></body></html>
+<script src="admin.js?v=29"></script><script src="../assets/push.js?v=5"></script></body></html>
