@@ -250,7 +250,7 @@ $formCliente = function (bool $conBorrar = false) use ($e, $cli, $T): string {
 <label><span class="lbl">Tarifa por video ($) <span class="opt">(opcional)</span></span><input name="tarifa_video" inputmode="numeric" value="<?= $e($cli['tarifa_video'] ?? '') ?>"></label>
 <label><span class="lbl">Tarifa por foto ($) <span class="opt">(opcional)</span></span><input name="tarifa_foto" inputmode="numeric" value="<?= $e($cli['tarifa_foto'] ?? '') ?>"></label>
 <label class="full"><span class="lbl">Logo del cliente <span class="opt">(opcional)</span> (PNG, JPG o WebP; mejor con fondo transparente)</span><input type="file" name="logo" accept="image/png,image/jpeg,image/webp"></label>
-<?php if (!empty($cli['logo'])): ?><div class="full"><img class="clogo" src="../media/logos/<?= $e($cli['logo']) ?>" alt=""><label class="chk"><input type="checkbox" name="quitar_logo">Quitar el logo actual <span class="opt">(opcional)</span></label></div><?php endif; ?>
+<?php if (!empty($cli['logo'])): ?><div class="full"><img class="clogo" loading="lazy" width="180" height="80" src="../media/logos/<?= $e($cli['logo']) ?>" alt=""><label class="chk"><input type="checkbox" name="quitar_logo">Quitar el logo actual <span class="opt">(opcional)</span></label></div><?php endif; ?>
 <label class="chk full"><input type="checkbox" name="logo_web" <?= !empty($cli['logo_web']) ? 'checked' : '' ?>>Mostrar el logo en la página principal <span class="opt">(opcional)</span></label>
 <label class="chk full"><input type="checkbox" name="activo" <?= $cli['activo'] ? 'checked' : '' ?>>Puede entrar al portal <span class="opt">(opcional)</span></label>
 <div class="row full"><button>Guardar cliente</button><a class="btn g" href="clientes.php">Volver</a></div></form>
@@ -279,7 +279,7 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
 <?php if ($list !== null): ?>
 <h1>Clientes</h1><a class="btn" href="?c=0">Agregar cliente</a>
 <table class="cards"><tr><th>Empresa / contacto</th><th>Usuario</th><th>Entregas</th><th>Portal</th><th></th></tr>
-<?php foreach ($list as $r): ?><tr class="<?= $r['activo'] ? '' : 'off' ?>"><td data-label="Cliente"><?= !empty($r['logo']) ? '<img class="clogo" src="../media/logos/' . $e($r['logo']) . '" alt="">' : '' ?><?= $e($r['empresa'] ?: $r['nombre']) ?><br><span class="mut"><?= $e($r['empresa'] ? $r['nombre'] : '') ?></span></td><td class="mut" data-label="Usuario"><?= $e($r['usuario']) ?></td><td data-label="Entregas"><?= (int)$r['n'] ?></td><td class="mut" data-label="Portal"><?= $e(portal_info($r)) ?></td><td data-label=""><a class="btn g" href="?c=<?= (int)$r['id'] ?>">Abrir</a></td></tr><?php endforeach; if (!$list) echo '<tr><td colspan="5" class="mut">Todavía no hay clientes.</td></tr>'; ?></table>
+<?php foreach ($list as $r): ?><tr class="<?= $r['activo'] ? '' : 'off' ?>"><td data-label="Cliente"><?= !empty($r['logo']) ? '<img class="clogo" loading="lazy" width="180" height="80" src="../media/logos/' . $e($r['logo']) . '" alt="">' : '' ?><?= $e($r['empresa'] ?: $r['nombre']) ?><br><span class="mut"><?= $e($r['empresa'] ? $r['nombre'] : '') ?></span></td><td class="mut" data-label="Usuario"><?= $e($r['usuario']) ?></td><td data-label="Entregas"><?= (int)$r['n'] ?></td><td class="mut" data-label="Portal"><?= $e(portal_info($r)) ?></td><td data-label=""><a class="btn g" href="?c=<?= (int)$r['id'] ?>">Abrir</a></td></tr><?php endforeach; if (!$list) echo '<tr><td colspan="5" class="mut">Todavía no hay clientes.</td></tr>'; ?></table>
 
 <?php elseif ($ent !== null): ?>
 <?php $tipoActual = $tipoDe($ent); ?>

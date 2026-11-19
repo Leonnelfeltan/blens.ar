@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
-header('Cache-Control: public, max-age=60');
+header('Cache-Control: no-cache');
 require __DIR__ . '/../blens-config/bootstrap.php';
 try {
     $db = blens_db();
@@ -13,18 +13,23 @@ try {
     }
     $show = null; $list = [];
     foreach ($rows as $r) { if ($r['categoria'] === 'showreel') { $show ??= $r; } else { $list[] = $r; } }
+    if ($show) $show['poster'] = blens_webp((string)($show['poster'] ?? ''));
     $base = ['reels' => 'Reels', 'cobertura' => 'Cobertura', 'estrategia' => 'Estrategia'];
     $cats = $base;
     foreach ($list as &$r) {
         $c = (string)($r['categoria'] ?? '');
         if ($c === '' || $c === 'auto') $r['categoria'] = $c = 'reels';
         if (!isset($cats[$c])) $cats[$c] = ucfirst(str_replace('-', ' ', $c));
+        $r['poster'] = blens_webp((string)($r['poster'] ?? ''));
+        if (!empty($r['video_480'])) $r['video_mp4'] = $r['video_480'];
     }
     unset($r);
     $cli = [];
     try { $cli = $db->query("SELECT COALESCE(NULLIF(empresa,''),nombre) AS nombre, logo FROM clientes WHERE logo IS NOT NULL AND logo<>'' AND COALESCE(logo_web,1)=1 ORDER BY activo DESC, empresa, nombre")->fetchAll(); }
     catch (Throwable $x) { try { $cli = $db->query("SELECT COALESCE(NULLIF(empresa,''),nombre) AS nombre, logo FROM clientes WHERE logo IS NOT NULL AND logo<>'' ORDER BY activo DESC, empresa, nombre")->fetchAll(); } catch (Throwable $x2) { } }
-    $wa = preg_replace('/\D+/', '', (string)(blens_cfg()['wa_negocio'] ?? '')) ?? '';
+    foreach ($cli as &$c) { $c['logo'] = blens_webp((string)($c['logo'] ?? '')); }
+    unset($c);
+    $wa = blens_wa_numero();
     echo json_encode(['showreel' => $show, 'proyectos' => $list, 'clientes' => $cli, 'categorias' => $cats, 'wa' => $wa], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     error_log('[blens api] ' . $e->getMessage()); http_response_code(500);

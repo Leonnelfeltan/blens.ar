@@ -144,6 +144,14 @@ function blens_wa_num(string $tel): ?string {
     $d = ltrim($d, '0');
     return strlen($d) === 10 ? '549' . $d : null;
 }
+function blens_wa_numero(): string { return blens_wa_num((string)(blens_cfg()['wa_negocio'] ?? '')) ?? ''; }
+function blens_webp(string $ruta): string {
+    $ruta = trim($ruta);
+    if ($ruta === '' || str_contains($ruta, '..')) return $ruta;
+    if (!preg_match('/\.(jpe?g|png)$/i', $ruta)) return $ruta;
+    $webp = preg_replace('/\.(jpe?g|png)$/i', '.webp', $ruta);
+    return is_file(__DIR__ . '/../public/' . ltrim($webp, '/')) ? $webp : $ruta;
+}
 /* Aviso push de una consulta nueva de la web */
 function blens_ntfy_consulta(array $c): void {
     $nombre = trim((string)($c['nombre'] ?? ''));

@@ -129,7 +129,7 @@ $qp = $pdo->prepare("SELECT * FROM trabajos WHERE cliente_id=? AND prueba=? AND 
 $resumen = resumen_cobro($cl, $pend, $tpend, $alias, $cbu);
 $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], $resumen) : null;
 ?>
-<?= !empty($cl['logo']) ? '<img class="clogo" src="../media/logos/' . $e($cl['logo']) . '" alt="">' : '' ?>
+<?= !empty($cl['logo']) ? '<img class="clogo" loading="lazy" width="180" height="80" src="../media/logos/' . $e($cl['logo']) . '" alt="">' : '' ?>
 <div class="clh"><h1><?= $e($cl['empresa'] ? $cl['empresa'] . ' · ' . $cl['nombre'] : $cl['nombre']) ?></h1><div class="row"><a class="btn g" href="cobros.php">&larr; Todos</a><a class="btn g" href="clientes.php?c=<?= (int)$cl['id'] ?>">Datos y tarifas</a><button type="button" class="btn" data-toggle="#nuevo">+ Nuevo movimiento</button><button type="button" class="btn g" data-open-detalle="#cobrar-varios">Cobrar varios / Recibo</button></div></div>
 <div class="kpis">
   <div class="kpi"><span class="k">Cobrado total</span><b><?= $e(peso($tcob)) ?></b><span class="mut">histórico del cliente</span></div>

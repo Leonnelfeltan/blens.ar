@@ -1,18 +1,26 @@
 <?php
 declare(strict_types=1);
-header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');
-
-// ---- Configuración: vive FUERA de la carpeta pública (ver config.example.php) ----
+header('Cache-Control: no-store');
 require __DIR__ . '/../blens-config/bootstrap.php';
 $cfg = blens_cfg();
 define('DB_HOST', $cfg['db_host']); define('DB_NAME', $cfg['db_name']);
 define('DB_USER', $cfg['db_user']); define('DB_PASS', $cfg['db_pass']);
 define('MAIL_TO', $cfg['mail_to']); define('MAX_POR_HORA', $cfg['max_por_hora']);
+$wantsJson = str_contains((string)($_SERVER['HTTP_ACCEPT'] ?? ''), 'application/json') || str_contains((string)($_SERVER['HTTP_X_REQUESTED_WITH'] ?? ''), 'XMLHttpRequest');
 
 function out(bool $ok, string $msg, int $code = 200): never {
+    global $wantsJson;
+    if ($wantsJson) {
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code($code);
+        echo json_encode(['ok' => $ok, 'message' => $msg], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    if ($ok) { header('Location: /?enviado=1#contacto', true, 303); exit; }
     http_response_code($code);
-    echo json_encode(['ok' => $ok, 'message' => $msg], JSON_UNESCAPED_UNICODE);
+    header('Content-Type: text/html; charset=utf-8');
+    echo '<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>No pudimos enviar la consulta | blens.ar</title><link rel="stylesheet" href="/styles.css?v=20"></head><body><main class="err404"><h1>No pudimos enviar la consulta.</h1><p class="lead">' . htmlspecialchars($msg, ENT_QUOTES, 'UTF-8') . '</p><p><a class="btn" href="/#contacto">Volver al formulario</a></p></main></body></html>';
     exit;
 }
 function clean(string $k, int $max): string {
@@ -23,12 +31,10 @@ function clean(string $k, int $max): string {
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') out(false, 'Método no permitido.', 405);
 
-// Solo aceptamos envíos desde el propio sitio
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 if ($origin !== '' && parse_url($origin, PHP_URL_HOST) !== ($_SERVER['HTTP_HOST'] ?? '')) out(false, 'Origen no permitido.', 403);
 
-// Anti-spam: honeypot + tiempo mínimo de llenado
-if (clean('website', 50) !== '') out(true, 'Consulta enviada.');           // bots: respuesta falsa
+if (clean('website', 50) !== '') out(true, 'Consulta enviada.');
 $ts = (int)($_POST['ts'] ?? 0);
 if ($ts > 0 && (time() * 1000 - $ts) < 3000) out(false, 'Enviaste el formulario demasiado rápido. Probá de nuevo.', 429);
 
@@ -51,7 +57,6 @@ try {
     ]);
 
     blens_migrar($pdo);
-    // Límite por IP
     $q = $pdo->prepare('SELECT COUNT(*) FROM consultas WHERE ip = ? AND creado > (NOW() - INTERVAL 1 HOUR)');
     $q->execute([$ip]);
     if ((int)$q->fetchColumn() >= MAX_POR_HORA) out(false, 'Recibimos varias consultas tuyas. Esperá un rato e intentá otra vez.', 429);
@@ -70,7 +75,6 @@ try {
     out(false, 'No pudimos guardar tu consulta. Escribinos a ' . MAIL_TO . '.', 500);
 }
 
-// Notificación por email (requiere MTA local: msmtp o postfix). Si falla, la consulta ya está guardada.
 $hdr = str_replace(["\r", "\n"], ' ', $email);
 $body = "Nombre: $nombre\nEmpresa: $empresa\nEmail: $email\nTeléfono: $telefono\nServicio: $servicio\n\n$mensaje\n";
 @mail(MAIL_TO, '=?UTF-8?B?' . base64_encode('Nueva consulta en blens.ar') . '?=', $body,

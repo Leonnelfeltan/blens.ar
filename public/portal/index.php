@@ -97,13 +97,13 @@ if ($cid && empty($_SESSION['vista']) && empty($_SESSION['visita_ok'])) {
     try { blens_migrar($pdo); $pdo->prepare('UPDATE clientes SET portal_visitas=portal_visitas+1, portal_ultima_visita=NOW() WHERE id=?')->execute([$cid]); }
     catch (Throwable $x) { error_log('[blens portal] ' . $x->getMessage()); }
 }
-$wa = preg_replace('/\D+/', '', (string)(blens_cfg()['wa_negocio'] ?? ''));
+$wa = blens_wa_numero();
 $contacto = $wa ? 'https://wa.me/' . $wa . '?text=' . rawurlencode('Hola, quiero coordinar un plan con blens.ar') : '../#contacto';
 $drive = fn($r) => $r['link_hd'] ?: $r['link_4k'];
 $vid = fn($r) => $r['preview'] ? 'media.php?e=' . (int)$r['id'] . '&t=v' : ($r['pv'] ? '../' . $r['pv'] : '');
-$pst = fn($r) => $r['poster'] ? 'media.php?e=' . (int)$r['id'] . '&t=p' : ($r['pp'] ? '../' . $r['pp'] : '');
+$pst = fn($r) => $r['poster'] ? 'media.php?e=' . (int)$r['id'] . '&t=p' : ($r['pp'] ? '../' . blens_webp((string)$r['pp']) : '');
 $did = function ($r) { foreach ([$r['link_hd'] ?? '', $r['link_4k'] ?? ''] as $l) { if (preg_match('~^https://drive\.google\.com/(?:file/(?:u/\d+/)?d/|open\?id=|uc\?(?:[^#]*&)?id=)([A-Za-z0-9_-]{10,})~', (string)$l, $m)) return $m[1]; } return ''; };
-$SQL = 'SELECT e.*, COALESCE(p.video_1080, p.video_mp4, p.video_480) AS pv, p.poster AS pp FROM entregas e LEFT JOIN proyectos p ON p.id = e.proyecto_id WHERE e.cliente_id = ?';
+$SQL = 'SELECT e.*, COALESCE(p.video_480, p.video_mp4, p.video_1080) AS pv, p.poster AS pp FROM entregas e LEFT JOIN proyectos p ON p.id = e.proyecto_id WHERE e.cliente_id = ?';
 $fb = function (array $r) use ($e, $T, $vista): string {
     $est = (string)($r['estado_cliente'] ?? 'pendiente'); $com = trim((string)($r['comentario_cliente'] ?? '')); $id = (int)$r['id'];
     $h = '<div class="fb" id="fb-' . $id . '">';
@@ -128,7 +128,7 @@ $fb = function (array $r) use ($e, $T, $vista): string {
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" media="print" data-fonts>
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap"></noscript>
-<link rel="stylesheet" href="../styles.css?v=19"><link rel="stylesheet" href="portal.css?v=14"></head><body>
+<link rel="stylesheet" href="../styles.css?v=20"><link rel="stylesheet" href="portal.css?v=15"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol><symbol id="photos" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m4 17 5-5 3.5 3.5L16 12l4 4"/></symbol></svg>
 <header class="ph"><a class="brand" href="../" aria-label="blens.ar, inicio"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
 <?php if ($cli): ?><div class="phr"><span class="mut">Portal de clientes</span><?= $vista ? '<span class="perr">Vista de administrador</span>' : '' ?><button type="button" class="push-btn" data-push data-push-tipo="cliente" data-push-token="<?= $T ?>" data-push-key="<?= $e(blens_vapid_public()) ?>">Activar avisos de nuevas entregas</button><form method="post"><input type="hidden" name="a" value="salir"><input type="hidden" name="t" value="<?= $T ?>"><button class="out">Salir</button></form></div>
@@ -158,7 +158,7 @@ if ($en): $tipoEn = $tipoDe($en); ?>
     <p class="mut sm">Tus fotos están en Google Drive. Abrí la carpeta para verlas y descargarlas.</p>
     <?php if ($drive($en)): ?><a class="btn gal-btn" href="<?= $e($drive($en)) ?>" target="_blank" rel="noopener noreferrer">Ver y descargar fotos (Drive)</a><?php else: ?><p class="mut">El enlace todavía no está disponible.</p><?php endif; ?>
   </div>
-<?php elseif ($vid($en)): ?><div class="cvw"><video playsinline preload="auto" data-auto<?= $pst($en) ? ' poster="' . $e($pst($en)) . '"' : '' ?>><source src="<?= $e($vid($en)) ?>" type="video/mp4"></video></div><p class="mut sm">Vista previa del proyecto.</p>
+<?php elseif ($vid($en)): ?><div class="cvw"><video playsinline preload="none" data-lazy<?= $pst($en) ? ' poster="' . $e($pst($en)) . '"' : '' ?>><source data-src="<?= $e($vid($en)) ?>" type="video/mp4"></video></div><p class="mut sm">Vista previa del proyecto.</p>
 <?php elseif ($df = $did($en)): ?><div class="cvw dfr" data-did="<?= $e($df) ?>"><iframe src="https://drive.google.com/file/d/<?= $e($df) ?>/preview" allow="autoplay; fullscreen" allowfullscreen loading="lazy" title="Vista previa"></iframe></div><p class="mut sm">Vista previa desde Google Drive.</p>
 <?php endif; ?></div>
 <div><a class="back" href="./">&larr; Mis entregas</a><h1><?= $e($en['titulo']) ?></h1><p class="sub"><span class="b tipo-<?= $tipoEn ?>"><?= $tipoEn === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span> <?= $e(substr($en['creado'], 0, 10)) ?> · <?= $tipoEn === 'fotos' ? 'Pack de fotos' : 'Video' ?></p>
@@ -179,4 +179,4 @@ $esView = $ft === 'todos' ? $es : array_values(array_filter($es, fn($r) => $tipo
 <?php endif; endif; ?>
 <aside class="pwa-tip" data-pwa-tip hidden><span data-pwa-msg>Instalá el portal en tu celular para entrar más rápido.</span><button type="button" class="pwa-tip-btn" data-pwa-install hidden>Instalar app</button><button type="button" class="pwa-tip-close" data-pwa-close aria-label="Cerrar">×</button></aside>
 <footer class="foot"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span><span class="loc">Posadas, Misiones · Argentina</span><nav class="social"><a href="../">Web</a><a href="<?= $e($contacto) ?>">Contacto</a></nav><span class="mut">© 2026 blens.ar</span></footer>
-<script src="../assets/fonts.js?v=1" defer></script><script src="../assets/player.js?v=12" defer></script><script src="dfr.js?v=11" defer></script><script src="../assets/push.js?v=1" defer></script></body></html>
+<script src="../assets/fonts.js?v=2" defer></script><script src="../assets/player.js?v=13" defer></script><script src="dfr.js?v=12" defer></script><script src="../assets/push.js?v=2" defer></script></body></html>

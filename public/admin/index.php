@@ -468,7 +468,7 @@ try {
 } catch (Throwable $x0) { }
 $card = function (array $r, bool $drag) use ($cats, $e, $fbs): void { $est = $r['estado'] ?? 'listo'; $fb = $fbs[(int)$r['id']] ?? null; $cli = (string)($r['cliente_nombre'] ?? '') ?: (string)($r['cliente'] ?? ''); ?>
 <article class="pi <?= $r['visible'] ? '' : 'off' ?>" data-search="<?= $e(mb_strtolower(trim((string)$r['titulo'] . ' ' . $cli), 'UTF-8')) ?>" data-visible="<?= $r['visible'] ? 1 : 0 ?>" data-cat="<?= $e((string)$r['categoria']) ?>"<?= $drag ? ' draggable="true" data-id="' . (int)$r['id'] . '" title="Arrastrá para cambiar el orden"' : '' ?>>
-  <div class="th"><?= $r['poster'] ? '<img src="../' . $e($r['poster']) . '" alt="">' : '<div></div>' ?></div>
+  <div class="th"><?= $r['poster'] ? '<img loading="lazy" width="800" height="500" src="../' . $e(blens_webp((string)$r['poster'])) . '" alt="">' : '<div></div>' ?></div>
   <div class="in"><b><?= $e($r['titulo']) ?></b><span class="mut"><?= $e(trim(($cli ? $cli . ' · ' : '') . ($cats[$r['categoria']] ?? $r['categoria']))) ?></span>
     <div class="tags">
       <?php if ($est === 'procesando'): ?><span class="b proc" data-proc>⏳ Procesando…</span>

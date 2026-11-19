@@ -2,9 +2,10 @@
 declare(strict_types=1);
 require __DIR__ . '/../blens-config/bootstrap.php';
 header('Content-Type: application/xml; charset=utf-8');
-header('Cache-Control: public, max-age=3600');
+header('Cache-Control: no-cache');
 $sitio = rtrim((string)(blens_cfg()['sitio'] ?? 'https://blens.ar'), '/');
-$urls = [['loc' => $sitio . '/', 'lastmod' => date('Y-m-d')]];
+$homeFile = __DIR__ . '/index.html';
+$urls = [['loc' => $sitio . '/', 'lastmod' => date('Y-m-d', is_file($homeFile) ? (int)filemtime($homeFile) : time())]];
 try {
     $db = blens_db();
     try {

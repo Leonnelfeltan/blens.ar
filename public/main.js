@@ -9,13 +9,12 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const norm=s=>String(s??'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 
 /* ---------- WhatsApp: número y mensaje (se reemplazan por los de la API si existen) ---------- */
-const WA_NUMERO='5493764588477';                                   // número de WhatsApp (formato internacional, solo dígitos)
 const WA_MSG='Hola Blens, quiero consultar por producción de video para mi empresa.';
 const WA_MSG_WEB='Hola Leo, me interesa consultar por el desarrollo de una página web o sistema a medida.';
-const waLink=(num,msg=WA_MSG)=>'https://wa.me/'+(num||WA_NUMERO)+'?text='+encodeURIComponent(msg);
+const waLink=(num,msg=WA_MSG)=>/^\d{8,15}$/.test(num||'')?'https://wa.me/'+num+'?text='+encodeURIComponent(msg):'wa.php?text='+encodeURIComponent(msg);
 
 /* ---------- Lazy loading de video ---------- */
-const loadVideo=v=>{ if(v.dataset.ready) return; $$('source',v).forEach(s=>s.src=s.dataset.src); v.load(); v.dataset.ready=1; if(v.hasAttribute('data-autoplay')&&!RM) v.play().catch(()=>{}); };
+const loadVideo=v=>{ if(v.dataset.ready) return; $$('source',v).forEach(s=>{ const u=s.dataset.src; if(u){ s.src=u; delete s.dataset.src; } }); v.load(); v.dataset.ready=1; if(v.hasAttribute('data-autoplay')&&!RM) v.play().catch(()=>{}); };
 const io=new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting){ if(!e.target.hasAttribute('data-hover')) loadVideo(e.target); io.unobserve(e.target);} }),{rootMargin:'300px'});
 const watch=root=>$$('video[data-lazy]',root).forEach(v=>io.observe(v));
 watch(document);
@@ -61,7 +60,7 @@ bindCards();
 let cardTr=[];
 const seen=new WeakSet();
 function reveal(sel){
-  if(reduce) return [];
+  if(reduce||typeof ScrollTrigger==='undefined') return [];
   const dy=soft?0:40;
   // lo que está debajo de la pantalla arranca oculto; lo demás aparece enseguida
   $$(sel).forEach(el=>{ if(el.getBoundingClientRect().top>innerHeight*.9) gsap.set(el,{opacity:0,y:dy}); });
@@ -95,15 +94,16 @@ if(track&&pvB){
 }
 
 /* ---------- Contenido editable desde el panel (api.php) ---------- */
-const mp4src=u=>u?`<source data-src="${esc(u)}" type="video/mp4">`:'';
-const srcCard=p=>mp4src(p.video_480||p.video_mp4);                         // tarjetas: versión liviana para no bajar 1080p
-const srcShow=p=>mp4src(p.video_1080||p.video_mp4||p.video_480);             // Nosotros: máxima definición disponible
+const addSource=(v,u,lazy=true)=>{ if(!u) return null; const s=document.createElement('source'); s.type='video/mp4'; if(lazy) s.dataset.src=u; else s.src=u; v.appendChild(s); return s; };
+const srcCard=p=>p.video_480||'';                                          // tarjetas: siempre la versión liviana
+const srcShow=p=>p.video_480||p.video_mp4||'';                              // Nosotros: video liviano, nunca 1080p
+const hydrateSources=root=>$$('video[data-video]',root).forEach(v=>{ const u=v.dataset.video; if(u) addSource(v,u); delete v.dataset.video; });
 let CAT={reels:'Reels',cobertura:'Cobertura',estrategia:'Estrategia'};
 const catLabel=c=>CAT[c]||c||'';
-const cardHTML=p=>{ const vid=p.video_480||p.video_1080||p.video_mp4||''; const cli=p.cliente?String(p.cliente):'';
+const cardHTML=p=>{ const vid=p.video_480||''; const cli=p.cliente?String(p.cliente):'';
   const media=p.poster
     ? `<img loading="lazy" src="${esc(p.poster)}" alt="${esc(p.titulo)}" width="800" height="500"><video class="hv" muted loop playsinline preload="none" hidden></video>`
-    : `<video class="hv" muted loop playsinline preload="none" data-lazy data-hover>${srcCard(p)}</video>`;
+    : `<video class="hv" muted loop playsinline preload="none" data-lazy data-hover data-video="${esc(srcCard(p))}"></video>`;
   return `<article class="card${p.ancho==1?' wide':''}${p.poster?'':' nop'}" data-cat="${esc(p.categoria)}" data-cliente="${esc(cli)}" data-vid="${esc(vid)}">${media}${p.id?`<a class="stretch" href="proyecto.php?id=${p.id}" aria-label="Ver proyecto: ${esc(p.titulo)}"></a>`:''}<span class="chip">${esc(catLabel(p.categoria))}</span><span class="pl" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15"><path d="M7 4v16l13-8z" fill="currentColor"/></svg></span><div class="meta">${cli?`<span class="cl">${esc(cli)}</span>`:''}<h3>${esc(p.titulo)}</h3>${p.descripcion?`<p>${esc(p.descripcion)}</p>`:''}</div></article>`; };
 function renderFilters(d){
   const box=$('.filters'); if(!box) return;
@@ -115,31 +115,33 @@ function renderFilters(d){
 function renderHeroFeature(d){
   const box=$('#hero-feature'); if(!box) return;
   const s=d.showreel;
-  const p=s&&(s.video_480||s.video_mp4||s.video_1080)?s:(d.proyectos||[]).find(x=>x.video_480||x.video_mp4||x.video_1080);
+  const p=s&&(s.video_480||s.video_mp4)?s:(d.proyectos||[]).find(x=>x.video_480||x.video_mp4);
   if(!p){ box.hidden=true; return; }
-  const isSr=p===s, src=p.video_480||p.video_mp4||p.video_1080;
+  const isSr=p===s, src=srcShow(p);
   const href=isSr?'#nosotros':(p.id?`proyecto.php?id=${p.id}`:'#proyectos');
   const title=isSr?'Conocé nuestro trabajo':p.titulo;
   const meta=isSr?(p.cliente||'Showreel'):(p.cliente||catLabel(p.categoria));
-  box.innerHTML=`<a class="hf-link" href="${esc(href)}"><video muted loop playsinline preload="none" data-lazy data-autoplay${p.poster?` poster="${esc(p.poster)}"`:''}>${mp4src(src)}</video><span class="hf-body"><span class="hf-k">${isSr?'Showreel':'Destacado'}</span><span class="hf-t">${esc(title||'')}</span>${meta?`<span class="hf-m">${esc(meta)}</span>`:''}</span><span class="hf-play" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M7 4v16l13-8z" fill="currentColor"/></svg></span></a>`;
+  box.innerHTML=`<a class="hf-link" href="${esc(href)}"><video muted loop playsinline preload="none" data-lazy data-autoplay data-video="${esc(src)}"${p.poster?` poster="${esc(p.poster)}"`:''}></video><span class="hf-body"><span class="hf-k">${isSr?'Showreel':'Destacado'}</span><span class="hf-t">${esc(title||'')}</span>${meta?`<span class="hf-m">${esc(meta)}</span>`:''}</span><span class="hf-play" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M7 4v16l13-8z" fill="currentColor"/></svg></span></a>`;
   box.hidden=false;
+  hydrateSources(box);
   watch(box);
 }
 function render(d){
   if(d.categorias) CAT={...CAT,...d.categorias};
   const g=$('#grid');
   g.innerHTML=d.proyectos.length?d.proyectos.map(cardHTML).join(''):'<p class="mut empty">Pronto sumaremos nuevos casos.</p>';
+  hydrateSources(g);
   renderFilters(d); renderHeroFeature(d);
   bindCards(); watch(g); revealCards(); navUpdate();
   syncCat(); setChip(); applyFilter(false);
   const s=d.showreel, ph=$('.about .phone');
-  if(s&&(s.video_1080||s.video_mp4||s.video_480)&&$('#sr')){ const V=$('#sr'); V.innerHTML=srcShow(s); V.poster=s.poster||''; delete V.dataset.ready; io.observe(V); if(ph) ph.hidden=false; }
+  if(s&&(s.video_480||s.video_mp4)&&$('#sr')){ const V=$('#sr'); V.replaceChildren(); delete V.dataset.ready; addSource(V,srcShow(s)); V.poster=s.poster||''; io.observe(V); if(ph) ph.hidden=false; }
   else if(ph) ph.hidden=true;
   if(d.clientes&&d.clientes.length){ $('#logos').innerHTML=d.clientes.map(c=>`<button class="lg" type="button" data-client="${esc(c.nombre)}" title="Ver proyectos de ${esc(c.nombre)}" aria-label="Ver proyectos de ${esc(c.nombre)}"><img loading="lazy" src="media/logos/${esc(c.logo)}" alt="${esc(c.nombre)}" width="180" height="80"></button>`).join(''); $('#clientes').hidden=false; }
-  const waNum=/^\d{8,15}$/.test(d.wa||'')?d.wa:WA_NUMERO;
+  const waNum=/^\d{8,15}$/.test(d.wa||'')?d.wa:'';
   $$('[data-wa]').forEach(a=>{ a.href=waLink(waNum); });
   $$('[data-wa-web]').forEach(a=>{ a.href=waLink(waNum,WA_MSG_WEB); });
-  if(/^\d{8,15}$/.test(d.wa||'')&&!$('#wa')){ const a=document.createElement('a'); a.id='wa'; a.className='wa'; a.target='_blank'; a.rel='noopener';
+  if(waNum&&!$('#wa')){ const a=document.createElement('a'); a.id='wa'; a.className='wa'; a.target='_blank'; a.rel='noopener';
     a.href=waLink(d.wa); a.setAttribute('aria-label','Escribinos por WhatsApp');
     a.innerHTML='<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M3 3h18v14H9l-4 4v-4H3z"/></svg><span>WhatsApp</span>'; document.body.appendChild(a); }
   if(window.ScrollTrigger) ScrollTrigger.refresh();
@@ -223,6 +225,7 @@ if(V&&window.ScrollTrigger) ScrollTrigger.create({trigger:'#player',start:'top 1
 
 /* ---------- Formulario ---------- */
 const form=$('#form'), st=$('#status'); $('#ts').value=Date.now();
+if(st && new URLSearchParams(location.search).has('enviado')){ st.className='ok'; st.textContent='Gracias, recibimos tu consulta. Te respondemos a la brevedad.'; }
 form.addEventListener('submit',async e=>{
   e.preventDefault();
   if(!form.checkValidity()){ st.className='err'; st.textContent='Completá nombre, email y mensaje con datos válidos.'; form.reportValidity(); return; }
