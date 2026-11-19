@@ -11,7 +11,8 @@ const norm=s=>String(s??'').trim().toLowerCase().normalize('NFD').replace(/[\u03
 /* ---------- WhatsApp: número y mensaje (se reemplazan por los de la API si existen) ---------- */
 const WA_NUMERO='5493764588477';                                   // número de WhatsApp (formato internacional, solo dígitos)
 const WA_MSG='Hola Blens, quiero consultar por producción de video para mi empresa.';
-const waLink=num=>'https://wa.me/'+(num||WA_NUMERO)+'?text='+encodeURIComponent(WA_MSG);
+const WA_MSG_WEB='Hola Leo, me interesa consultar por el desarrollo de una página web o sistema a medida.';
+const waLink=(num,msg=WA_MSG)=>'https://wa.me/'+(num||WA_NUMERO)+'?text='+encodeURIComponent(msg);
 
 /* ---------- Lazy loading de video ---------- */
 const loadVideo=v=>{ if(v.dataset.ready) return; $$('source',v).forEach(s=>s.src=s.dataset.src); v.load(); v.dataset.ready=1; if(v.hasAttribute('data-autoplay')&&!RM) v.play().catch(()=>{}); };
@@ -137,6 +138,7 @@ function render(d){
   if(d.clientes&&d.clientes.length){ $('#logos').innerHTML=d.clientes.map(c=>`<button class="lg" type="button" data-client="${esc(c.nombre)}" title="Ver proyectos de ${esc(c.nombre)}" aria-label="Ver proyectos de ${esc(c.nombre)}"><img loading="lazy" src="media/logos/${esc(c.logo)}" alt="${esc(c.nombre)}" width="180" height="80"></button>`).join(''); $('#clientes').hidden=false; }
   const waNum=/^\d{8,15}$/.test(d.wa||'')?d.wa:WA_NUMERO;
   $$('[data-wa]').forEach(a=>{ a.href=waLink(waNum); });
+  $$('[data-wa-web]').forEach(a=>{ a.href=waLink(waNum,WA_MSG_WEB); });
   if(/^\d{8,15}$/.test(d.wa||'')&&!$('#wa')){ const a=document.createElement('a'); a.id='wa'; a.className='wa'; a.target='_blank'; a.rel='noopener';
     a.href=waLink(d.wa); a.setAttribute('aria-label','Escribinos por WhatsApp');
     a.innerHTML='<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M3 3h18v14H9l-4 4v-4H3z"/></svg><span>WhatsApp</span>'; document.body.appendChild(a); }
@@ -163,7 +165,7 @@ try{ if(!reduce){
     if(!coarse) ScrollTrigger.create({trigger:'.hero',start:'bottom 75%',end:'bottom 25%',onEnterBack:()=>tl.restart()});
   }
   // Secciones: entran cada vez que aparecen, subiendo o bajando
-  reveal('.h2'); reveal('.svc li'); reveal('.big,.about .mut,.vals li'); reveal('#form > *'); reveal('.steps li'); revealCards();
+  reveal('.h2'); reveal('.svc li'); reveal('.web-card'); reveal('.big,.about .mut,.vals li'); reveal('#form > *'); reveal('.steps li'); revealCards();
   if(!soft&&!coarse) $$('.mag').forEach(b=>{ const x=gsap.quickTo(b,'x',{duration:.4}), y=gsap.quickTo(b,'y',{duration:.4});
     b.addEventListener('mousemove',e=>{const r=b.getBoundingClientRect();x((e.clientX-r.left-r.width/2)*.25);y((e.clientY-r.top-r.height/2)*.4)});
     b.addEventListener('mouseleave',()=>{x(0);y(0)}); });
