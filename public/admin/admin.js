@@ -474,9 +474,11 @@ if (presuForm) {
 })();
 
 (function () {
-  const btn = document.querySelector('[data-push-resync]');
-  if (!btn) return;
+  const resync = document.querySelector('[data-push-resync]');
+  const delay = document.querySelector('[data-push-delay]');
+  if (!resync && !delay) return;
   const diag = document.querySelector('[data-push-diag]');
+  const botonPush = document.querySelector('[data-push]');
   const aviso = msg => {
     let box = document.querySelector('.push-toast');
     if (!box) {
@@ -490,29 +492,68 @@ if (presuForm) {
     clearTimeout(box._timer);
     box._timer = setTimeout(() => { box.hidden = true; }, 9000);
   };
-  btn.addEventListener('click', async e => {
+  const diagnosticar = (info, ok) => {
+    const lineas = ['Dominio: ' + (info.host || '-'), 'HTTP: ' + (Number(info.status) || 0)];
+    if (info.response) lineas.push('Cuerpo: ' + String(info.response).slice(0, 240));
+    if (info.error) lineas.push('Error: ' + String(info.error).slice(0, 240));
+    if (info.message) lineas.push('Servidor: ' + String(info.message).slice(0, 240));
+    if (diag) { diag.textContent = lineas.join('\n'); diag.hidden = false; }
+    aviso(ok ? 'Push de prueba enviado a este dispositivo.' : 'No se pudo enviar. Mirá el diagnóstico.');
+  };
+  const fallar = err => {
+    const msg = err && err.message ? err.message : 'No se pudo sincronizar este dispositivo.';
+    if (diag) { diag.textContent = 'Error: ' + msg; diag.hidden = false; }
+    aviso(msg);
+  };
+  if (resync) resync.addEventListener('click', async e => {
     e.stopPropagation();
-    const texto = btn.textContent;
-    btn.disabled = true;
-    btn.setAttribute('aria-busy', 'true');
-    btn.textContent = 'Sincronizando…';
+    const texto = resync.textContent;
+    resync.disabled = true;
+    resync.setAttribute('aria-busy', 'true');
+    resync.textContent = 'Sincronizando…';
     try {
       if (typeof window.blensPushResync !== 'function') throw new Error('No se pudo cargar el módulo de notificaciones.');
       const info = await window.blensPushResync();
-      const lineas = ['Dominio: ' + (info.host || '-'), 'HTTP: ' + (Number(info.status) || 0)];
-      if (info.response) lineas.push('Cuerpo: ' + String(info.response).slice(0, 240));
-      if (info.error) lineas.push('Error: ' + String(info.error).slice(0, 240));
-      if (info.message) lineas.push('Servidor: ' + String(info.message).slice(0, 240));
-      if (diag) { diag.textContent = lineas.join('\n'); diag.hidden = false; }
-      aviso(info.ok ? 'Push de prueba enviado a este dispositivo.' : 'No se pudo enviar. Mirá el diagnóstico.');
-    } catch (err) {
-      const msg = err && err.message ? err.message : 'No se pudo sincronizar este dispositivo.';
-      if (diag) { diag.textContent = 'Error: ' + msg; diag.hidden = false; }
-      aviso(msg);
-    } finally {
-      btn.disabled = false;
-      btn.removeAttribute('aria-busy');
-      btn.textContent = texto;
+      diagnosticar(info, info.ok);
+    } catch (err) { fallar(err); }
+    finally {
+      resync.disabled = false;
+      resync.removeAttribute('aria-busy');
+      resync.textContent = texto;
+    }
+  });
+  if (delay) delay.addEventListener('click', async e => {
+    e.stopPropagation();
+    const texto = delay.textContent;
+    delay.disabled = true;
+    delay.setAttribute('aria-busy', 'true');
+    delay.textContent = 'Enviando en 5s…';
+    aviso('Bloqueá el celu ahora: el aviso se envía desde el servidor en 5 segundos.');
+    try {
+      if (typeof window.blensPushEndpoint !== 'function') throw new Error('No se pudo cargar el módulo de notificaciones.');
+      const endpoint = await window.blensPushEndpoint();
+      if (!endpoint) throw new Error('No hay una suscripción activa. Primero sincronizá este celu.');
+      const token = botonPush && botonPush.dataset.pushToken ? botonPush.dataset.pushToken : '';
+      const res = await fetch('/api/push-test.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, endpoint, delay: 5 }),
+      });
+      let json = {};
+      try { json = await res.json(); } catch (_) {}
+      diagnosticar({
+        ok: res.ok && json.ok !== false,
+        status: Number(json.status || 0),
+        host: json.host || endpoint,
+        response: String(json.response || ''),
+        error: String(json.error || ''),
+        message: String(json.message || ''),
+      }, res.ok && json.ok !== false);
+    } catch (err) { fallar(err); }
+    finally {
+      delay.disabled = false;
+      delay.removeAttribute('aria-busy');
+      delay.textContent = texto;
     }
   });
 })();

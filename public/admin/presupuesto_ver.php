@@ -54,4 +54,4 @@ $vence = date('d/m/Y', strtotime((string)$p['creado_en'] . ' +' . (int)$p['valid
     <div class="p-notes"><span class="p-k">Condiciones</span><p><?= nl2br($e(presu_condiciones($p))) ?></p></div>
     <div class="p-foot"><span>blens.ar</span><span>Presupuesto <?= $e($p['numero']) ?></span></div>
 </div>
-<script src="admin.js?v=32"></script></body></html>
+<script src="admin.js?v=33"></script></body></html>

@@ -181,4 +181,4 @@ $render = function (array $items, bool $done) use ($e, $T, $hoy): void {
 <?php if (!$gProx): ?><p class="mut">No hay eventos próximos.</p><?php else: ?><div class="ag-list"><?php $render($gProx, false); ?></div><?php endif; ?>
 <h2>Completados</h2>
 <?php if (!$gDone): ?><p class="mut">Todavía no completaste eventos.</p><?php else: ?><div class="ag-list"><?php $render($gDone, true); ?></div><?php endif; ?>
-<script src="admin.js?v=32"></script><script src="../assets/push.js?v=6"></script></body></html>
+<script src="admin.js?v=33"></script><script src="../assets/push.js?v=7"></script></body></html>

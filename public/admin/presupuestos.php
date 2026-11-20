@@ -134,4 +134,4 @@ $list = $pdo->query('SELECT p.*, t.cliente_id AS cobro_cliente_id FROM presupues
 <?php endforeach; ?>
 </table>
 <?php endif; ?>
-<script src="admin.js?v=32"></script><script src="../assets/push.js?v=6"></script></body></html>
+<script src="admin.js?v=33"></script><script src="../assets/push.js?v=7"></script></body></html>

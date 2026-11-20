@@ -348,4 +348,4 @@ $waCli = trim((string)$cl['telefono']) !== '' ? wa_url((string)$cl['telefono'], 
 </details>
 <h2>Recibos</h2><table class="cards"><tr><th>N°</th><th>Fecha</th><th>Período</th><th>Total</th><th></th></tr>
 <?php foreach ($recs as $r): ?><tr><td data-label="N°"><?= $e(nro($r)) ?></td><td class="mut" data-label="Fecha"><?= $e(date('d/m/Y', strtotime($r['fecha']))) ?> · <?= $e(fin_medio('', (string)($r['medio'] ?? ''))) ?></td><td data-label="Período"><?= $e($r['periodo']) ?></td><td data-label="Total"><?= $e(peso((float)$r['total'])) ?></td><td data-label=""><a class="btn g" href="recibo.php?id=<?= (int)$r['id'] ?>">Ver / imprimir</a></td></tr><?php endforeach; if (!$recs) echo '<tr><td colspan="5" class="mut">Todavía no hay recibos.</td></tr>'; ?></table>
-<?php endif; ?><script src="admin.js?v=32"></script><script src="../assets/push.js?v=6"></script></body></html>
+<?php endif; ?><script src="admin.js?v=33"></script><script src="../assets/push.js?v=7"></script></body></html>

@@ -6,7 +6,7 @@
   const token = source.dataset.pushToken || '';
   const publicKey = source.dataset.pushKey || '';
   const scope = tipo === 'admin' ? '/admin/' : '/portal/';
-  const sw = scope + 'sw.js';
+  const sw = scope + 'sw.js?v=1';
   const cta = 'Activar notificaciones en este dispositivo';
   const iosAviso = 'Para recibir notificaciones en iPhone, primero instalá esta app en tu pantalla de inicio (Compartir → Agregar a inicio) y abrila desde ahí.';
   const labels = tipo === 'admin'
@@ -183,6 +183,12 @@
       toast(err && err.message ? err.message : 'No se pudo activar. Intentá de nuevo.');
     }
   }
+
+  window.blensPushEndpoint = async () => {
+    const reg = await ready();
+    const sub = await reg.pushManager.getSubscription();
+    return sub ? sub.endpoint : '';
+  };
 
   window.blensPushResync = async () => {
     if (!supported) throw new Error('Tu navegador no admite notificaciones push.');

@@ -170,8 +170,8 @@ function blens_push_encrypt(string $plain, string $p256dh, string $auth, ?string
     $ikm = blens_hkdf_expand(blens_hkdf_extract($authSecret, $shared), "WebPush: info\x00" . $uaPublic . $asPublic, 32);
     $salt = random_bytes(16);
     $prk = blens_hkdf_extract($salt, $ikm);
-    $cek = blens_hkdf_expand($prk, 'Content-Encoding: aes128gcm', 16);
-    $nonce = blens_hkdf_expand($prk, 'Content-Encoding: nonce', 12);
+    $cek = blens_hkdf_expand($prk, "Content-Encoding: aes128gcm\x00", 16);
+    $nonce = blens_hkdf_expand($prk, "Content-Encoding: nonce\x00", 12);
     $cipher = openssl_encrypt($plain . "\x02", 'aes-128-gcm', $cek, OPENSSL_RAW_DATA, $nonce, $tag, '', 16);
     if ($cipher === false) return [];
 

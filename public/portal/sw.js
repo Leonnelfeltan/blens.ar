@@ -1,4 +1,4 @@
-const APP = { icon: '/portal/icons/icon-192.png', fallback: '/portal/' };
+const APP = { icon: '/portal/icons/icon-192.png', fallback: '/portal/', tag: 'blens-portal' };
 function blensPushUrl(value) {
   try {
     const u = new URL(String(value || APP.fallback), self.location.origin);
@@ -6,6 +6,12 @@ function blensPushUrl(value) {
   } catch (_) {
     return APP.fallback;
   }
+}
+function blensMostrar(title, options) {
+  return self.registration.showNotification(title, Object.assign({}, options, { icon: APP.icon, badge: APP.icon }));
+}
+function blensFallback() {
+  return blensMostrar('blens.ar', { body: 'Tenés una nueva actualización', tag: APP.tag, data: { url: APP.fallback } });
 }
 self.addEventListener('install', event => event.waitUntil(self.skipWaiting()));
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
@@ -16,20 +22,20 @@ self.addEventListener('fetch', event => {
   if (url.pathname.startsWith('/portal/media.php')) return;
 });
 self.addEventListener('push', event => {
-  let data = {};
-  try { data = event.data ? event.data.json() : {}; }
-  catch (_) { data = { body: event.data ? event.data.text() : '' }; }
-  if (!data || typeof data !== 'object') data = { body: String(data || '') };
+  let data = null;
+  try { data = event.data ? event.data.json() : null; }
+  catch (_) { data = null; }
+  if (!data || typeof data !== 'object' || Array.isArray(data) || Object.keys(data).length === 0) {
+    event.waitUntil(blensFallback());
+    return;
+  }
   const title = typeof data.title === 'string' && data.title.trim() ? data.title : 'blens.ar · Portal';
-  const body = typeof data.body === 'string' ? data.body : String(data.body || '');
-  const options = {
+  const body = typeof data.body === 'string' && data.body.trim() ? data.body : 'Tenés una nueva actualización';
+  event.waitUntil(blensMostrar(title, {
     body: body,
-    icon: APP.icon,
-    badge: APP.icon,
-    tag: typeof data.tag === 'string' && data.tag ? data.tag : 'blens-portal',
+    tag: typeof data.tag === 'string' && data.tag ? data.tag : APP.tag,
     data: { url: blensPushUrl(data.url) },
-  };
-  event.waitUntil(self.registration.showNotification(title, options));
+  }));
 });
 self.addEventListener('notificationclick', event => {
   event.notification.close();

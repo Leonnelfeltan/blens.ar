@@ -20,6 +20,12 @@ session_start();
 if (empty($_SESSION['ok'])) blens_push_test_out(401, ['ok' => false, 'error' => 'No autorizado.']);
 if (empty($_SESSION['t']) || !hash_equals($_SESSION['t'], (string)($body['token'] ?? ''))) blens_push_test_out(403, ['ok' => false, 'error' => 'Sesión vencida.']);
 
+$delay = max(0, min(10, (int)($body['delay'] ?? 0)));
+if ($delay > 0) {
+    session_write_close();
+    if (function_exists('set_time_limit')) set_time_limit($delay + 20);
+    sleep($delay);
+}
 $pdo = blens_db();
 blens_migrar($pdo);
 $endpoint = trim((string)($body['endpoint'] ?? ''));
