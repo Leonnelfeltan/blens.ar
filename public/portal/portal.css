@@ -41,6 +41,18 @@ body{min-height:100vh}
 .pguide-devices p{display:grid;gap:.2rem;background:var(--c);border:1px solid var(--line);border-radius:3px;padding:.7rem;font-size:.85rem}
 .pguide-devices b{color:var(--h)}
 .pguide-devices span{color:var(--mut)}
+.pnotif,.pappcard{display:flex;align-items:center;gap:.85rem;max-width:1100px;margin:1rem auto;padding:.85rem 1rem;background:var(--c2);border:1px solid var(--o);border-left:4px solid var(--o);border-radius:5px;color:var(--h)}
+.pnotif-copy,.papp-copy{flex:1 1 auto;min-width:0;display:grid;gap:.15rem;font-size:.88rem;line-height:1.4}
+.pnotif-copy span,.papp-copy span{color:var(--mut)}
+.pnotif-ico{position:relative;flex:0 0 34px;width:34px;height:34px;border:1px solid var(--o);border-radius:50%;background:rgba(255,90,31,.1)}
+.pnotif-ico::before{content:"";position:absolute;left:50%;top:7px;width:9px;height:12px;border:2px solid var(--o);border-bottom:0;border-radius:9px 9px 0 0;transform:translateX(-50%)}
+.pnotif-ico::after{content:"";position:absolute;left:50%;bottom:6px;width:4px;height:4px;border-radius:50%;background:var(--o);transform:translateX(-50%)}
+.pnotif.on{border-left-color:#2ea043}.pnotif.on .pnotif-ico{border-color:#2ea043;background:rgba(46,160,67,.12)}.pnotif.on .pnotif-ico::before{border-color:#2ea043}.pnotif.on .pnotif-ico::after{background:#2ea043}
+.papp-ico{position:relative;flex:0 0 30px;width:30px;height:34px;border:2px solid var(--o);border-radius:6px;background:rgba(255,90,31,.08)}
+.papp-ico::before{content:"";position:absolute;left:50%;bottom:4px;width:8px;height:2px;border-radius:2px;background:var(--o);transform:translateX(-50%)}
+.pnotif-close,.papp-close{background:none;border:0;color:var(--mut);font-size:1.2rem;line-height:1;cursor:pointer;padding:.2rem .35rem}
+.pnotif-close:hover,.papp-close:hover{color:var(--h)}
+@media(max-width:640px){.pnotif,.pappcard{align-items:flex-start;flex-wrap:wrap;gap:.6rem;padding:.8rem}.pnotif-copy,.papp-copy{flex:1 1 100%;order:2}.pnotif .btn,.pappcard .btn{order:3;width:100%}}
 
 .pd .cvw.dfr{position:relative;width:100%;aspect-ratio:9/16;max-height:85vh;background:#000}.cvw.dfr iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 

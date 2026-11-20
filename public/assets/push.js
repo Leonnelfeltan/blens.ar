@@ -6,6 +6,7 @@
   const token = source.dataset.pushToken || '';
   const publicKey = source.dataset.pushKey || '';
   const scope = tipo === 'admin' ? '/admin/' : '/portal/';
+  const scopeUrl = new URL(scope, location.origin).href;
   const sw = scope + 'sw.js?v=1';
   const cta = 'Activar notificaciones en este dispositivo';
   const iosAviso = 'Para recibir notificaciones en iPhone, primero instalá esta app en tu pantalla de inicio (Compartir → Agregar a inicio) y abrila desde ahí.';
@@ -16,8 +17,16 @@
   const standalone = navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
   const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   const storageKey = 'blens-push-banner-' + tipo;
+  const card = document.querySelector('[data-push-card]');
+  const cardMsg = card ? card.querySelector('[data-push-card-msg]') : null;
+  const cardClose = card ? card.querySelector('[data-push-card-close]') : null;
+  const cardKey = 'blens-push-card-' + tipo;
   let banner = null;
   let bannerText = null;
+
+  function cardCerrado() {
+    try { return sessionStorage.getItem(cardKey) === '1'; } catch (_) { return false; }
+  }
 
   function cerrado() {
     try { return sessionStorage.getItem(storageKey) === '1'; } catch (_) { return false; }
@@ -25,6 +34,10 @@
 
   function marcarCerrado() {
     try { sessionStorage.setItem(storageKey, '1'); } catch (_) {}
+  }
+
+  function marcarCardCerrado() {
+    try { sessionStorage.setItem(cardKey, '1'); } catch (_) {}
   }
 
   function toast(msg) {
@@ -55,6 +68,14 @@
       b.classList.toggle('on', active);
       b.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
+    if (card) {
+      card.hidden = active ? false : cardCerrado();
+      card.classList.toggle('on', active);
+      if (cardClose) cardClose.hidden = active;
+      if (cardMsg) cardMsg.textContent = active
+        ? 'Listo: te avisamos en este dispositivo cuando haya novedades.'
+        : (isIOS && !standalone ? iosAviso : 'Activá las notificaciones para recibir un aviso en este dispositivo cuando haya una nueva entrega o una respuesta.');
+    }
   }
 
   function ocultarBanner() {
@@ -111,12 +132,17 @@
     return data;
   }
 
-  let registro = null;
+  let registroPromise = null;
   async function ready() {
     if (!supported) throw new Error('Tu navegador no admite notificaciones push.');
     if (!token || !publicKey) throw new Error('La sesión venció. Recargá la página.');
-    if (!registro) registro = navigator.serviceWorker.register(sw, { scope });
-    return await registro;
+    if (!registroPromise) registroPromise = (async () => {
+      let regs = [];
+      try { regs = await navigator.serviceWorker.getRegistrations(); } catch (_) {}
+      const actual = regs.find(r => { try { return new URL(r.scope).href === scopeUrl; } catch (_) { return false; } });
+      return actual || await navigator.serviceWorker.register(sw, { scope });
+    })().catch(err => { registroPromise = null; throw err; });
+    return await registroPromise;
   }
   async function suscribir(reg) {
     return await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes(publicKey) });
@@ -230,6 +256,7 @@
 
   state(false);
   buttons.forEach(b => b.addEventListener('click', toggle));
+  if (cardClose) cardClose.addEventListener('click', () => { marcarCardCerrado(); card.hidden = true; });
   if (document.readyState === 'complete') sync();
   else window.addEventListener('load', () => { sync(); });
 })();

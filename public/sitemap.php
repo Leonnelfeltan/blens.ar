@@ -7,9 +7,9 @@ $sitio = rtrim((string)(blens_cfg()['sitio'] ?? 'https://blens.ar'), '/');
 $homeFile = __DIR__ . '/index.html';
 $urls = [['loc' => $sitio . '/', 'lastmod' => date('Y-m-d', is_file($homeFile) ? (int)filemtime($homeFile) : time())]];
 try {
-    $db = blens_db();
+    $db = blens_db(); blens_migrar($db);
     try {
-        $rows = $db->query("SELECT id,creado FROM proyectos WHERE visible=1 AND (categoria IS NULL OR categoria <> 'showreel') AND (estado='listo' OR video_mp4 IS NOT NULL) ORDER BY orden ASC, id DESC")->fetchAll();
+        $rows = $db->query("SELECT id,creado FROM proyectos WHERE visible=1 AND (categoria IS NULL OR categoria <> 'showreel') AND (estado='listo' OR video_mp4 IS NOT NULL OR entrega_id IS NOT NULL) ORDER BY orden ASC, id DESC")->fetchAll();
     } catch (Throwable $x) {
         $rows = $db->query("SELECT id,creado FROM proyectos WHERE visible=1 AND (categoria IS NULL OR categoria <> 'showreel') ORDER BY orden ASC, id DESC")->fetchAll();
     }

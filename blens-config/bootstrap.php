@@ -520,7 +520,26 @@ function blens_migrar(?PDO $p = null): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         if (blens_tabla_existe($p, 'cliente_locaciones')) blens_agregar_col($p, 'cliente_locaciones', 'fecha_agendada', 'DATETIME NULL');
         if (blens_tabla_existe($p, 'clientes')) blens_agregar_col($p, 'clientes', 'etapa_proyecto', 'TINYINT UNSIGNED NOT NULL DEFAULT 1');
-        if (blens_tabla_existe($p, 'entregas')) blens_agregar_col($p, 'entregas', 'version_num', 'SMALLINT UNSIGNED NOT NULL DEFAULT 1');
+        if (blens_tabla_existe($p, 'entregas')) {
+            blens_agregar_col($p, 'entregas', 'version_num', 'SMALLINT UNSIGNED NOT NULL DEFAULT 1');
+            blens_agregar_col($p, 'entregas', 'publicado_web', 'TINYINT(1) NOT NULL DEFAULT 0');
+        }
+        if (blens_tabla_existe($p, 'proyectos')) {
+            foreach ([
+                'cliente_id' => 'INT UNSIGNED NULL',
+                'entrega_id' => 'INT NULL',
+                'mostrar_cliente' => 'TINYINT(1) NOT NULL DEFAULT 1',
+                'video_1080' => 'VARCHAR(255) NULL',
+                'video_480' => 'VARCHAR(255) NULL',
+                'calidades' => 'VARCHAR(40) NULL',
+                'estado' => "VARCHAR(12) NOT NULL DEFAULT 'listo'",
+                'error_msg' => 'VARCHAR(255) NULL',
+                'fuente_drive' => 'VARCHAR(500) NULL',
+                'cola_src' => 'VARCHAR(255) NULL',
+                'poster_auto' => 'TINYINT(1) NOT NULL DEFAULT 0',
+            ] as $col => $def) blens_agregar_col($p, 'proyectos', $col, $def);
+            blens_modificar_col($p, 'proyectos', 'categoria', "VARCHAR(40) NOT NULL DEFAULT 'reels'");
+        }
         // Comprobantes opcionales en cobros (trabajos) y gastos, también para bases existentes
         foreach (['trabajos', 'gastos', 'recibos'] as $tabla) {
             if (!blens_tabla_existe($p, $tabla)) continue;
@@ -571,6 +590,65 @@ function etapa_track_html(int $n): string {
         $h .= '<li class="' . $clase . '"' . $actualAttr . '><span>' . (int)$k . '</span><b>' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</b></li>';
     }
     return $h . '</ol>';
+}
+function blens_drive_id(string $url): string {
+    if (preg_match('~^https://drive\.google\.com/(?:file/(?:u/\d+/)?d/|open\?id=|uc\?(?:[^#]*&)?id=)([A-Za-z0-9_-]{10,})~', trim($url), $m)) return $m[1];
+    return '';
+}
+function blens_publicar_entrega_web(PDO $pdo, int $entregaId, array $opt = []): array {
+    $q = $pdo->prepare('SELECT id,cliente_id,titulo,descripcion,proyecto_id,publicado_web FROM entregas WHERE id=?');
+    $q->execute([$entregaId]); $entrega = $q->fetch();
+    if (!$entrega) throw new RuntimeException('Entrega inexistente.');
+    $clienteId = (int)($opt['cliente_id'] ?? $entrega['cliente_id']);
+    if ($clienteId <= 0 || (int)$entrega['cliente_id'] !== $clienteId) throw new RuntimeException('La entrega no pertenece a este cliente.');
+    $pid = (int)($opt['proyecto_id'] ?? 0);
+    $titulo = mb_substr(trim((string)($opt['titulo'] ?? '')), 0, 120);
+    if ($titulo === '') $titulo = mb_substr(trim((string)$entrega['titulo']), 0, 120);
+    if ($titulo === '') $titulo = 'Video sin título';
+    $desc = mb_substr(trim((string)($opt['descripcion'] ?? '')), 0, 160);
+    if ($desc === '') $desc = mb_substr(trim((string)$entrega['descripcion']), 0, 160);
+    $cat = (string)($opt['categoria'] ?? 'reels');
+    if (!in_array($cat, ['reels', 'cobertura', 'estrategia'], true)) $cat = 'reels';
+    $mc = array_key_exists('mostrar_cliente', $opt) ? ((int)(bool)$opt['mostrar_cliente']) : 1;
+    $visible = array_key_exists('visible', $opt) ? ((int)(bool)$opt['visible']) : 1;
+    $poster = trim((string)($opt['poster'] ?? ''));
+    $qc = $pdo->prepare('SELECT COALESCE(NULLIF(empresa,\'\'),nombre) FROM clientes WHERE id=?'); $qc->execute([$clienteId]);
+    $nombre = trim((string)$qc->fetchColumn()) ?: 'Cliente';
+    $nuevo = $pid === 0;
+    if ($pid) {
+        $qp = $pdo->prepare('SELECT * FROM proyectos WHERE id=? AND (cliente_id IS NULL OR cliente_id=0 OR cliente_id=?)');
+        $qp->execute([$pid, $clienteId]); $oldProject = $qp->fetch();
+        if (!$oldProject) throw new RuntimeException('Ese proyecto no pertenece a este cliente.');
+        if (!empty($oldProject['entrega_id']) && (int)$oldProject['entrega_id'] !== $entregaId) {
+            $pdo->prepare('UPDATE entregas SET publicado_web=0, proyecto_id=NULL WHERE id=?')->execute([(int)$oldProject['entrega_id']]);
+        }
+        $pdo->prepare('UPDATE proyectos SET titulo=?,descripcion=?,categoria=?,cliente=?,cliente_id=?,entrega_id=?,mostrar_cliente=?,visible=? WHERE id=?')
+            ->execute([$titulo, $desc, $cat, $nombre, $clienteId, $entregaId, $mc, $visible, $pid]);
+        if ($poster !== '') {
+            $pdo->prepare('UPDATE proyectos SET poster=?, poster_auto=0 WHERE id=?')->execute([$poster, $pid]);
+            $oldPoster = (string)($oldProject['poster'] ?? '');
+            if ($oldPoster !== '' && $oldPoster !== $poster && str_starts_with($oldPoster, 'media/uploads/')) @unlink(__DIR__ . '/../public/' . $oldPoster);
+        }
+    } else {
+        $orden = (int)$pdo->query("SELECT COALESCE(MAX(orden),0)+1 FROM proyectos WHERE categoria <> 'showreel'")->fetchColumn();
+        $pdo->prepare('INSERT INTO proyectos (titulo,cliente,categoria,descripcion,ancho,orden,visible,poster,cliente_id,entrega_id,mostrar_cliente,estado) VALUES (?,?,?,?,0,?,?,?,?,?,?,\'listo\')')
+            ->execute([$titulo, $nombre, $cat, $desc, $orden, $visible, $poster ?: null, $clienteId, $entregaId, $mc]);
+        $pid = (int)$pdo->lastInsertId();
+    }
+    $pdo->prepare('UPDATE proyectos SET entrega_id=NULL WHERE entrega_id=? AND id<>?')->execute([$entregaId, $pid]);
+    $pdo->prepare('UPDATE entregas SET publicado_web=1, proyecto_id=? WHERE id=?')->execute([$pid, $entregaId]);
+    return ['proyecto_id' => $pid, 'titulo' => $titulo, 'nuevo' => $nuevo, 'antes' => (int)$entrega['publicado_web']];
+}
+function blens_despublicar_entrega_web(PDO $pdo, int $entregaId): void {
+    $q = $pdo->prepare('SELECT proyecto_id FROM entregas WHERE id=?'); $q->execute([$entregaId]);
+    $pid = (int)$q->fetchColumn();
+    if ($pid) {
+        $p = $pdo->prepare('SELECT video_mp4,video_1080,video_480,fuente_drive FROM proyectos WHERE id=?'); $p->execute([$pid]); $row = $p->fetch();
+        $conVideo = $row && (!empty($row['video_mp4']) || !empty($row['video_1080']) || !empty($row['video_480']) || !empty($row['fuente_drive']));
+        if (!$conVideo) $pdo->prepare('UPDATE entregas SET proyecto_id=NULL WHERE id=?')->execute([$entregaId]);
+    }
+    $pdo->prepare('UPDATE proyectos SET entrega_id=NULL WHERE entrega_id=?')->execute([$entregaId]);
+    $pdo->prepare('UPDATE entregas SET publicado_web=0 WHERE id=?')->execute([$entregaId]);
 }
 function locaciones_estados(): array {
     return ['pendiente' => 'Pendiente', 'agendado' => 'Agendado', 'grabado' => 'Grabado'];

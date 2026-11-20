@@ -4,20 +4,30 @@ require __DIR__ . '/../blens-config/bootstrap.php';
 $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 $id = (int)($_GET['id'] ?? 0); $p = null;
 try {
-    $s = blens_db()->prepare("SELECT p.*, c.logo AS clogo FROM proyectos p LEFT JOIN clientes c ON c.id = p.cliente_id WHERE p.id = ? AND p.visible = 1 AND p.categoria <> 'showreel' AND (p.estado = 'listo' OR p.video_mp4 IS NOT NULL)");
-    $s->execute([$id]); $p = $s->fetch() ?: null;
+    $db = blens_db(); blens_migrar($db);
+    try {
+        $s = $db->prepare("SELECT p.*, c.logo AS clogo, e.titulo AS entrega_titulo, e.descripcion AS entrega_descripcion, e.tipo AS entrega_tipo, e.link_hd AS entrega_link, e.link_4k AS entrega_link4 FROM proyectos p LEFT JOIN clientes c ON c.id = p.cliente_id LEFT JOIN entregas e ON e.id = p.entrega_id WHERE p.id = ? AND p.visible = 1 AND p.categoria <> 'showreel' AND (p.estado = 'listo' OR p.video_mp4 IS NOT NULL OR p.entrega_id IS NOT NULL)");
+        $s->execute([$id]); $p = $s->fetch() ?: null;
+    } catch (Throwable $x0) {
+        $s = $db->prepare("SELECT p.*, c.logo AS clogo FROM proyectos p LEFT JOIN clientes c ON c.id = p.cliente_id WHERE p.id = ? AND p.visible = 1 AND p.categoria <> 'showreel'");
+        $s->execute([$id]); $p = $s->fetch() ?: null;
+    }
 } catch (Throwable $x) { error_log('[blens proyecto] ' . $x->getMessage()); }
 if (!$p) { http_response_code(404); readfile(__DIR__ . '/404.html'); exit; }
 $cats = ['reels' => 'Reels', 'cobertura' => 'Cobertura', 'estrategia' => 'Estrategia'];
 $cat = (string)($p['categoria'] ?? '');
 if ($cat === '' || $cat === 'auto') $cat = 'reels';
 $catLabel = $cats[$cat] ?? ucfirst(str_replace('-', ' ', $cat));
-$sub = implode(' · ', array_filter([$p['cliente'], $catLabel]));
-$desc = $p['descripcion'] ?: ($p['servicios'] ?: 'Proyecto audiovisual de blens.ar');
+$clienteWeb = (int)($p['mostrar_cliente'] ?? 1) === 1 ? (string)($p['cliente'] ?? '') : '';
+$sub = implode(' · ', array_filter([$clienteWeb, $catLabel]));
+$desc = $p['descripcion'] ?: ($p['entrega_descripcion'] ?: ($p['servicios'] ?: 'Proyecto audiovisual de blens.ar'));
 $poster = blens_webp((string)($p['poster'] ?? ''));
 $clogo = blens_webp((string)($p['clogo'] ?? ''));
 $video = !empty($p['video_480']) ? $p['video_480'] : (!empty($p['video_mp4']) ? $p['video_mp4'] : ($p['video_1080'] ?? null));
 $hd = (!empty($p['video_1080']) && $p['video_1080'] !== $video) ? $p['video_1080'] : null;
+$entregaLink = (string)($p['entrega_link'] ?? '') ?: (string)($p['entrega_link4'] ?? '');
+$driveId = $video ? '' : blens_drive_id($entregaLink);
+if (!$poster && $driveId) $poster = 'https://drive.google.com/thumbnail?id=' . $driveId . '&sz=w800';
 $sitio = rtrim((string)(blens_cfg()['sitio'] ?? 'https://blens.ar'), '/');
 $canonical = $sitio . '/proyecto.php?id=' . (int)$p['id'];
 $img = ($poster !== '' && is_file(__DIR__ . '/' . $poster)) ? @getimagesize(__DIR__ . '/' . $poster) : false;
@@ -50,7 +60,7 @@ $ldJson = json_encode($ld, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSO
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" media="print" data-fonts>
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap"></noscript>
-<link rel="stylesheet" href="styles.css?v=23"></head><body>
+<link rel="stylesheet" href="styles.css?v=24"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <header class="nav solid"><a class="brand" href="./" aria-label="blens.ar, inicio"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
 <button class="burger" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="menu"><span></span><span></span><span></span></button>
@@ -59,10 +69,10 @@ $ldJson = json_encode($ld, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSO
   <a class="back" href="./#proyectos">&larr; Todos los proyectos</a>
   <h1><?= $e($p['titulo']) ?></h1>
   <p class="sub"><?= $e($sub) ?></p>
-  <?php if ($video): ?><div class="cvw pv2"><video playsinline preload="none" data-lazy<?= $poster !== '' ? ' poster="' . $e($poster) . '"' : '' ?>><source data-src="<?= $e($video) ?>" type="video/mp4"></video></div><?php if ($hd): ?><p class="mut sm"><a class="link" href="<?= $e($hd) ?>" target="_blank" rel="noopener">Ver versión en 1080p ↗</a></p><?php endif; ?><?php endif; ?>
+  <?php if ($video): ?><div class="cvw pv2"><video playsinline preload="none" data-lazy<?= $poster !== '' ? ' poster="' . $e($poster) . '"' : '' ?>><source data-src="<?= $e($video) ?>" type="video/mp4"></video></div><?php if ($hd): ?><p class="mut sm"><a class="link" href="<?= $e($hd) ?>" target="_blank" rel="noopener">Ver versión en 1080p ↗</a></p><?php endif; ?><?php elseif ($driveId): ?><div class="cvw pv2 dfr"><iframe src="https://drive.google.com/file/d/<?= $e($driveId) ?>/preview" allow="autoplay; fullscreen" allowfullscreen loading="lazy" title="Video del proyecto"></iframe></div><p class="mut sm"><a class="link" href="<?= $e($entregaLink) ?>" target="_blank" rel="noopener">Abrir video en Drive ↗</a></p><?php elseif ($entregaLink && ($p['entrega_tipo'] ?? '') === 'fotos'): ?><div class="pj-gal"><b>Pack de fotos</b><p class="mut">Las fotos de este proyecto están en Google Drive.</p><a class="btn" href="<?= $e($entregaLink) ?>" target="_blank" rel="noopener noreferrer">Ver galería ↗</a></div><?php endif; ?>
   <div class="cols">
     <div>
-      <?php if ($p['cliente']): ?><div class="blk"><h2>Cliente</h2><?= $clogo !== '' ? '<img class="clogo" loading="lazy" src="' . $e($clogo) . '" alt="" width="180" height="80">' : '' ?><p><?= $e($p['cliente']) ?></p></div><?php endif; ?>
+      <?php if ($clienteWeb !== ''): ?><div class="blk"><h2>Cliente</h2><?= $clogo !== '' ? '<img class="clogo" loading="lazy" src="' . $e($clogo) . '" alt="" width="180" height="80">' : '' ?><p><?= $e($clienteWeb) ?></p></div><?php endif; ?>
       <?php if ($p['servicios']): ?><div class="blk"><h2>Qué hicimos</h2><p><?= $e($p['servicios']) ?></p></div><?php endif; ?>
       <?php if ($p['resultado']): ?><div class="blk"><h2>Resultado</h2><p><?= $e($p['resultado']) ?></p></div><?php endif; ?>
     </div>

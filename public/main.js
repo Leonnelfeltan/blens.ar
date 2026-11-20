@@ -101,11 +101,11 @@ const srcShow=p=>p.video_480||p.video_mp4||'';                              // N
 const hydrateSources=root=>$$('video[data-video]',root).forEach(v=>{ const u=v.dataset.video; if(u) addSource(v,u); delete v.dataset.video; });
 let CAT={reels:'Reels',cobertura:'Cobertura',estrategia:'Estrategia'};
 const catLabel=c=>CAT[c]||c||'';
-const cardHTML=p=>{ const vid=p.video_480||''; const cli=p.cliente?String(p.cliente):'';
-  const media=p.poster
-    ? `<img loading="lazy" src="${esc(p.poster)}" alt="${esc(p.titulo)}" width="800" height="500"><video class="hv" muted loop playsinline preload="none" hidden></video>`
+const cardHTML=p=>{ const vid=p.video_480||''; const cli=p.cliente?String(p.cliente):''; const poster=p.poster||p.poster_remote||'';
+  const media=poster
+    ? `<img loading="lazy" src="${esc(poster)}" alt="${esc(p.titulo)}" width="800" height="500"${p.poster_remote?' referrerpolicy="no-referrer"':''}><video class="hv" muted loop playsinline preload="none" hidden></video>`
     : `<video class="hv" muted loop playsinline preload="none" data-lazy data-hover data-video="${esc(srcCard(p))}"></video>`;
-  return `<article class="card${p.ancho==1?' wide':''}${p.poster?'':' nop'}" data-cat="${esc(p.categoria)}" data-cliente="${esc(cli)}" data-vid="${esc(vid)}">${media}${p.id?`<a class="stretch" href="proyecto.php?id=${p.id}" aria-label="Ver proyecto: ${esc(p.titulo)}"></a>`:''}<span class="chip">${esc(catLabel(p.categoria))}</span><span class="pl" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15"><path d="M7 4v16l13-8z" fill="currentColor"/></svg></span><div class="meta">${cli?`<span class="cl">${esc(cli)}</span>`:''}<h3>${esc(p.titulo)}</h3>${p.descripcion?`<p>${esc(p.descripcion)}</p>`:''}</div></article>`; };
+  return `<article class="card${p.ancho==1?' wide':''}${poster?'':' nop'}" data-cat="${esc(p.categoria)}" data-cliente="${esc(cli)}" data-vid="${esc(vid)}">${media}${p.id?`<a class="stretch" href="proyecto.php?id=${p.id}" aria-label="Ver proyecto: ${esc(p.titulo)}"></a>`:''}<span class="chip">${esc(catLabel(p.categoria))}</span><span class="pl" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15"><path d="M7 4v16l13-8z" fill="currentColor"/></svg></span><div class="meta">${cli?`<span class="cl">${esc(cli)}</span>`:''}<h3>${esc(p.titulo)}</h3>${p.descripcion?`<p>${esc(p.descripcion)}</p>`:''}</div></article>`; };
 function renderFilters(d){
   const box=$('.filters'); if(!box) return;
   const base=['reels','cobertura','estrategia'];

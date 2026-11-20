@@ -12,9 +12,10 @@ $agN = agenda_pendientes($pdo);
 $consN = consultas_pendientes($pdo);
 $cobN = cobros_pendientes($pdo);
 if (!empty($_SESSION['ok'])) blens_acreditar_tna($pdo);  // acreditación diaria de intereses (idempotente)
-$faltaMig = false; try { $faltaMig = !$pdo->query("SHOW COLUMNS FROM proyectos LIKE 'video_1080'")->fetch(); } catch (Throwable $x0) { }
+$colsProy = blens_columnas($pdo, 'proyectos');
+$faltaMig = !isset($colsProy['video_1080'], $colsProy['video_480'], $colsProy['estado'], $colsProy['entrega_id'], $colsProy['mostrar_cliente']);
 const MIG_CMD = "sudo mysql blens_web -e \"ALTER TABLE proyectos ADD COLUMN video_1080 VARCHAR(255) NULL, ADD COLUMN video_480 VARCHAR(255) NULL, ADD COLUMN calidades VARCHAR(40) NULL, ADD COLUMN estado VARCHAR(12) NOT NULL DEFAULT 'listo', ADD COLUMN error_msg VARCHAR(255) NULL, ADD COLUMN fuente_drive VARCHAR(500) NULL, ADD COLUMN cola_src VARCHAR(255) NULL, ADD COLUMN poster_auto TINYINT(1) NOT NULL DEFAULT 0;\"";
-$faltaCat = false; try { $col = $pdo->query("SHOW COLUMNS FROM proyectos LIKE 'categoria'")->fetch(); $faltaCat = $col && stripos((string)$col['Type'], 'varchar(40)') === false; } catch (Throwable $x0) { }
+$faltaCat = isset($colsProy['categoria']) && stripos($colsProy['categoria'], 'varchar(40)') === false;
 const MIG_CAT_CMD = "sudo mysql blens_web -e \"ALTER TABLE proyectos MODIFY categoria VARCHAR(40) NOT NULL DEFAULT 'reels';\"";
 $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 $_SESSION['t'] ??= bin2hex(random_bytes(16));
@@ -188,6 +189,38 @@ if ($post) {
                 } catch (Throwable $x) { $pdo->rollBack(); throw $x; }
                 fin('./?ok=1');
             }
+            if ($a === 'vincular_entrega') {
+                $pid = (int)($_POST['proyecto_id'] ?? 0); $eid = (int)($_POST['entrega_id'] ?? 0);
+                if ($pid <= 0 || $eid <= 0) throw new RuntimeException('Elegí un proyecto y una entrega.');
+                $qe = $pdo->prepare('SELECT cliente_id,publicado_web FROM entregas WHERE id=?'); $qe->execute([$eid]); $rE = $qe->fetch();
+                if (!$rE) throw new RuntimeException('Entrega inexistente.');
+                $antes = (int)$rE['publicado_web']; $clientePush = (int)$rE['cliente_id'];
+                $poster = up('poster', ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'], 8 * 1048576);
+                $res = blens_publicar_entrega_web($pdo, $eid, [
+                    'proyecto_id' => $pid,
+                    'titulo' => (string)($_POST['titulo'] ?? ''),
+                    'descripcion' => (string)($_POST['descripcion'] ?? ''),
+                    'categoria' => (string)($_POST['categoria'] ?? 'reels'),
+                    'mostrar_cliente' => isset($_POST['mostrar_cliente']),
+                    'visible' => isset($_POST['visible']),
+                    'poster' => $poster ?: '',
+                ]);
+                if (!$antes && $clientePush) {
+                    blens_push_notify($pdo, 'cliente', $clientePush, [
+                        'title' => 'Nuevo material en blens.ar',
+                        'body' => $res['titulo'],
+                        'url' => '/portal/',
+                        'tag' => 'blens-entrega-' . $eid,
+                    ]);
+                }
+                fin('./?e=' . $pid . '&ok=1#publicacion');
+            }
+            if ($a === 'desvincular_entrega') {
+                $pid = (int)($_POST['proyecto_id'] ?? $_POST['id'] ?? 0); $eid = (int)($_POST['entrega_id'] ?? $_POST['id'] ?? 0);
+                if ($eid <= 0) throw new RuntimeException('Datos de entrega inválidos.');
+                blens_despublicar_entrega_web($pdo, $eid);
+                fin('./?e=' . $pid . '&ok=1#publicacion');
+            }
             if ($a === 'save') {
                 if ($faltaMig) throw new RuntimeException('Falta actualizar la base de datos (mirá el aviso rojo en la lista de proyectos).');
                 if ($faltaCat) throw new RuntimeException('Falta ampliar la columna de categorías (mirá el aviso rojo en la lista de proyectos).');
@@ -209,6 +242,7 @@ if ($post) {
                 $sv = mb_substr(trim((string)($_POST['servicios'] ?? '')), 0, 160); $dt = mb_substr(trim((string)($_POST['detalle'] ?? '')), 0, 4000); $rs = mb_substr(trim((string)($_POST['resultado'] ?? '')), 0, 200);
                 $old = null;
                 if ($id) { $s = $pdo->prepare('SELECT * FROM proyectos WHERE id = ?'); $s->execute([$id]); $old = $s->fetch(); if (!$old) throw new RuntimeException('Proyecto inexistente.'); }
+                $mc = array_key_exists('mostrar_cliente', $_POST) ? isset($_POST['mostrar_cliente']) : ($old ? (int)($old['mostrar_cliente'] ?? 1) : 1);
                 $o = $old ? (int)$old['orden'] : 0;
                 if (isset($_POST['orden']) && $_POST['orden'] !== '') $o = (int)$_POST['orden'];
                 if (!$old || (($old['categoria'] === 'showreel') !== ($c === 'showreel'))) {
@@ -267,6 +301,10 @@ if ($post) {
                         $pdo->prepare("UPDATE entregas SET cliente_id=?, titulo=IF(titulo='',?,titulo), descripcion=IF(descripcion IS NULL OR descripcion='',?,descripcion) WHERE id=?")
                             ->execute([$clid, $t, $descEnt, $eid]);
                     }
+                    blens_publicar_entrega_web($pdo, $eid, [
+                        'proyecto_id' => $id, 'cliente_id' => $clid, 'titulo' => $t, 'descripcion' => $descEnt,
+                        'categoria' => $c, 'mostrar_cliente' => $mc, 'visible' => $v,
+                    ]);
                     if (!$nuevo && $eid && !empty($cfg['ai_api_key'])) { try { lanzar($eid, 'entrega'); } catch (Throwable $x3) { } }
                 }
                 if ($nuevo) {
@@ -290,6 +328,28 @@ $auth = !empty($_SESSION['ok']);
 <?php else:
 $view = $_GET['v'] ?? 'proyectos'; $edit = isset($_GET['e']) ? (int)$_GET['e'] : null; ?>
 <?php require __DIR__ . '/nav.php'; ?>
+<?php
+$proyectosVinc = $pdo->query("SELECT id,titulo FROM proyectos WHERE categoria <> 'showreel' ORDER BY orden ASC, id DESC")->fetchAll();
+$entregasVinc = $pdo->query("SELECT e.id,e.titulo,e.tipo,COALESCE(NULLIF(c.empresa,''),c.nombre) AS cliente FROM entregas e LEFT JOIN clientes c ON c.id=e.cliente_id ORDER BY e.id DESC LIMIT 300")->fetchAll();
+?>
+<dialog id="vinc" class="imp">
+<form method="post" class="f" enctype="multipart/form-data">
+<input type="hidden" name="a" value="vincular_entrega"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>">
+<h2 class="full">Vincular entrega a proyecto público</h2>
+<p class="mut full">La entrega queda disponible en el portal del cliente y el proyecto se publica en la web con los datos que elijas acá.</p>
+<label class="full"><span class="lbl">Proyecto público <span class="req">* obligatorio</span></span><select name="proyecto_id" required><option value="">— Elegí un proyecto —</option><?php foreach ($proyectosVinc as $x): ?><option value="<?= (int)$x['id'] ?>"<?= $edit && (int)$edit === (int)$x['id'] ? ' selected' : '' ?>><?= $e($x['titulo']) ?></option><?php endforeach; ?></select></label>
+<label class="full"><span class="lbl">Entrega del cliente <span class="req">* obligatorio</span></span><select name="entrega_id" required><option value="">— Elegí una entrega —</option><?php foreach ($entregasVinc as $x): ?><option value="<?= (int)$x['id'] ?>"><?= $e(mb_substr((string)$x['titulo'], 0, 70) . ' · ' . (string)$x['cliente'] . ' · ' . ((string)$x['tipo'] === 'fotos' ? 'Fotos' : 'Video')) ?></option><?php endforeach; ?></select></label>
+<label class="full"><span class="lbl">Título público <span class="opt">(opcional - usa el de la entrega)</span></span><input name="titulo" maxlength="120" placeholder="Título de la tarjeta en la web"></label>
+<label class="full"><span class="lbl">Descripción corta <span class="opt">(opcional)</span></span><input name="descripcion" maxlength="160" placeholder="Una línea para la tarjeta"></label>
+<div class="two full">
+<label><span class="lbl">Categoría</span><select name="categoria"><?php foreach ($catsForm as $k => $n): ?><option value="<?= $e($k) ?>"<?= $k === 'reels' ? ' selected' : '' ?>><?= $e($n) ?></option><?php endforeach; ?></select></label>
+<label><span class="lbl">Portada propia <span class="opt">(opcional)</span></span><input type="file" name="poster" accept="image/jpeg,image/png,image/webp"></label>
+</div>
+<label class="chk full"><input type="checkbox" name="visible" checked>Visible en la web</label>
+<label class="chk full"><input type="checkbox" name="mostrar_cliente" checked>Mostrar el nombre del cliente en la web</label>
+<div class="row full"><button>Vincular y publicar</button><button type="button" class="g" data-cerrar>Cancelar</button></div>
+</form>
+</dialog>
 <?php if (isset($_GET['ok'])) { $imp = (int)($_GET['imp'] ?? 0); $impErr = (int)($_GET['imp_err'] ?? 0); echo '<p class="ok">' . ($imp > 0 ? 'Se importaron ' . $imp . ' videos a la cola de procesamiento.' : 'Cambios guardados.') . ' Pueden tardar hasta un minuto en verse en la web.' . ($impErr > 0 ? ' ' . $impErr . ' no se pudieron iniciar; revisá la lista.' : '') . '</p>'; } if ($msg) echo '<p class="err">' . $e($msg) . '</p>'; ?>
 <?php
 /* ---------- Dashboard financiero ---------- */
@@ -379,13 +439,19 @@ $catTxt = fn(array $c): string => $c ? implode(' · ', array_map(fn($k, $v) => $
 <td data-label="Servicio"><?= $e($r['servicio']) ?></td><td data-label="Mensaje"><?= nl2br($e($r['mensaje'])) ?></td></tr><?php endforeach; if (!$rows) echo '<tr><td colspan="4" class="mut">Todavía no hay consultas.</td></tr>'; ?></table>
 
 <?php elseif ($edit !== null):
-$p = ['id' => 0, 'titulo' => '', 'cliente' => '', 'cliente_id' => null, 'categoria' => 'reels', 'descripcion' => '', 'ancho' => 0, 'orden' => 0, 'visible' => 1, 'video_mp4' => '', 'poster' => '', 'servicios' => '', 'detalle' => '', 'resultado' => '', 'estado' => 'listo', 'error_msg' => '', 'calidades' => '', 'fuente_drive' => ''];
+$p = ['id' => 0, 'titulo' => '', 'cliente' => '', 'cliente_id' => null, 'entrega_id' => null, 'mostrar_cliente' => 1, 'categoria' => 'reels', 'descripcion' => '', 'ancho' => 0, 'orden' => 0, 'visible' => 1, 'video_mp4' => '', 'poster' => '', 'servicios' => '', 'detalle' => '', 'resultado' => '', 'estado' => 'listo', 'error_msg' => '', 'calidades' => '', 'fuente_drive' => ''];
 if ($edit && !$faltaMig) { $s = $pdo->prepare('SELECT * FROM proyectos WHERE id = ?'); $s->execute([$edit]); $p = $s->fetch() ?: $p; }
 elseif ($edit) { $s = $pdo->prepare('SELECT * FROM proyectos WHERE id = ?'); $s->execute([$edit]); $p = ($s->fetch() ?: []) + $p; }
 $cls = $pdo->query('SELECT id,empresa,nombre FROM clientes ORDER BY empresa,nombre')->fetchAll();
 $tiene = !empty($p['video_mp4']) || $p['estado'] === 'procesando';
 $ent = null;
-if ($p['id']) { try { $q = $pdo->prepare('SELECT id,cliente_id,estado_cliente,comentario_cliente,comentario_fecha FROM entregas WHERE proyecto_id=? ORDER BY id LIMIT 1'); $q->execute([(int)$p['id']]); $ent = $q->fetch(); } catch (Throwable $x0) { } }
+if ($p['id']) {
+    try {
+        if (!empty($p['entrega_id'])) { $q = $pdo->prepare('SELECT id,cliente_id,estado_cliente,comentario_cliente,comentario_fecha FROM entregas WHERE id=?'); $q->execute([(int)$p['entrega_id']]); }
+        else { $q = $pdo->prepare('SELECT id,cliente_id,estado_cliente,comentario_cliente,comentario_fecha FROM entregas WHERE proyecto_id=? ORDER BY id LIMIT 1'); $q->execute([(int)$p['id']]); }
+        $ent = $q->fetch();
+    } catch (Throwable $x0) { }
+}
 if ($faltaMig) echo '<p class="err">Falta actualizar la base de datos. En el servidor corré:<br><code>' . $e(MIG_CMD) . '</code></p>';
 if ($faltaCat) echo '<p class="err">Falta ampliar la columna de categorías a 40 caracteres. En el servidor corré:<br><code>' . $e(MIG_CAT_CMD) . '</code></p>'; ?>
 <a class="back" href="./">&larr; Proyectos</a>
@@ -429,10 +495,17 @@ if ($faltaCat) echo '<p class="err">Falta ampliar la columna de categorías a 40
   <label><span class="lbl">Resultado <span class="opt">(opcional)</span> (ej: 12 consultas en el primer mes)</span><input name="resultado" value="<?= $e($p['resultado'] ?? '') ?>" maxlength="200"></label>
 </section>
 
-<section class="pc" id="feedback">
+<section class="pc" id="publicacion">
   <h2>Publicación</h2>
   <label class="chk"><input type="checkbox" name="visible" <?= $p['visible'] ? 'checked' : '' ?>>Visible en la web <span class="opt">(opcional)</span></label>
   <label class="chk"><input type="checkbox" name="ancho" <?= $p['ancho'] ? 'checked' : '' ?>>Tarjeta ancha (para videos horizontales) <span class="opt">(opcional)</span></label>
+  <?php if ($p['id']): ?>
+  <div class="row">
+    <button type="button" class="g" data-importar="#vinc"><?= $ent ? 'Cambiar entrega publicada' : 'Vincular entrega publicada' ?></button>
+    <?php if (!empty($p['entrega_id'])): ?><button type="button" class="g" data-unpublish data-token="<?= $e($_SESSION['t']) ?>" data-proyecto="<?= (int)$p['id'] ?>" data-entrega="<?= (int)$p['entrega_id'] ?>">Desvincular entrega</button><?php endif; ?>
+  </div>
+  <p class="mut"><?= !empty($p['mostrar_cliente']) ? 'El nombre del cliente se muestra en la web.' : 'El nombre del cliente está oculto en la web.' ?></p>
+  <?php endif; ?>
   <?php if ($ent): ?>
   <p class="mut">Este proyecto ya tiene una entrega en el portal del cliente. <a href="clientes.php?c=<?= (int)$ent['cliente_id'] ?>&e=<?= (int)$ent['id'] ?>">Ver entrega</a></p>
   <?php $fbe = (string)($ent['estado_cliente'] ?? 'pendiente'); $fbc = trim((string)($ent['comentario_cliente'] ?? '')); ?>
@@ -481,6 +554,7 @@ $card = function (array $r, bool $drag) use ($cats, $e, $fbs): void { $est = $r[
       <?php if ($fb && $fb['estado_cliente'] === 'aprobado'): ?><span class="b ok2">Aprobado</span>
       <?php elseif ($fb && $fb['estado_cliente'] === 'ajuste'): ?><span class="b adj">Pidió ajuste: "<?= $e(mb_substr(trim((string)$fb['comentario_cliente']), 0, 70)) ?>"</span><?php endif; ?>
       <?php if (!empty($r['video_1080'])): ?><span class="b">1080p</span><?php endif; ?>
+      <?php if (!empty($r['entrega_id'])): ?><span class="b ok2">Entrega web</span><?php endif; ?>
       <?php if (!$r['visible']): ?><span class="b">Oculto</span><?php endif; ?>
     </div>
     <?php if ($est === 'error'): ?><span class="mut"><?= $e($r['error_msg'] ?? '') ?></span><?php endif; ?>
@@ -493,7 +567,7 @@ $card = function (array $r, bool $drag) use ($cats, $e, $fbs): void { $est = $r[
 </article>
 <?php };
 ?>
-<div class="lh2"><h1>Proyectos</h1><div class="row"><button type="button" class="g" data-importar>Importar carpeta de Drive</button><a class="btn" href="?e=0">+ Nuevo proyecto</a></div></div>
+<div class="lh2"><h1>Proyectos</h1><div class="row"><button type="button" class="g" data-importar>Importar carpeta de Drive</button><button type="button" class="g" data-importar="#vinc">Vincular entrega</button><a class="btn" href="?e=0">+ Nuevo proyecto</a></div></div>
 <dialog id="imp" class="imp">
 <form method="post" class="f">
 <input type="hidden" name="a" value="importar_carpeta"><input type="hidden" name="t" value="<?= $e($_SESSION['t']) ?>">
@@ -529,4 +603,4 @@ $card = function (array $r, bool $drag) use ($cats, $e, $fbs): void { $est = $r[
 </div>
 <p class="mut" id="portfolio-empty" hidden>No hay proyectos con ese filtro.</p>
 <?php if (!$port) echo '<p class="mut">Todavía no cargaste proyectos del portfolio.</p>'; ?>
-<?php endif; endif; ?><script src="admin.js?v=33"></script><script src="../assets/push.js?v=7"></script></body></html>
+<?php endif; endif; ?><script src="admin.js?v=34"></script><script src="../assets/push.js?v=8"></script></body></html>

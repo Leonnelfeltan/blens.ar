@@ -198,6 +198,20 @@ if (pform) {
     x.send(new FormData(pform));
   });
 }
+document.querySelectorAll('[data-unpublish]').forEach(b => b.addEventListener('click', async () => {
+  if (!window.confirm('¿Desvincular la entrega de este proyecto?')) return;
+  const fd = new FormData();
+  fd.append('a', 'desvincular_entrega');
+  fd.append('t', b.dataset.token || '');
+  fd.append('proyecto_id', b.dataset.proyecto || '');
+  fd.append('entrega_id', b.dataset.entrega || '');
+  try {
+    const res = await fetch(location.pathname, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: fd });
+    let j = null; try { j = await res.json(); } catch (er) {}
+    if (j && j.ok) location.href = j.to;
+    else aviso(j && j.error ? j.error : 'No se pudo desvincular la entrega.');
+  } catch (er) { aviso('No se pudo desvincular la entrega.'); }
+}));
 // ---- Autocompletar el título con el nombre del archivo de video ----
 document.querySelectorAll('form').forEach(f => {
   const file = f.querySelector('input[type=file][name=mp4]');

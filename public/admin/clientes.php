@@ -6,7 +6,7 @@ require __DIR__ . '/drive.php';
 session_start();
 header('X-Robots-Tag: noindex'); header('Cache-Control: no-store'); header('X-Frame-Options: DENY');
 if (empty($_SESSION['ok'])) { header('Location: ./'); exit; }
-$pdo = blens_db();
+$pdo = blens_db(); blens_migrar($pdo);
 $agN = agenda_pendientes($pdo);
 $consN = consultas_pendientes($pdo);
 $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
@@ -159,6 +159,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $tipoEn = (string)($_POST['tipo_entrega'] ?? 'video');
             if (!in_array($tipoEn, ['video', 'fotos'], true)) $tipoEn = 'video';
             $hd = trim((string)($_POST['link_hd'] ?? '')); $k4 = ''; $pj = (int)($_POST['proyecto_id'] ?? 0) ?: null;
+            $publicar = isset($_POST['publicar_web']); $webPj = (int)($_POST['web_proyecto_id'] ?? 0);
+            $webCat = (string)($_POST['web_categoria'] ?? 'reels'); if (!in_array($webCat, ['reels', 'cobertura', 'estrategia'], true)) $webCat = 'reels';
+            $webVisible = isset($_POST['web_visible']); $webCli = isset($_POST['mostrar_cliente']);
             if ($tipoEn === 'fotos') {
                 $pj = null;
                 if ($hd === '') throw new RuntimeException('Pegá el link de la carpeta o archivo de Google Drive del pack de fotos.');
@@ -200,21 +203,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare('INSERT INTO entregas (cliente_id,tipo,titulo,descripcion,link_hd,link_4k,preview,poster,proyecto_id) VALUES (?,?,?,?,?,?,?,?,?)')->execute([$c, $tipoEn, $t, $d, $hd, $k4, $mp4, $pos, $pj]);
             }
             $nid = $id ?: (int)$pdo->lastInsertId();
+            $publicacion = '';
+            if ($publicar) {
+                $resWeb = blens_publicar_entrega_web($pdo, $nid, [
+                    'cliente_id' => $c, 'proyecto_id' => $webPj, 'titulo' => $t, 'descripcion' => $d,
+                    'categoria' => $webCat, 'mostrar_cliente' => $webCli, 'visible' => $webVisible,
+                ]);
+                $publicacion = ' Publicada en la web' . ($resWeb['nuevo'] ? ' con un proyecto nuevo' : '') . '.';
+            } elseif ($old && !empty($old['publicado_web'])) {
+                blens_despublicar_entrega_web($pdo, $nid);
+                $publicacion = ' Publicación web desactivada.';
+            }
+            $pushTxt = '';
             if (!$id) {
                 $pdo->prepare('UPDATE clientes SET etapa_proyecto=GREATEST(etapa_proyecto,4) WHERE id=?')->execute([$c]);
-                blens_push_notify($pdo, 'cliente', $c, [
+                $push = blens_push_notify_detailed($pdo, 'cliente', $c, [
                     'title' => 'Nuevo material en blens.ar',
                     'body' => $t,
                     'url' => '/portal/',
                     'tag' => 'blens-entrega-' . $nid,
                 ]);
+                if ($push['intentados']) $pushTxt = ' Avisos push: ' . $push['enviados'] . '/' . $push['intentados'] . ' enviados.';
             }
             $crearTrabajo = isset($_POST['crear_trabajo']);
             if ($crearTrabajo) registrar_trabajo_entrega($pdo, $c, $nid, $t, $tipoEn, $_POST);
             if (!$id && $tipoEn === 'video' && ($d === '' || $tituloAuto) && trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== '') {
                 try { lanzar_worker($nid, 'entrega'); } catch (Throwable $x2) { error_log('[blens clientes] ' . $x2->getMessage()); }
             }
-            $_SESSION['flash'] = 'Entrega guardada.' . ($crearTrabajo ? ' Trabajo registrado para cobro.' : ''); header("Location: clientes.php?c=$c" . ($id ? '' : "&avisar=$nid")); exit;
+            $_SESSION['flash'] = 'Entrega guardada.' . $publicacion . $pushTxt . ($crearTrabajo ? ' Trabajo registrado para cobro.' : ''); header("Location: clientes.php?c=$c" . ($id ? '' : "&avisar=$nid")); exit;
         }
         if ($a === 'ia_entrega') {
             $eid = (int)($_POST['id'] ?? 0);
@@ -249,7 +265,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $nid = (int)$pdo->lastInsertId();
                 if (isset($_POST['crear_trabajo'])) registrar_trabajo_entrega($pdo, $c, $nid, $titulo, 'video', $_POST);
                 @file_put_contents(COLA . '/drive_' . $vid . '.name', $titulo);
-                blens_push_notify($pdo, 'cliente', $c, [
+                blens_push_notify_detailed($pdo, 'cliente', $c, [
                     'title' => 'Nuevo material en blens.ar',
                     'body' => $titulo,
                     'url' => '/portal/',
@@ -295,7 +311,7 @@ else {
         $s = $pdo->prepare('SELECT * FROM entregas WHERE cliente_id=? ORDER BY id DESC'); $s->execute([$cli['id']]); $ents = $s->fetchAll();
         $entsList = $ft === 'todos' ? $ents : array_values(array_filter($ents, fn($r) => $tipoDe($r) === $ft));
         $sl = $pdo->prepare("SELECT * FROM cliente_locaciones WHERE cliente_id=? ORDER BY FIELD(estado,'pendiente','agendado','grabado'), id DESC"); $sl->execute([$cli['id']]); $locs = $sl->fetchAll();
-        if ($ve !== null) { $ent = ['id' => 0, 'tipo' => 'video', 'titulo' => '', 'descripcion' => '', 'link_hd' => '', 'link_4k' => '', 'preview' => '', 'poster' => '', 'proyecto_id' => null];
+        if ($ve !== null) { $ent = ['id' => 0, 'tipo' => 'video', 'titulo' => '', 'descripcion' => '', 'link_hd' => '', 'link_4k' => '', 'preview' => '', 'poster' => '', 'proyecto_id' => null, 'publicado_web' => 0, 'categoria' => 'reels'];
             foreach ($ents as $r) if ((int)$r['id'] === $ve) $ent = $r; }
     }
 }
@@ -355,6 +371,20 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
 <p class="mut full only-fotos">Pegá el link de la carpeta o de un archivo del pack. El cliente verá una tarjeta de galería y descargará las fotos directo desde Drive. No se sube nada al servidor ni se procesa video.</p>
 <?php $ps = $pdo->prepare("SELECT id,titulo,cliente FROM proyectos WHERE categoria <> 'showreel' AND (cliente_id = ? OR cliente_id IS NULL) ORDER BY id DESC"); $ps->execute([(int)$cli['id']]); ?>
 <label class="full only-video"><span class="lbl">Proyecto de la web relacionado <span class="opt">(opcional)</span> (si no subís un video de vista previa, se usa el de ese proyecto; además evita que aparezca duplicado en Cobros)</span><select name="proyecto_id"><option value="0">— Ninguno —</option><?php foreach ($ps as $x): ?><option value="<?= (int)$x['id'] ?>"<?= (int)($ent['proyecto_id'] ?? 0) === (int)$x['id'] ? ' selected' : '' ?>><?= $e($x['titulo'] . ($x['cliente'] ? ' · ' . $x['cliente'] : '')) ?></option><?php endforeach; ?></select></label>
+<?php
+$webCats = ['reels' => 'Reels', 'cobertura' => 'Cobertura', 'estrategia' => 'Estrategia'];
+$webCatAct = in_array((string)($ent['categoria'] ?? ''), array_keys($webCats), true) ? (string)$ent['categoria'] : 'reels';
+$webVisibleAct = 1; $webCliAct = 1;
+if (!empty($ent['proyecto_id'])) { $qw = $pdo->prepare('SELECT visible,mostrar_cliente FROM proyectos WHERE id=?'); $qw->execute([(int)$ent['proyecto_id']]); if ($rw = $qw->fetch()) { $webVisibleAct = (int)$rw['visible']; $webCliAct = (int)$rw['mostrar_cliente']; } }
+$ps->execute([(int)$cli['id']]);
+?>
+<label class="full chk"><input type="checkbox" name="publicar_web"<?= !empty($ent['publicado_web']) ? ' checked' : '' ?>> Publicar esta entrega en la web y vincularla a un proyecto público</label>
+<label class="full"><span class="lbl">Proyecto público <span class="opt">(opcional)</span> (si lo dejás vacío, se crea uno nuevo con esta entrega)</span><select name="web_proyecto_id"><option value="0">— Crear proyecto nuevo —</option><?php foreach ($ps as $x): ?><option value="<?= (int)$x['id'] ?>"<?= (int)($ent['proyecto_id'] ?? 0) === (int)$x['id'] ? ' selected' : '' ?>><?= $e($x['titulo'] . ($x['cliente'] ? ' · ' . $x['cliente'] : '')) ?></option><?php endforeach; ?></select></label>
+<div class="full fin-opts">
+  <label><span class="lbl">Categoría en la web</span><select name="web_categoria"><?php foreach ($webCats as $k => $n): ?><option value="<?= $e($k) ?>"<?= $k === $webCatAct ? ' selected' : '' ?>><?= $e($n) ?></option><?php endforeach; ?></select></label>
+  <label class="chk"><input type="checkbox" name="web_visible"<?= $webVisibleAct ? ' checked' : '' ?>>Visible en la web</label>
+  <label class="chk"><input type="checkbox" name="mostrar_cliente"<?= $webCliAct ? ' checked' : '' ?>>Mostrar el nombre del cliente en la web</label>
+</div>
 <label class="full only-video"><span class="lbl">Video para la vista previa <span class="opt">(opcional)</span> (si no subís nada, el portal muestra el video desde el link de Drive) <?= $ent['preview'] ? '· ya cargado; dejá vacío para mantenerlo' : '' ?></span><input type="file" name="mp4" accept="video/*"></label>
 <p class="mut full only-video">Se convierte solo a 720p y solo lo ve este cliente al entrar con su usuario. Puede tardar unos minutos: no cierres la página.</p>
 <label class="full only-video"><span class="lbl">Portada propia <span class="opt">(opcional)</span></span><input type="file" name="poster" accept="image/jpeg,image/png,image/webp"></label>
@@ -446,7 +476,7 @@ $waLinks = [
   <div class="lf-filtros"><a class="lf-pill<?= $ft === 'todos' ? ' on' : '' ?>" href="?c=<?= (int)$cli['id'] ?>&ft=todos#tab-resumen">Todos <b><?= count($ents) ?></b></a><a class="lf-pill<?= $ft === 'video' ? ' on' : '' ?>" href="?c=<?= (int)$cli['id'] ?>&ft=video#tab-resumen">Videos <b><?= $nVidEnt ?></b></a><a class="lf-pill<?= $ft === 'fotos' ? ' on' : '' ?>" href="?c=<?= (int)$cli['id'] ?>&ft=fotos#tab-resumen">Fotos <b><?= $nFotEnt ?></b></a></div>
   <table class="cards ent-table"><tr><th>Tipo</th><th>Título</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr>
   <?php foreach ($entsList as $r): $est = (string)($r['estado_cliente'] ?? 'pendiente'); $com = trim((string)($r['comentario_cliente'] ?? '')); $ver = max(1, (int)($r['version_num'] ?? 1)); $txtEnt = 'Hola ' . $waNombre . ', te comparto la entrega «' . trim((string)$r['titulo']) . '» (v' . $ver . ') en tu portal de blens.ar: ' . wa_link_portal(); ?>
-  <tr><td data-label="Tipo"><span class="b tipo-<?= $tipoDe($r) ?>"><?= $tipoDe($r) === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span></td><td data-label="Título"><?= $e($r['titulo']) ?> <span class="ent-ver">v<?= $ver ?></span></td><td class="mut" data-label="Fecha"><?= $e(substr((string)$r['creado'], 0, 10)) ?></td>
+  <tr><td data-label="Tipo"><span class="b tipo-<?= $tipoDe($r) ?>"><?= $tipoDe($r) === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span></td><td data-label="Título"><?= $e($r['titulo']) ?> <span class="ent-ver">v<?= $ver ?></span><?php if (!empty($r['publicado_web'])): ?><span class="badge ok">Web</span><?php endif; ?></td><td class="mut" data-label="Fecha"><?= $e(substr((string)$r['creado'], 0, 10)) ?></td>
   <td data-label="Estado"><span class="c360-est"><?php if ($est === 'ajuste'): ?><span class="b adj" title="<?= $e($com) ?>">Pidió ajuste</span><?php elseif ($est === 'aprobado'): ?><span class="badge ok">Aprobado</span><?php else: ?><span class="badge pend">Pendiente</span><?php endif; ?></span>
     <?php if ($est === 'ajuste'): ?><?php if ($com !== ''): ?><div class="mut ent-com" title="<?= $e($com) ?>"><?= $e(mb_substr($com, 0, 55)) ?></div><?php endif; ?><form method="post" class="resolver-f"><input type="hidden" name="accion" value="resolver_ajuste"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="g">Marcar resuelto</button></form><?php endif; ?></td>
     <td data-label="Acciones"><div class="ent-actions"><button type="button" class="g" data-copiar="<?= $e($txtEnt) ?>">Copiar mensaje WhatsApp</button><a class="btn g" href="?c=<?= (int)$cli['id'] ?>&e=<?= (int)$r['id'] ?>">Editar</a>
@@ -512,4 +542,4 @@ $waLinks = [
 <?php else: ?>
 <?= $formCliente(false) ?>
 <?php endif; ?>
-<?php endif; ?><script src="admin.js?v=33"></script><script src="../assets/push.js?v=7"></script></body></html>
+<?php endif; ?><script src="admin.js?v=34"></script><script src="../assets/push.js?v=8"></script></body></html>

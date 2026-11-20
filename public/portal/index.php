@@ -237,12 +237,20 @@ $locForm = function (array $r, bool $nueva) use ($e, $T): string {
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" media="print" data-fonts>
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap"></noscript>
-<link rel="stylesheet" href="../styles.css?v=23"><link rel="stylesheet" href="portal.css?v=19"></head><body>
+<link rel="stylesheet" href="../styles.css?v=24"><link rel="stylesheet" href="portal.css?v=20"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol><symbol id="photos" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m4 17 5-5 3.5 3.5L16 12l4 4"/></symbol></svg>
 <header class="ph"><a class="brand" href="../" aria-label="blens.ar, inicio"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
 <?php if ($cli): ?><div class="phr"><span class="mut">Portal de clientes</span><?= $vista ? '<span class="perr">Vista de administrador</span>' : '' ?><button type="button" class="push-btn" data-push data-push-tipo="cliente" data-push-token="<?= $T ?>" data-push-key="<?= $e(blens_vapid_public()) ?>" data-push-off="Activar notificaciones en este dispositivo" data-push-on="Notificaciones activadas ✓" aria-pressed="false">Activar notificaciones en este dispositivo</button><form method="post"><input type="hidden" name="a" value="salir"><input type="hidden" name="t" value="<?= $T ?>"><button class="out">Salir</button></form></div>
 <?php else: ?><a class="link" href="../">Volver a la web</a><?php endif; ?></header>
 <?php if ($pflash): ?><p class="pflash" role="status" aria-live="polite"><?= $e($pflash) ?></p><?php endif; ?>
+<?php if ($cli): ?>
+<section class="pnotif" data-push-card role="status" aria-live="polite" hidden>
+  <span class="pnotif-ico" aria-hidden="true"></span>
+  <div class="pnotif-copy"><b>Enterate apenas subamos material</b><span data-push-card-msg>Activá las notificaciones para recibir un aviso en este dispositivo cuando haya una nueva entrega o una respuesta.</span></div>
+  <button type="button" class="btn sm" data-push data-push-tipo="cliente" data-push-token="<?= $T ?>" data-push-key="<?= $e(blens_vapid_public()) ?>" data-push-off="Activar notificaciones" data-push-on="Activado ✓">Activar notificaciones</button>
+  <button type="button" class="pnotif-close" data-push-card-close aria-label="Cerrar aviso de notificaciones">×</button>
+</section>
+<?php endif; ?>
 <?php if ($cli && $locOK): ?>
 <nav class="loc-tabs" aria-label="Secciones del portal">
   <a class="loc-tab<?= $tabLoc ? '' : ' on' ?>" href="./"<?= $tabLoc ? '' : ' aria-current="page"' ?>>Mis entregas</a>
@@ -341,6 +349,14 @@ $esView = $ft === 'todos' ? $es : array_values(array_filter($es, fn($r) => $tipo
     </details>
   </details>
 </section>
+<?php if ($cli): ?>
+<section class="pappcard" data-pwa-card role="status" aria-live="polite" hidden>
+  <span class="papp-ico" aria-hidden="true"></span>
+  <div class="papp-copy"><b>Tu portal, también como app</b><span data-pwa-msg>Instalá el portal en tu celular para entrar más rápido.</span></div>
+  <button type="button" class="btn sm" data-pwa-install hidden>Instalar app</button>
+  <button type="button" class="papp-close" data-pwa-close aria-label="Cerrar aviso de instalación">×</button>
+</section>
+<?php endif; ?>
 <main class="pt"><?= $cli['logo'] ? '<img class="clogo" loading="lazy" src="../media/logos/' . $e($cli['logo']) . '" alt="" width="180" height="80">' : '' ?><h1>Hola, <?= $e(explode(' ', trim($cli['nombre']))[0]) ?></h1><p class="sub"><?= $cli['empresa'] ? $e($cli['empresa']) . ' · ' : '' ?>Tus entregas (<?= count($es) ?>)</p>
 <div class="pf-filtros"><a class="pf-pill<?= $ft === 'todos' ? ' on' : '' ?>" href="./?ft=todos">Todos <b><?= count($es) ?></b></a><a class="pf-pill<?= $ft === 'video' ? ' on' : '' ?>" href="./?ft=video">Videos <b><?= $nVideos ?></b></a><a class="pf-pill<?= $ft === 'fotos' ? ' on' : '' ?>" href="./?ft=fotos">Fotos <b><?= $nFotos ?></b></a></div>
 <?php if (!$esView) echo '<p class="mut">' . ($es ? 'No hay entregas de este tipo.' : 'Todavía no hay entregas cargadas.') . '</p>'; ?>
@@ -350,4 +366,4 @@ $esView = $ft === 'todos' ? $es : array_values(array_filter($es, fn($r) => $tipo
 <?php endif; endif; endif; ?>
 <aside class="pwa-tip" data-pwa-tip hidden><span data-pwa-msg>Instalá el portal en tu celular para entrar más rápido.</span><button type="button" class="pwa-tip-btn" data-pwa-install hidden>Instalar app</button><button type="button" class="pwa-tip-close" data-pwa-close aria-label="Cerrar">×</button></aside>
 <footer class="foot"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span><span class="loc">Posadas, Misiones · Argentina</span><nav class="social"><a href="../">Web</a><a href="<?= $e($contacto) ?>">Contacto</a></nav><span class="mut">© 2026 blens.ar</span></footer>
-<script src="../assets/fonts.js?v=2" defer></script><script src="../assets/player.js?v=13" defer></script><script src="dfr.js?v=13" defer></script><script src="feedback.js?v=1" defer></script><script src="../assets/push.js?v=7" defer></script></body></html>
+<script src="../assets/fonts.js?v=2" defer></script><script src="../assets/player.js?v=13" defer></script><script src="dfr.js?v=14" defer></script><script src="feedback.js?v=1" defer></script><script src="../assets/push.js?v=8" defer></script></body></html>

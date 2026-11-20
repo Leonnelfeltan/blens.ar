@@ -4,15 +4,14 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-cache');
 require __DIR__ . '/../blens-config/bootstrap.php';
 try {
-    $db = blens_db();
+    $db = blens_db(); blens_migrar($db);
     try {
-        $rows = $db->query("SELECT id,titulo,cliente,categoria,descripcion,video_mp4,video_webm,video_1080,video_480,poster,ancho FROM proyectos WHERE visible=1 AND (estado='listo' OR video_mp4 IS NOT NULL) ORDER BY orden ASC, id DESC")->fetchAll();
+        $rows = $db->query("SELECT p.id,p.titulo,p.cliente,p.categoria,p.descripcion,p.video_mp4,p.video_webm,p.video_1080,p.video_480,p.poster,p.ancho,p.cliente_id,p.entrega_id,p.mostrar_cliente,e.titulo AS entrega_titulo,e.descripcion AS entrega_descripcion,e.tipo AS entrega_tipo,e.link_hd AS entrega_link,e.link_4k AS entrega_link4,e.creado AS entrega_creado FROM proyectos p LEFT JOIN entregas e ON e.id=p.entrega_id WHERE p.visible=1 AND (p.estado='listo' OR p.video_mp4 IS NOT NULL OR p.entrega_id IS NOT NULL) ORDER BY p.orden ASC, p.id DESC")->fetchAll();
     } catch (Throwable $x) {
-        // la base todavía no tiene las columnas nuevas: se usa la consulta anterior
         $rows = $db->query('SELECT id,titulo,cliente,categoria,descripcion,video_mp4,video_webm,poster,ancho FROM proyectos WHERE visible=1 ORDER BY orden ASC, id DESC')->fetchAll();
     }
     $show = null; $list = [];
-    foreach ($rows as $r) { if ($r['categoria'] === 'showreel') { $show ??= $r; } else { $list[] = $r; } }
+    foreach ($rows as $r) { if (($r['categoria'] ?? '') === 'showreel') { $show ??= $r; } else { $list[] = $r; } }
     if ($show) $show['poster'] = blens_webp((string)($show['poster'] ?? ''));
     $base = ['reels' => 'Reels', 'cobertura' => 'Cobertura', 'estrategia' => 'Estrategia'];
     $cats = $base;
@@ -22,6 +21,13 @@ try {
         if (!isset($cats[$c])) $cats[$c] = ucfirst(str_replace('-', ' ', $c));
         $r['poster'] = blens_webp((string)($r['poster'] ?? ''));
         if (!empty($r['video_480'])) $r['video_mp4'] = $r['video_480'];
+        if (array_key_exists('mostrar_cliente', $r) && (int)$r['mostrar_cliente'] === 0) $r['cliente'] = '';
+        $link = (string)($r['entrega_link'] ?? '') ?: (string)($r['entrega_link4'] ?? '');
+        $did = $link !== '' ? blens_drive_id($link) : '';
+        if ($did !== '') {
+            $r['drive_id'] = $did;
+            if (!$r['poster']) $r['poster_remote'] = 'https://drive.google.com/thumbnail?id=' . $did . '&sz=w800';
+        }
     }
     unset($r);
     $cli = [];
