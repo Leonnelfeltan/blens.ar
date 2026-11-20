@@ -15,7 +15,7 @@ const waLink=(num,msg=WA_MSG)=>/^\d{8,15}$/.test(num||'')?'https://wa.me/'+num+'
 let WA_NUM='';
 
 /* ---------- Lazy loading de video ---------- */
-const loadVideo=v=>{ if(v.dataset.ready) return; $$('source',v).forEach(s=>{ const u=s.dataset.src; if(u){ s.src=u; delete s.dataset.src; } }); v.load(); v.dataset.ready=1; if(v.hasAttribute('data-autoplay')&&!RM) v.play().catch(()=>{}); };
+const loadVideo=v=>{ if(v.dataset.ready) return; $$('source',v).forEach(s=>{ const u=s.dataset.src; if(u){ s.src=u; delete s.dataset.src; } }); v.load(); v.dataset.ready=1; };
 const io=new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting){ if(!e.target.hasAttribute('data-hover')) loadVideo(e.target); io.unobserve(e.target);} }),{rootMargin:'300px'});
 const watch=root=>$$('video[data-lazy]',root).forEach(v=>io.observe(v));
 watch(document);
@@ -96,12 +96,12 @@ if(track&&pvB){
 
 /* ---------- Contenido editable desde el panel (api.php) ---------- */
 const addSource=(v,u,lazy=true)=>{ if(!u) return null; const s=document.createElement('source'); s.type='video/mp4'; if(lazy) s.dataset.src=u; else s.src=u; v.appendChild(s); return s; };
-const srcCard=p=>p.video_480||'';                                          // tarjetas: siempre la versión liviana
-const srcShow=p=>p.video_480||p.video_mp4||'';                              // Nosotros: video liviano, nunca 1080p
+const srcCard=p=>p.video_mp4||'';
+const srcShow=p=>p.video_mp4||'';
 const hydrateSources=root=>$$('video[data-video]',root).forEach(v=>{ const u=v.dataset.video; if(u) addSource(v,u); delete v.dataset.video; });
 let CAT={reels:'Reels',cobertura:'Cobertura',estrategia:'Estrategia'};
 const catLabel=c=>CAT[c]||c||'';
-const cardHTML=p=>{ const vid=p.video_480||''; const cli=p.cliente?String(p.cliente):''; const poster=p.poster||p.poster_remote||'';
+const cardHTML=p=>{ const vid=p.video_mp4||''; const cli=p.cliente?String(p.cliente):''; const poster=p.poster||p.poster_remote||'';
   const media=poster
     ? `<img loading="lazy" src="${esc(poster)}" alt="${esc(p.titulo)}" width="800" height="500"${p.poster_remote?' referrerpolicy="no-referrer"':''}><video class="hv" muted loop playsinline preload="none" hidden></video>`
     : `<video class="hv" muted loop playsinline preload="none" data-lazy data-hover data-video="${esc(srcCard(p))}"></video>`;
@@ -113,32 +113,19 @@ function renderFilters(d){
   const keys=[...new Set([...base,...found])];
   box.innerHTML=['all',...keys].map(k=>`<button${k==='all'?' class="on"':''} data-f="${esc(k)}">${esc(k==='all'?'Todos':catLabel(k))}</button>`).join('');
 }
-function renderHeroFeature(d){
-  const box=$('#hero-feature'); if(!box) return;
-  const s=d.showreel;
-  const p=s&&(s.video_480||s.video_mp4)?s:(d.proyectos||[]).find(x=>x.video_480||x.video_mp4);
-  if(!p){ box.hidden=true; return; }
-  const isSr=p===s, src=srcShow(p);
-  const href=isSr?'#nosotros':(p.id?`proyecto.php?id=${p.id}`:'#proyectos');
-  const title=isSr?'Conocé nuestro trabajo':p.titulo;
-  const meta=isSr?(p.cliente||'Showreel'):(p.cliente||catLabel(p.categoria));
-  box.innerHTML=`<a class="hf-link" href="${esc(href)}"><video muted loop playsinline preload="none" data-lazy data-autoplay data-video="${esc(src)}"${p.poster?` poster="${esc(p.poster)}"`:''}></video><span class="hf-body"><span class="hf-k">${isSr?'Showreel':'Destacado'}</span><span class="hf-t">${esc(title||'')}</span>${meta?`<span class="hf-m">${esc(meta)}</span>`:''}</span><span class="hf-play" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M7 4v16l13-8z" fill="currentColor"/></svg></span></a>`;
-  box.hidden=false;
-  hydrateSources(box);
-  watch(box);
-}
 function render(d){
   if(d.categorias) CAT={...CAT,...d.categorias};
   const g=$('#grid');
   g.innerHTML=d.proyectos.length?d.proyectos.map(cardHTML).join(''):'<p class="mut empty">Pronto sumaremos nuevos casos.</p>';
   hydrateSources(g);
-  renderFilters(d); renderHeroFeature(d);
+  renderFilters(d);
   bindCards(); watch(g); revealCards(); navUpdate();
   syncCat(); setChip(); applyFilter(false);
   const s=d.showreel, ph=$('.about .phone');
-  if(s&&(s.video_480||s.video_mp4)&&$('#sr')){ const V=$('#sr'); V.replaceChildren(); delete V.dataset.ready; addSource(V,srcShow(s)); V.poster=s.poster||''; io.observe(V); if(ph) ph.hidden=false; }
+  if(s&&s.video_mp4&&$('#sr')){ const V=$('#sr'); V.replaceChildren(); delete V.dataset.ready; addSource(V,srcShow(s)); V.poster=s.poster||''; io.observe(V); if(ph) ph.hidden=false; }
   else if(ph) ph.hidden=true;
-  if(d.clientes&&d.clientes.length){ $('#logos').innerHTML=d.clientes.map(c=>`<button class="lg" type="button" data-client="${esc(c.nombre)}" title="Ver proyectos de ${esc(c.nombre)}" aria-label="Ver proyectos de ${esc(c.nombre)}"><img loading="lazy" src="media/logos/${esc(c.logo)}" alt="${esc(c.nombre)}" width="180" height="80"></button>`).join(''); $('#clientes').hidden=false; }
+  const logos=(d.clientes||[]).filter(c=>c.logo);
+  if(logos.length){ $('#logos').innerHTML=logos.map(c=>`<button class="lg" type="button" data-client="${esc(c.nombre)}" title="Ver proyectos de ${esc(c.nombre)}" aria-label="Ver proyectos de ${esc(c.nombre)}"><img loading="lazy" src="${esc(c.logo)}" alt="${esc(c.nombre)}" width="180" height="80"></button>`).join(''); $('#clientes').hidden=false; }
   const waNum=/^\d{8,15}$/.test(d.wa||'')?d.wa:'';
   WA_NUM=waNum;
   $$('[data-wa]').forEach(a=>{ a.href=waLink(waNum); });

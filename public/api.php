@@ -10,9 +10,16 @@ try {
     } catch (Throwable $x) {
         $rows = $db->query('SELECT id,titulo,cliente,categoria,descripcion,video_mp4,video_webm,poster,ancho FROM proyectos WHERE visible=1 ORDER BY orden ASC, id DESC')->fetchAll();
     }
+    $mejor = function (array $r): string {
+        return (string)($r['video_1080'] ?? '') ?: (string)($r['video_mp4'] ?? '') ?: (string)($r['video_480'] ?? '');
+    };
     $show = null; $list = [];
     foreach ($rows as $r) { if (($r['categoria'] ?? '') === 'showreel') { $show ??= $r; } else { $list[] = $r; } }
-    if ($show) $show['poster'] = blens_webp((string)($show['poster'] ?? ''));
+    if ($show) {
+        $show['poster'] = blens_webp((string)($show['poster'] ?? ''));
+        $show['video_mp4'] = $mejor($show);
+        unset($show['video_1080'], $show['video_480'], $show['video_webm']);
+    }
     $base = ['reels' => 'Reels', 'cobertura' => 'Cobertura', 'estrategia' => 'Estrategia'];
     $cats = $base;
     foreach ($list as &$r) {
@@ -20,7 +27,8 @@ try {
         if ($c === '' || $c === 'auto') $r['categoria'] = $c = 'reels';
         if (!isset($cats[$c])) $cats[$c] = ucfirst(str_replace('-', ' ', $c));
         $r['poster'] = blens_webp((string)($r['poster'] ?? ''));
-        if (!empty($r['video_480'])) $r['video_mp4'] = $r['video_480'];
+        $r['video_mp4'] = $mejor($r);
+        unset($r['video_1080'], $r['video_480'], $r['video_webm']);
         if (array_key_exists('mostrar_cliente', $r) && (int)$r['mostrar_cliente'] === 0) $r['cliente'] = '';
         $link = (string)($r['entrega_link'] ?? '') ?: (string)($r['entrega_link4'] ?? '');
         $did = $link !== '' ? blens_drive_id($link) : '';
@@ -33,7 +41,12 @@ try {
     $cli = [];
     try { $cli = $db->query("SELECT COALESCE(NULLIF(empresa,''),nombre) AS nombre, logo FROM clientes WHERE logo IS NOT NULL AND logo<>'' AND COALESCE(logo_web,1)=1 ORDER BY activo DESC, empresa, nombre")->fetchAll(); }
     catch (Throwable $x) { try { $cli = $db->query("SELECT COALESCE(NULLIF(empresa,''),nombre) AS nombre, logo FROM clientes WHERE logo IS NOT NULL AND logo<>'' ORDER BY activo DESC, empresa, nombre")->fetchAll(); } catch (Throwable $x2) { } }
-    foreach ($cli as &$c) { $c['logo'] = blens_webp((string)($c['logo'] ?? '')); }
+    foreach ($cli as &$c) {
+        $logo = trim((string)($c['logo'] ?? ''));
+        if ($logo === '' || preg_match('~^https?://~i', $logo)) { $c['logo'] = ''; continue; }
+        $rel = blens_webp('media/logos/' . basename(str_replace('\\', '/', $logo)));
+        $c['logo'] = is_file(__DIR__ . '/' . $rel) ? $rel : '';
+    }
     unset($c);
     $wa = blens_wa_numero();
     echo json_encode(['showreel' => $show, 'proyectos' => $list, 'clientes' => $cli, 'categorias' => $cats, 'wa' => $wa], JSON_UNESCAPED_UNICODE);

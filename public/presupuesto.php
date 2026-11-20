@@ -11,7 +11,7 @@ $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 $token = trim((string)($_GET['t'] ?? ''));
 if (!preg_match('/^[a-f0-9]{64}$/', $token)) {
     http_response_code(404);
-    ?><!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>Presupuesto no encontrado | blens.ar</title><link rel="icon" href="/assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/styles.css?v=24"></head><body><main class="err404"><h1>Presupuesto no encontrado.</h1><p class="lead">El link no es válido o venció.</p><p><a class="btn" href="/">Ir a blens.ar</a></p></main></body></html><?php
+    ?><!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>Presupuesto no encontrado | blens.ar</title><link rel="icon" href="/assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/styles.css?v=25"></head><body><main class="err404"><h1>Presupuesto no encontrado.</h1><p class="lead">El link no es válido o venció.</p><p><a class="btn" href="/">Ir a blens.ar</a></p></main></body></html><?php
     exit;
 }
 $s = $pdo->prepare('SELECT * FROM presupuestos WHERE token=?');
@@ -19,7 +19,7 @@ $s->execute([$token]);
 $p = $s->fetch();
 if (!$p) {
     http_response_code(404);
-    ?><!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>Presupuesto no encontrado | blens.ar</title><link rel="icon" href="/assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/styles.css?v=24"></head><body><main class="err404"><h1>Presupuesto no encontrado.</h1><p class="lead">El link no es válido o venció.</p><p><a class="btn" href="/">Ir a blens.ar</a></p></main></body></html><?php
+    ?><!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>Presupuesto no encontrado | blens.ar</title><link rel="icon" href="/assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/styles.css?v=25"></head><body><main class="err404"><h1>Presupuesto no encontrado.</h1><p class="lead">El link no es válido o venció.</p><p><a class="btn" href="/">Ir a blens.ar</a></p></main></body></html><?php
     exit;
 }
 $items = presu_items((string)$p['items_json']);
@@ -73,7 +73,7 @@ if (!$aceptado) {
 <meta name="robots" content="noindex,nofollow">
 <title><?= $e($numero) ?> | Presupuesto blens.ar</title>
 <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/styles.css?v=24">
+<link rel="stylesheet" href="/styles.css?v=25">
 </head>
 <body class="pub-presu">
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
