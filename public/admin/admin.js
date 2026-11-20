@@ -389,6 +389,33 @@ if (presuForm) {
     const el = presuForm.querySelector('[data-presu-total]');
     if (el) el.textContent = money(t);
   };
+  const fillRow = (row, item) => {
+    if (!row) return;
+    const set = (selector, value) => { const input = row.querySelector(selector); if (input) input.value = String(value ?? ''); };
+    set('input[name*="[d]"]', item.d);
+    set('input[name*="[c]"]', item.c);
+    set('input[name*="[p]"]', item.p);
+  };
+  const plantillasBox = presuForm.querySelector('[data-presu-templates]');
+  let plantillasPresu = {};
+  try { plantillasPresu = JSON.parse(plantillasBox?.dataset.presuTemplates || '{}'); } catch (error) { plantillasPresu = {}; }
+  document.querySelectorAll('[data-presu-template]').forEach(button => {
+    button.addEventListener('click', () => {
+      const plantilla = plantillasPresu[button.dataset.presuTemplate];
+      if (!plantilla || !tpl) return;
+      const filas = Array.isArray(plantilla.items) ? plantilla.items : [];
+      wrap.innerHTML = '';
+      filas.forEach(item => {
+        wrap.insertAdjacentHTML('beforeend', tpl.innerHTML.replace(/__i__/g, String(next++)));
+        fillRow(wrap.lastElementChild, item);
+      });
+      const unidad = presuForm.querySelector('select[name="unidad_negocio"]');
+      if (unidad) unidad.value = plantilla.unidad_negocio || 'audiovisual';
+      const condiciones = presuForm.querySelector('textarea[name="condiciones"]');
+      if (condiciones) condiciones.value = plantilla.condiciones || '';
+      total();
+    });
+  });
   if (add) add.addEventListener('click', () => {
     if (!tpl) return;
     wrap.insertAdjacentHTML('beforeend', tpl.innerHTML.replace(/__i__/g, String(next++)));

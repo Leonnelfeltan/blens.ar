@@ -349,6 +349,24 @@ function blens_crear_tabla(PDO $p, string $tabla, string $ddl): void {
     $p->exec($ddl);
     blens_tabla_invalidate($tabla); blens_col_invalidate($tabla);
 }
+function blens_col_nullable(PDO $p, string $tabla, string $col): string {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $tabla) || !preg_match('/^[A-Za-z0-9_]+$/', $col)) return '';
+    $s = $p->prepare('SELECT IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?');
+    $s->execute([$tabla, $col]);
+    return strtoupper(trim((string)$s->fetchColumn()));
+}
+function blens_modificar_col(PDO $p, string $tabla, string $col, string $def, ?string $nullable = null): void {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $tabla) || !preg_match('/^[A-Za-z0-9_]+$/', $col)) return;
+    $cols = blens_columnas($p, $tabla);
+    $key = strtolower($col);
+    if (!isset($cols[$key])) return;
+    $base = strtolower(trim(explode(' ', trim($def))[0]));
+    $cambia = strtolower(trim((string)$cols[$key])) !== $base;
+    if ($nullable !== null && blens_col_nullable($p, $tabla, $col) !== strtoupper($nullable)) $cambia = true;
+    if (!$cambia) return;
+    $p->exec("ALTER TABLE `$tabla` MODIFY COLUMN `$col` $def");
+    blens_col_invalidate($tabla);
+}
 function blens_migrar(?PDO $p = null): void {
     static $intentado = false; if ($intentado) return; $intentado = true;
     $p ??= blens_db();
@@ -424,20 +442,51 @@ function blens_migrar(?PDO $p = null): void {
         blens_crear_tabla($p, 'presupuestos', "CREATE TABLE IF NOT EXISTS presupuestos (
             id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
             numero VARCHAR(20) NOT NULL DEFAULT '',
+            token VARCHAR(64) NULL,
             cliente_nombre VARCHAR(120) NOT NULL,
             empresa VARCHAR(120) NOT NULL DEFAULT '',
             telefono VARCHAR(30) NOT NULL DEFAULT '',
-            items_json TEXT NOT NULL,
+            unidad_negocio VARCHAR(30) NOT NULL DEFAULT 'audiovisual',
+            items_json TEXT NULL,
             total DECIMAL(12,2) NOT NULL DEFAULT 0,
             validez_dias INT NOT NULL DEFAULT 15,
             notas TEXT NULL,
-            estado VARCHAR(20) NOT NULL DEFAULT 'enviado',
+            condiciones TEXT NULL,
+            estado ENUM('borrador','enviado','aceptado','rechazado') NOT NULL DEFAULT 'enviado',
+            aceptado_en DATETIME NULL,
             creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             trabajo_id INT UNSIGNED NULL,
+            UNIQUE KEY uq_presu_token (token),
             INDEX p_numero (numero),
             INDEX p_estado (estado),
             INDEX p_trabajo (trabajo_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        if (blens_tabla_existe($p, 'presupuestos')) {
+            foreach (['token' => 'VARCHAR(64) NULL', 'unidad_negocio' => "VARCHAR(30) NOT NULL DEFAULT 'audiovisual'", 'condiciones' => 'TEXT NULL', 'aceptado_en' => 'DATETIME NULL'] as $col => $def) blens_agregar_col($p, 'presupuestos', $col, $def);
+            $colsP = blens_columnas($p, 'presupuestos');
+            if (isset($colsP['items_json'])) blens_modificar_col($p, 'presupuestos', 'items_json', 'TEXT NULL', 'YES');
+            $estadoOk = isset($colsP['estado']) && stripos($colsP['estado'], 'enum(') !== false && stripos($colsP['estado'], "'borrador'") !== false && stripos($colsP['estado'], "'enviado'") !== false && stripos($colsP['estado'], "'aceptado'") !== false && stripos($colsP['estado'], "'rechazado'") !== false;
+            if (!$estadoOk) {
+                $p->exec("UPDATE presupuestos SET estado='enviado' WHERE estado NOT IN ('borrador','enviado','aceptado','rechazado')");
+                $p->exec("ALTER TABLE presupuestos MODIFY COLUMN estado ENUM('borrador','enviado','aceptado','rechazado') NOT NULL DEFAULT 'enviado'");
+                blens_col_invalidate('presupuestos');
+            }
+            $sinToken = $p->query("SELECT id FROM presupuestos WHERE token IS NULL OR token=''")->fetchAll();
+            $updToken = $p->prepare("UPDATE presupuestos SET token=? WHERE id=? AND (token IS NULL OR token='')");
+            foreach ($sinToken as $row) {
+                for ($i = 0; $i < 12; $i++) {
+                    try {
+                        $updToken->execute([bin2hex(random_bytes(32)), (int)$row['id']]);
+                        if ($updToken->rowCount() > 0) break;
+                    } catch (PDOException $x) { if ($i === 11) throw $x; }
+                }
+            }
+            $idx = $p->prepare("SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='presupuestos' AND COLUMN_NAME='token' AND NON_UNIQUE=0 AND SEQ_IN_INDEX=1");
+            $idx->execute();
+            if ((int)$idx->fetchColumn() === 0) $p->exec('ALTER TABLE presupuestos ADD UNIQUE KEY uq_presu_token (token)');
+            $p->exec("UPDATE presupuestos SET unidad_negocio='audiovisual' WHERE unidad_negocio IS NULL OR unidad_negocio=''");
+            $p->exec("UPDATE presupuestos SET aceptado_en=creado_en WHERE estado='aceptado' AND aceptado_en IS NULL");
+        }
         blens_crear_tabla($p, 'push_subscriptions', "CREATE TABLE IF NOT EXISTS push_subscriptions (
             id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
             tipo ENUM('admin','cliente') NOT NULL,
@@ -505,6 +554,7 @@ function blens_db(): PDO {
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
 }
 require_once __DIR__ . '/push.php';
+require_once __DIR__ . '/presupuestos.php';
 
 function locaciones_estados(): array {
     return ['pendiente' => 'Pendiente', 'agendado' => 'Agendado', 'grabado' => 'Grabado'];

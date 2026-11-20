@@ -9,50 +9,6 @@ $pdo = blens_db(); $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-
 $_SESSION['t'] ??= bin2hex(random_bytes(16)); $T = $e($_SESSION['t']);
 $ok = $_SESSION['flash'] ?? ''; unset($_SESSION['flash']); $err = '';
 
-function presu_cliente(PDO $pdo, array $p): array {
-    $tel = preg_replace('/\D+/', '', (string)($p['telefono'] ?? '')) ?? '';
-    $nombre = trim((string)($p['cliente_nombre'] ?? ''));
-    $empresa = trim((string)($p['empresa'] ?? ''));
-    $rows = $pdo->query('SELECT id,nombre,empresa,telefono FROM clientes')->fetchAll();
-    foreach ($rows as $r) {
-        $rt = preg_replace('/\D+/', '', (string)($r['telefono'] ?? '')) ?? '';
-        if ($tel !== '' && $rt === $tel) return ['id' => (int)$r['id'], 'creado' => false, 'usuario' => '', 'clave' => ''];
-    }
-    foreach ($rows as $r) {
-        if (mb_strtolower(trim((string)$r['nombre'])) === mb_strtolower($nombre)
-            && ($empresa === '' || mb_strtolower(trim((string)$r['empresa'])) === mb_strtolower($empresa))) return ['id' => (int)$r['id'], 'creado' => false, 'usuario' => '', 'clave' => ''];
-    }
-    $base = mb_strtolower($nombre, 'UTF-8');
-    $base = strtr($base, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u', 'ñ' => 'n']);
-    $base = trim(preg_replace('/[^a-z0-9]+/', '.', $base) ?? '', '.');
-    if ($base === '') $base = 'cliente';
-    $base = substr($base, 0, 40);
-    $usuario = $base; $i = 1; $q = $pdo->prepare('SELECT 1 FROM clientes WHERE usuario=?');
-    while (true) {
-        $q->execute([$usuario]);
-        if (!$q->fetchColumn()) break;
-        $usuario = $base . (++$i);
-        if (strlen($usuario) > 60) $usuario = substr($base, 0, 50) . $i;
-    }
-    $clave = blens_clave_nueva();
-    $pdo->prepare('INSERT INTO clientes (nombre,empresa,usuario,clave_hash,telefono,activo,cambiar_clave,clave_inicial_hasta) VALUES (?,?,?,?,?,1,1,DATE_ADD(NOW(), INTERVAL 7 DAY))')
-        ->execute([$nombre, $empresa, $usuario, password_hash($clave, PASSWORD_DEFAULT), trim((string)($p['telefono'] ?? ''))]);
-    return ['id' => (int)$pdo->lastInsertId(), 'creado' => true, 'usuario' => $usuario, 'clave' => $clave];
-}
-function presu_wa_tel(PDO $pdo, array $p): string {
-    $tel = preg_replace('/\D+/', '', (string)($p['telefono'] ?? '')) ?? '';
-    if ($tel !== '') return $tel;
-    $nombre = mb_strtolower(trim((string)($p['cliente_nombre'] ?? '')));
-    $empresa = mb_strtolower(trim((string)($p['empresa'] ?? '')));
-    if ($nombre === '') return '';
-    foreach ($pdo->query('SELECT nombre,empresa,telefono FROM clientes') as $r) {
-        if (mb_strtolower(trim((string)($r['nombre'] ?? ''))) !== $nombre) continue;
-        if ($empresa !== '' && mb_strtolower(trim((string)($r['empresa'] ?? ''))) !== $empresa) continue;
-        return (string)($r['telefono'] ?? '');
-    }
-    return '';
-}
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!hash_equals($_SESSION['t'], (string)($_POST['t'] ?? ''))) { http_response_code(400); exit('Sesión vencida. Recargá la página.'); }
     $a = (string)($_POST['a'] ?? '');
@@ -63,7 +19,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $telefono = mb_substr(trim((string)($_POST['telefono'] ?? '')), 0, 30);
             $validez = (int)($_POST['validez_dias'] ?? 15);
             if ($validez < 1 || $validez > 365) $validez = 15;
-            $notas = mb_substr(str_replace("\r\n", "\n", trim((string)($_POST['notas'] ?? ''))), 0, 3000);
+            $unidad = presu_unidad((string)($_POST['unidad_negocio'] ?? 'audiovisual'));
+            $condiciones = mb_substr(str_replace("\r\n", "\n", trim((string)($_POST['condiciones'] ?? ''))), 0, 3000);
+            if ($condiciones === '') $condiciones = presu_condiciones([]);
             $items = [];
             foreach ((array)($_POST['items'] ?? []) as $it) {
                 if (!is_array($it)) continue;
@@ -81,45 +39,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($total <= 0) throw new RuntimeException('El total del presupuesto tiene que ser mayor a cero.');
             $pdo->beginTransaction();
             try {
-                $pdo->prepare("INSERT INTO presupuestos (numero,cliente_nombre,empresa,telefono,items_json,total,validez_dias,notas,estado) VALUES ('',?,?,?,?,?,?,?,'enviado')")
-                    ->execute([$nombre, $empresa, $telefono, json_encode($items, JSON_UNESCAPED_UNICODE), $total, $validez, $notas !== '' ? $notas : null]);
+                $pdo->prepare("INSERT INTO presupuestos (numero,token,cliente_nombre,empresa,telefono,unidad_negocio,items_json,total,validez_dias,condiciones,estado) VALUES ('',NULL,?,?,?,?,?,?,?,?,'enviado')")
+                    ->execute([$nombre, $empresa, $telefono, $unidad, json_encode($items, JSON_UNESCAPED_UNICODE), $total, $validez, $condiciones]);
                 $id = (int)$pdo->lastInsertId();
                 $numero = 'P-' . date('ymd') . '-' . str_pad((string)$id, 4, '0', STR_PAD_LEFT);
+                $token = presu_asegurar_token($pdo, $id);
                 $pdo->prepare('UPDATE presupuestos SET numero=? WHERE id=?')->execute([$numero, $id]);
                 $pdo->commit();
             } catch (Throwable $x) { $pdo->rollBack(); throw $x; }
-            $_SESSION['flash'] = 'Presupuesto ' . $numero . ' guardado.';
+            $_SESSION['flash'] = 'Presupuesto ' . $numero . ' guardado. Link para el cliente: ' . rtrim((string)(blens_cfg()['sitio'] ?? 'https://blens.ar'), '/') . '/presupuesto.php?t=' . $token;
             header('Location: presupuesto_ver.php?id=' . $id); exit;
         }
         if ($a === 'aceptar') {
             $id = (int)($_POST['id'] ?? 0);
-            $q = $pdo->prepare('SELECT * FROM presupuestos WHERE id=?'); $q->execute([$id]); $p = $q->fetch();
-            if (!$p) throw new RuntimeException('Presupuesto inexistente.');
-            if (!empty($p['trabajo_id'])) {
-                $qt = $pdo->prepare('SELECT cliente_id FROM trabajos WHERE id=?'); $qt->execute([(int)$p['trabajo_id']]);
-                if (($cidOk = $qt->fetchColumn()) !== false) {
-                    $_SESSION['flash'] = 'Este presupuesto ya tiene un cobro creado.';
-                    header('Location: cobros.php?c=' . (int)$cidOk); exit;
-                }
-            }
-            $items = presu_items((string)$p['items_json']); $total = presu_total($items);
-            if (!$items || $total <= 0) throw new RuntimeException('El presupuesto no tiene ítems válidos.');
-            $prueba = modo_prueba($pdo);
-            $detalle = mb_substr('Presupuesto ' . (string)$p['numero'] . ' · ' . (string)$p['cliente_nombre'], 0, 200);
-            $pdo->beginTransaction();
-            try {
-                $cliente = presu_cliente($pdo, $p);
-                $cid = $cliente['id'];
-                $pdo->prepare("INSERT INTO trabajos (cliente_id,fecha,tipo,detalle,cantidad,monto_unit,prueba,estado) VALUES (?,?,?,?,1,?,?,'pendiente')")
-                    ->execute([$cid, date('Y-m-d'), 'otro', $detalle, round((float)$total, 2), $prueba]);
-                $tid = (int)$pdo->lastInsertId();
-                $pdo->prepare("UPDATE presupuestos SET estado='aceptado', trabajo_id=? WHERE id=?")->execute([$tid, $id]);
-                $pdo->commit();
-            } catch (Throwable $x) { $pdo->rollBack(); throw $x; }
-            $_SESSION['flash'] = 'Presupuesto aceptado. Se creó un cobro pendiente por ' . presu_money($total)
-                . ($cliente['creado']
-                    ? '. Cliente nuevo: ' . $cliente['usuario'] . ' · clave temporal: ' . $cliente['clave'] . '. Entregala al cliente y pedile que la cambie al entrar.'
-                    : '.');
+            $q = $pdo->prepare('SELECT token FROM presupuestos WHERE id=?'); $q->execute([$id]);
+            if (!$q->fetchColumn()) throw new RuntimeException('Presupuesto inexistente.');
+            $res = presu_aceptar_id($pdo, $id);
+            $qt = $pdo->prepare('SELECT cliente_id FROM trabajos WHERE id=?'); $qt->execute([(int)$res['trabajo_id']]);
+            $cid = (int)$qt->fetchColumn();
+            $_SESSION['flash'] = ($res['idempotente'] ? 'Este presupuesto ya estaba aceptado.' : 'Presupuesto aceptado. Se creó un cobro pendiente por ' . presu_money((float)$res['total']))
+                . (!empty($res['nuevo_cliente']) ? '. Cliente nuevo: ' . $res['usuario'] . ' · clave temporal: ' . $res['clave'] . '. Entregala al cliente y pedile que la cambie al entrar.' : '.');
             header('Location: cobros.php?c=' . $cid); exit;
         }
     } catch (Throwable $x) {
@@ -131,9 +70,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $agN = agenda_pendientes($pdo);
 $consN = consultas_pendientes($pdo);
-$plantillas = wa_plantillas($pdo);
 $list = $pdo->query('SELECT p.*, t.cliente_id AS cobro_cliente_id FROM presupuestos p LEFT JOIN trabajos t ON t.id=p.trabajo_id ORDER BY p.id DESC')->fetchAll();
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Presupuestos | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=33"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Presupuestos | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=34"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <?php require __DIR__ . '/nav.php'; ?>
 <?php if ($ok) echo '<p class="ok">' . $e($ok) . '</p>'; if ($err) echo '<p class="err">' . $e($err) . '</p>'; ?>
@@ -143,7 +81,15 @@ $list = $pdo->query('SELECT p.*, t.cliente_id AS cobro_cliente_id FROM presupues
 <label><span class="lbl">Cliente / prospecto <span class="req">* obligatorio</span></span><input name="cliente_nombre" maxlength="120" required placeholder="Nombre de la persona"></label>
 <label><span class="lbl">Empresa <span class="opt">(opcional)</span></span><input name="empresa" maxlength="120" placeholder="Empresa o marca"></label>
 <label><span class="lbl">WhatsApp <span class="opt">(opcional)</span></span><input name="telefono" maxlength="30" inputmode="tel" placeholder="11 5555-5555"></label>
+<label><span class="lbl">Unidad de negocio</span><select name="unidad_negocio"><option value="audiovisual">Audiovisual</option><option value="web">Desarrollo Web / Apps</option></select></label>
 <label><span class="lbl">Validez (días) <span class="opt">(opcional)</span></span><input type="number" name="validez_dias" value="15" min="1" max="365"></label>
+<div class="full presu-templates" data-presu-templates="<?= $e(json_encode(PRESU_PLANTILLAS, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) ?>">
+    <span class="lbl">Plantillas rápidas</span>
+    <button type="button" class="g" data-presu-template="reels">Pack Reels Mensual</button>
+    <button type="button" class="g" data-presu-template="comercial">Producción Comercial</button>
+    <button type="button" class="g" data-presu-template="landing">Landing Page / Web Corporativa</button>
+    <button type="button" class="g" data-presu-template="sistema">Sistema Web / App a Medida</button>
+</div>
 <div class="full presu-items-wrap">
     <div class="lh2"><span class="lbl">Ítems del presupuesto</span><button type="button" class="g" id="presu-add">+ Agregar ítem</button></div>
     <div class="presu-items" id="presu-items">
@@ -156,7 +102,7 @@ $list = $pdo->query('SELECT p.*, t.cliente_id AS cobro_cliente_id FROM presupues
         </div>
     </div>
 </div>
-<label class="full"><span class="lbl">Notas / condiciones <span class="opt">(opcional)</span></span><textarea name="notas" rows="3" maxlength="3000" placeholder="Forma de pago, tiempos de entrega, aclaraciones…"></textarea></label>
+<label class="full"><span class="lbl">Condiciones (seña / entrega) <span class="opt">(opcional)</span></span><textarea name="condiciones" rows="3" maxlength="3000" placeholder="Seña del 50% para confirmar. Entrega estimada: a coordinar según el alcance."></textarea></label>
 <div class="full presu-totalbar"><span>Total</span><b data-presu-total>$ 0</b></div>
 <div class="row full"><button>Guardar presupuesto</button><span class="mut">Después podés imprimirlo, guardarlo como PDF o enviarlo por WhatsApp.</span></div>
 </form>
@@ -170,7 +116,7 @@ $list = $pdo->query('SELECT p.*, t.cliente_id AS cobro_cliente_id FROM presupues
 <h2>Guardados</h2>
 <?php if (!$list): ?><p class="mut">Todavía no hay presupuestos guardados.</p><?php else: ?>
 <table class="cards"><tr><th>N°</th><th>Cliente</th><th>Total</th><th>Fecha</th><th>Estado</th><th></th></tr>
-<?php foreach ($list as $p): $pn = explode(' ', trim((string)($p['cliente_nombre'] ?? '')))[0] ?: 'hola'; $wa = wa_link(presu_wa_tel($pdo, $p), $plantillas['presupuesto'], ['{nombre}' => $pn, '{numero}' => (string)($p['numero'] ?? ''), '{monto}' => presu_money((float)($p['total'] ?? 0))]); $tieneCobro = !empty($p['cobro_cliente_id']); ?>
+<?php foreach ($list as $p): $link = presu_link($p); $wa = $link !== '' ? wa_url(presu_wa_tel($pdo, $p), presu_wa_texto($p)) : null; $tieneCobro = !empty($p['cobro_cliente_id']); ?>
 <tr>
 <td data-label="N°"><b><?= $e($p['numero']) ?></b></td>
 <td data-label="Cliente"><?= $e($p['empresa'] ?: $p['cliente_nombre']) ?><br><span class="mut"><?= $e($p['empresa'] ? $p['cliente_nombre'] : '') ?></span></td>
@@ -178,8 +124,9 @@ $list = $pdo->query('SELECT p.*, t.cliente_id AS cobro_cliente_id FROM presupues
 <td class="mut" data-label="Fecha"><?= $e(date('d/m/Y', strtotime((string)$p['creado_en']))) ?></td>
 <td data-label="Estado"><span class="badge <?= $p['estado'] === 'aceptado' ? 'ok' : 'pend' ?>"><?= $e(ucfirst((string)$p['estado'])) ?></span></td>
 <td data-label=""><div class="presu-actions">
-    <a class="btn g" href="presupuesto_ver.php?id=<?= (int)$p['id'] ?>">Ver / imprimir</a>
-    <?php if ($wa): ?><a class="btn g" href="<?= $e($wa) ?>" target="_blank" rel="noopener">WhatsApp</a><?php else: ?><span class="mut">Sin WhatsApp válido</span><?php endif; ?>
+    <a class="btn g" href="<?= $e($link) ?>" target="_blank" rel="noopener">Ver / Imprimir PDF</a>
+    <?php if ($link !== ''): ?><button type="button" class="g" data-copiar="<?= $e($link) ?>">Copiar link para cliente</button><?php endif; ?>
+    <?php if ($wa): ?><a class="btn g" href="<?= $e($wa) ?>" target="_blank" rel="noopener">Mandar por WhatsApp</a><?php else: ?><span class="mut">Sin WhatsApp válido</span><?php endif; ?>
     <?php if ($tieneCobro): ?><a class="btn g" href="cobros.php?c=<?= (int)$p['cobro_cliente_id'] ?>">Ver cobro</a>
     <?php else: ?><form method="post" action="presupuestos.php"><input type="hidden" name="a" value="aceptar"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="id" value="<?= (int)$p['id'] ?>"><button class="g">Aceptado → Crear cobro</button></form><?php endif; ?>
 </div></td>
@@ -187,4 +134,4 @@ $list = $pdo->query('SELECT p.*, t.cliente_id AS cobro_cliente_id FROM presupues
 <?php endforeach; ?>
 </table>
 <?php endif; ?>
-<script src="admin.js?v=30"></script><script src="../assets/push.js?v=5"></script></body></html>
+<script src="admin.js?v=31"></script><script src="../assets/push.js?v=5"></script></body></html>

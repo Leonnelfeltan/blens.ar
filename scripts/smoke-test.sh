@@ -61,11 +61,11 @@ SID="$("${CURL[@]}" "$ORIGIN/admin/$SESSION_NAME?token=$TOKEN")" || fail "No se 
 [[ "$SID" =~ ^[a-f0-9]{32}$ ]] || fail "ID de sesión inválido: $SID"
 
 check_route() {
-  local path="$1" label="$2" cookie="${3:-}" code body="$TMP/body"
+  local path="$1" label="$2" cookie="${3:-}" expected="${4:-200}" code body="$TMP/body"
   local headers=()
   [ -n "$cookie" ] && headers=(-H "Cookie: PHPSESSID=$cookie")
   code="$("${CURL[@]}" "${headers[@]}" -o "$body" -w '%{http_code}' "$ORIGIN$path")" || fail "curl falló en $path"
-  [ "$code" = "200" ] || fail "$label: HTTP $code (esperado 200)"
+  [ "$code" = "$expected" ] || fail "$label: HTTP $code (esperado $expected)"
   if grep -Eqi 'Fatal error|SQLSTATE|Warning:' "$body"; then fail "$label: cadena de error en la respuesta"; fi
   printf '  OK  %-24s %s\n' "$label" "$path"
 }
@@ -75,6 +75,12 @@ check_route "/" "home"
 check_route "/api.php" "api"
 check_route "/sitemap.xml" "sitemap"
 check_route "/robots.txt" "robots"
+check_route "/presupuesto.js" "presupuesto-js"
+check_route "/presupuesto.php" "presupuesto-sin-token" "" 404
+check_route "/presupuesto.php?t=no-valido" "presupuesto-token-invalido" "" 404
+"${CURL[@]}" -o "$TMP/home.html" "$ORIGIN/" >/dev/null
+grep -q 'Cotizá en 3 pasos' "$TMP/home.html" || fail "home: falta el cotizador"
+grep -q 'data-quote>' "$TMP/home.html" || fail "home: falta el contenedor del cotizador"
 echo "-- Portal --"
 check_route "/portal/" "portal"
 echo "-- Admin --"
@@ -83,6 +89,7 @@ check_route "/admin/cobros.php" "admin-cobros" "$SID"
 check_route "/admin/clientes.php" "admin-clientes" "$SID"
 check_route "/admin/agenda.php" "admin-agenda" "$SID"
 check_route "/admin/consultas.php" "admin-consultas" "$SID"
+check_route "/admin/presupuestos.php" "admin-presupuestos" "$SID"
 
 "${CURL[@]}" -H "Cookie: PHPSESSID=$SID" -o "$TMP/index.html" "$ORIGIN/admin/" >/dev/null
 "${CURL[@]}" -H "Cookie: PHPSESSID=$SID" -o "$TMP/cobros.html" "$ORIGIN/admin/cobros.php" >/dev/null

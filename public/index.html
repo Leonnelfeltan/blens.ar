@@ -24,7 +24,7 @@
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" media="print" data-fonts>
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap"></noscript>
-<link rel="stylesheet" href="styles.css?v=21">
+<link rel="stylesheet" href="styles.css?v=22">
 </head>
 <body>
 <a class="skip" href="#proyectos">Ir al contenido</a>
@@ -36,7 +36,7 @@
   <a class="brand" href="#inicio" aria-label="blens.ar, inicio"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
   <button class="burger" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="menu"><span></span><span></span><span></span></button>
   <nav id="menu" aria-label="Principal">
-    <a href="#proyectos">Proyectos</a><a href="#desarrollo">Desarrollo Web</a><a href="#servicios">Servicios</a><a href="#nosotros">Nosotros</a><a class="keep" href="portal/">Acceso clientes</a>
+    <a href="#proyectos">Proyectos</a><a href="#desarrollo">Desarrollo Web</a><a href="#servicios">Servicios</a><a href="#cotizador">Cotizar</a><a href="#nosotros">Nosotros</a><a class="keep" href="portal/">Acceso clientes</a>
     <a class="btn sm" href="#contacto">Contacto</a>
   </nav>
 </header>
@@ -48,7 +48,7 @@
     <h1><span class="ln">Dos miradas</span><span class="ln">para contar</span><span class="ln">tu empresa.</span></h1>
     <p class="loc">Posadas, Misiones · Argentina</p>
     <p class="lead">Producimos videos, reels y cobertura para empresas que quieren comunicar con seriedad y que los vean.</p>
-    <div class="cta"><a class="btn mag" href="#contacto">Pedir presupuesto</a><a class="link" href="#proyectos">Ver proyectos</a><a class="wa-btn" data-wa href="wa.php?text=Hola%20Blens%2C%20quiero%20consultar%20por%20producci%C3%B3n%20de%20video%20para%20mi%20empresa." target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M3 3h18v14H9l-4 4v-4H3z"/></svg><span>Escribinos por WhatsApp</span></a></div>
+    <div class="cta"><a class="btn mag" href="#cotizador">Pedir presupuesto</a><a class="link" href="#proyectos">Ver proyectos</a><a class="wa-btn" data-wa href="wa.php?text=Hola%20Blens%2C%20quiero%20consultar%20por%20producci%C3%B3n%20de%20video%20para%20mi%20empresa." target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M3 3h18v14H9l-4 4v-4H3z"/></svg><span>Escribinos por WhatsApp</span></a></div>
   </div>
   <aside class="hero-feature" id="hero-feature" hidden></aside>
 </section>
@@ -180,6 +180,51 @@
   </ol>
 </section>
 
+<section class="sec cotizador" id="cotizador">
+  <div class="head">
+    <h2 class="h2">Cotizá en 3 pasos</h2>
+    <p class="sec-lead">Elegí el tipo de proyecto y el alcance. Te armamos un resumen para pedir el presupuesto exacto por WhatsApp o completar el formulario.</p>
+  </div>
+  <div class="quote-box" data-quote>
+    <ol class="quote-progress" aria-label="Pasos de la cotización">
+      <li class="on" data-quote-dot="1"><span>01</span> Área</li>
+      <li data-quote-dot="2"><span>02</span> Alcance</li>
+      <li data-quote-dot="3"><span>03</span> Resumen</li>
+    </ol>
+    <div class="quote-step" data-quote-step="1">
+      <span class="quote-k">Paso 1 de 3</span>
+      <h3>¿Qué necesitás?</h3>
+      <div class="quote-options" role="radiogroup" aria-label="Área del proyecto">
+        <button class="quote-option" type="button" role="radio" aria-checked="false" data-quote-area="Producción Audiovisual"><b>Producción Audiovisual</b><span>Videos, reels y cobertura para empresas.</span></button>
+        <button class="quote-option" type="button" role="radio" aria-checked="false" data-quote-area="Desarrollo Web / App"><b>Desarrollo Web / App</b><span>Landings, webs corporativas y sistemas a medida.</span></button>
+        <button class="quote-option" type="button" role="radio" aria-checked="false" data-quote-area="Pack Integral"><b>Pack Integral</b><span>Contenido audiovisual más plataforma digital.</span></button>
+      </div>
+      <div class="quote-nav"><button class="btn" type="button" data-quote-next disabled>Continuar</button></div>
+    </div>
+    <div class="quote-step" data-quote-step="2" hidden>
+      <span class="quote-k">Paso 2 de 3</span>
+      <h3>¿Qué querés incluir?</h3>
+      <p class="quote-hint">Podés elegir más de una opción.</p>
+      <div class="quote-options" role="group" aria-label="Alcance del proyecto">
+        <button class="quote-option" type="button" role="checkbox" aria-checked="false" data-quote-scope="Reels para redes" data-quote-area="audiovisual" data-quote-entrega="Reels verticales con guion, grabación y edición." data-quote-days="10 a 15 días hábiles" data-quote-max="15" hidden><b>Reels para redes</b><span>Piezas cortas listas para publicar.</span></button>
+        <button class="quote-option" type="button" role="checkbox" aria-checked="false" data-quote-scope="Video comercial / Inmobiliario" data-quote-area="audiovisual" data-quote-entrega="Video editado con guion, grabación y color." data-quote-days="15 a 20 días hábiles" data-quote-max="20" hidden><b>Video comercial / Inmobiliario</b><span>Presentación corporativa o tour de propiedades.</span></button>
+        <button class="quote-option" type="button" role="checkbox" aria-checked="false" data-quote-scope="Landing page" data-quote-area="web" data-quote-entrega="Landing responsive con diseño, desarrollo y alta inicial." data-quote-days="10 a 15 días hábiles" data-quote-max="15" hidden><b>Landing page</b><span>Una página clara y rápida para convertir consultas.</span></button>
+        <button class="quote-option" type="button" role="checkbox" aria-checked="false" data-quote-scope="Sistema de gestión / E-commerce" data-quote-area="web" data-quote-entrega="Sistema web con panel, accesos y flujo a medida." data-quote-days="30 a 45 días hábiles" data-quote-max="45" hidden><b>Sistema de gestión / E-commerce</b><span>Pedidos, stock, clientes o ventas online.</span></button>
+      </div>
+      <div class="quote-nav"><button class="link quote-back" type="button" data-quote-back>&larr; Atrás</button><button class="btn" type="button" data-quote-next disabled>Ver resumen</button></div>
+    </div>
+    <div class="quote-step" data-quote-step="3" hidden>
+      <span class="quote-k">Paso 3 de 3</span>
+      <h3>Resumen del proyecto</h3>
+      <div class="quote-summary" data-quote-resume></div>
+      <div class="quote-cta">
+        <a class="wa-btn" data-quote-wa href="wa.php?text=Hola%20Blens%2C%20quiero%20pedir%20un%20presupuesto%20exacto." target="_blank" rel="noopener">Pedir presupuesto exacto por WhatsApp</a>
+        <button class="btn" type="button" data-quote-form>Completar formulario</button>
+      </div>
+      <div class="quote-nav"><button class="link quote-back" type="button" data-quote-back>&larr; Atrás</button></div>
+    </div>
+  </div>
+</section>
 <section class="sec" id="contacto">
   <h2 class="h2">Contanos tu proyecto</h2>
   <form id="form" action="/contact.php" method="post" novalidate>
@@ -188,7 +233,7 @@
     <label>Email<input name="email" type="email" required maxlength="120" autocomplete="email"></label>
     <label>WhatsApp<input name="telefono" type="tel" maxlength="30" autocomplete="tel" placeholder="Ej: 376 4123456"></label>
     <label class="full">Servicio
-      <select name="servicio"><option>Videos institucionales</option><option>Reels y formato vertical</option><option>Cobertura de eventos</option><option>Estrategia de contenido</option><option>Otro</option></select>
+      <select name="servicio"><option>Producción Audiovisual</option><option>Desarrollo Web / App</option><option>Pack Integral</option><option>Reels para redes</option><option>Video comercial / Inmobiliario</option><option>Landing page</option><option>Sistema de gestión / E-commerce</option><option>Videos institucionales</option><option>Reels y formato vertical</option><option>Cobertura de eventos</option><option>Estrategia de contenido</option><option>Otro</option></select>
     </label>
     <label class="full">Mensaje<textarea name="mensaje" rows="5" required maxlength="2000"></textarea></label>
     <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
@@ -224,6 +269,6 @@
 <script src="assets/ScrollTrigger.min.js" defer></script>
 <script src="assets/player.js?v=13" defer></script>
 <script src="assets/nav.js?v=3" defer></script>
-<script src="main.js?v=19" defer></script>
+<script src="main.js?v=20" defer></script>
 </body>
 </html>

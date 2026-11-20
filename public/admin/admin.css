@@ -389,6 +389,8 @@ body{overflow-x:hidden}
 
 /* ===== Presupuestos rápidos ===== */
 .presu-form{max-width:none}
+.presu-templates{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;background:var(--c2);border:1px solid var(--l);border-left:6px solid var(--o);border-radius:6px;padding:.8rem;margin:.2rem 0 .6rem}
+.presu-templates .lbl{width:100%;color:var(--o)}
 .presu-items-wrap{display:grid;gap:.6rem;margin:.2rem 0 .4rem}
 .presu-items{display:grid;gap:.6rem}
 .presu-item{display:grid;grid-template-columns:minmax(0,1fr) 90px 140px 120px auto;gap:.55rem;align-items:end;background:var(--c);border:1px solid var(--l);border-radius:6px;padding:.7rem}

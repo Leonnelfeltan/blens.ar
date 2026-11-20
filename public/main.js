@@ -12,6 +12,7 @@ const norm=s=>String(s??'').trim().toLowerCase().normalize('NFD').replace(/[\u03
 const WA_MSG='Hola Blens, quiero consultar por producción de video para mi empresa.';
 const WA_MSG_WEB='Hola Leo, me interesa consultar por el desarrollo de una página web o sistema a medida.';
 const waLink=(num,msg=WA_MSG)=>/^\d{8,15}$/.test(num||'')?'https://wa.me/'+num+'?text='+encodeURIComponent(msg):'wa.php?text='+encodeURIComponent(msg);
+let WA_NUM='';
 
 /* ---------- Lazy loading de video ---------- */
 const loadVideo=v=>{ if(v.dataset.ready) return; $$('source',v).forEach(s=>{ const u=s.dataset.src; if(u){ s.src=u; delete s.dataset.src; } }); v.load(); v.dataset.ready=1; if(v.hasAttribute('data-autoplay')&&!RM) v.play().catch(()=>{}); };
@@ -139,8 +140,10 @@ function render(d){
   else if(ph) ph.hidden=true;
   if(d.clientes&&d.clientes.length){ $('#logos').innerHTML=d.clientes.map(c=>`<button class="lg" type="button" data-client="${esc(c.nombre)}" title="Ver proyectos de ${esc(c.nombre)}" aria-label="Ver proyectos de ${esc(c.nombre)}"><img loading="lazy" src="media/logos/${esc(c.logo)}" alt="${esc(c.nombre)}" width="180" height="80"></button>`).join(''); $('#clientes').hidden=false; }
   const waNum=/^\d{8,15}$/.test(d.wa||'')?d.wa:'';
+  WA_NUM=waNum;
   $$('[data-wa]').forEach(a=>{ a.href=waLink(waNum); });
   $$('[data-wa-web]').forEach(a=>{ a.href=waLink(waNum,a.dataset.waMsg||WA_MSG_WEB); });
+  if (window.actualizarCotizador) window.actualizarCotizador();
   if(waNum&&!$('#wa')){ const a=document.createElement('a'); a.id='wa'; a.className='wa'; a.target='_blank'; a.rel='noopener';
     a.href=waLink(d.wa); a.setAttribute('aria-label','Escribinos por WhatsApp');
     a.innerHTML='<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M3 3h18v14H9l-4 4v-4H3z"/></svg><span>WhatsApp</span>'; document.body.appendChild(a); }
@@ -167,7 +170,7 @@ try{ if(!reduce){
     if(!coarse) ScrollTrigger.create({trigger:'.hero',start:'bottom 75%',end:'bottom 25%',onEnterBack:()=>tl.restart()});
   }
   // Secciones: entran cada vez que aparecen, subiendo o bajando
-  reveal('.h2'); reveal('.svc li'); reveal('.web-card'); reveal('.big,.about .mut,.vals li'); reveal('#form > *'); reveal('.steps li'); revealCards();
+  reveal('.h2'); reveal('.svc li'); reveal('.web-card'); reveal('.big,.about .mut,.vals li'); reveal('#form > *'); reveal('.steps li'); reveal('.quote-box'); revealCards();
   if(!soft&&!coarse) $$('.mag').forEach(b=>{ const x=gsap.quickTo(b,'x',{duration:.4}), y=gsap.quickTo(b,'y',{duration:.4});
     b.addEventListener('mousemove',e=>{const r=b.getBoundingClientRect();x((e.clientX-r.left-r.width/2)*.25);y((e.clientY-r.top-r.height/2)*.4)});
     b.addEventListener('mouseleave',()=>{x(0);y(0)}); });
@@ -265,4 +268,101 @@ form.addEventListener('submit',async e=>{
   if(closeBtn) closeBtn.addEventListener('click',close);
   modal.addEventListener('click',e=>{ if(e.target===modal) close(); });
   document.addEventListener('keydown',e=>{ if(e.key==='Escape') close(); });
+})();
+
+(() => {
+  const box = $('[data-quote]');
+  if (!box) return;
+  const steps = $$('[data-quote-step]', box);
+  const dots = $$('[data-quote-dot]', box);
+  const areas = $$('[data-quote-area]', box).filter(button => button.getAttribute('role') === 'radio');
+  const scopes = $$('[data-quote-scope]', box);
+  const resume = $('[data-quote-resume]', box);
+  let area = '';
+  let paso = 1;
+
+  const elegidos = () => scopes.filter(button => button.getAttribute('aria-checked') === 'true');
+  const datos = () => {
+    const selected = elegidos();
+    const mayor = selected.reduce((best, button) => Number(button.dataset.quoteMax || 0) > Number(best?.dataset.quoteMax || 0) ? button : best, null);
+    const entrega = mayor ? mayor.dataset.quoteDays : 'A coordinar';
+    const mensaje = [
+      'Hola Blens, quiero pedir un presupuesto exacto.',
+      '',
+      'Área: ' + (area || 'A definir'),
+      'Alcance:',
+      ...selected.map(button => '- ' + button.dataset.quoteScope),
+      '',
+      'Entregables:',
+      ...selected.map(button => '- ' + button.dataset.quoteScope + ': ' + button.dataset.quoteEntrega),
+      '',
+      'Entrega estimada: ' + entrega,
+      '',
+      '¿Cuándo podemos charlar?'
+    ].join('\n');
+    return { selected, entrega, mensaje };
+  };
+  const actualizar = () => {
+    const wa = $('[data-quote-wa]', box);
+    if (wa) wa.href = waLink(WA_NUM, datos().mensaje);
+  };
+  const actualizarBotones = () => {
+    $$('[data-quote-next]', box).forEach(button => { button.disabled = paso === 1 ? !area : !elegidos().length; });
+  };
+  const ir = n => {
+    paso = Math.min(3, Math.max(1, n));
+    steps.forEach(step => { step.hidden = Number(step.dataset.quoteStep) !== paso; });
+    dots.forEach(dot => {
+      const activo = Number(dot.dataset.quoteDot) <= paso;
+      dot.classList.toggle('on', activo);
+      dot.classList.toggle('done', Number(dot.dataset.quoteDot) < paso);
+    });
+    actualizarBotones();
+  };
+  const pintarResumen = () => {
+    if (!resume) return;
+    const { selected, entrega } = datos();
+    resume.innerHTML = '<p><b>Área:</b> ' + esc(area) + '</p>'
+      + '<p><b>Alcance:</b></p><ul>' + selected.map(button => '<li>' + esc(button.dataset.quoteScope) + '</li>').join('') + '</ul>'
+      + '<p><b>Entregables:</b></p><ul>' + selected.map(button => '<li>' + esc(button.dataset.quoteEntrega) + '</li>').join('') + '</ul>'
+      + '<p><b>Entrega estimada:</b> ' + esc(entrega) + '</p>';
+  };
+
+  areas.forEach(button => button.addEventListener('click', () => {
+    area = button.dataset.quoteArea || '';
+    areas.forEach(other => other.setAttribute('aria-checked', String(other === button)));
+    scopes.forEach(scope => {
+      const permitido = area === 'Pack Integral' || scope.dataset.quoteArea === (area === 'Producción Audiovisual' ? 'audiovisual' : 'web');
+      scope.hidden = !permitido;
+      if (!permitido) scope.setAttribute('aria-checked', 'false');
+    });
+    actualizar();
+    actualizarBotones();
+  }));
+  scopes.forEach(button => button.addEventListener('click', () => {
+    button.setAttribute('aria-checked', String(button.getAttribute('aria-checked') !== 'true'));
+    actualizar();
+    actualizarBotones();
+  }));
+  $$('[data-quote-next]', box).forEach(button => button.addEventListener('click', () => {
+    if (paso === 1 && area) ir(2);
+    else if (paso === 2 && elegidos().length) { pintarResumen(); ir(3); }
+  }));
+  $$('[data-quote-back]', box).forEach(button => button.addEventListener('click', () => ir(paso - 1)));
+  const completar = $('[data-quote-form]', box);
+  if (completar) completar.addEventListener('click', () => {
+    const form = $('#form');
+    if (!form) return;
+    const servicio = $('[name="servicio"]', form);
+    if (servicio) {
+      const opcion = Array.from(servicio.options).find(item => item.value === area);
+      servicio.value = opcion ? opcion.value : 'Otro';
+    }
+    const mensaje = $('[name="mensaje"]', form);
+    if (mensaje) mensaje.value = datos().mensaje;
+    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (mensaje) setTimeout(() => mensaje.focus(), 450);
+  });
+  window.actualizarCotizador = actualizar;
+  actualizar();
 })();

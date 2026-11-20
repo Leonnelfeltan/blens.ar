@@ -20,7 +20,7 @@ function out(bool $ok, string $msg, int $code = 200): never {
     if ($ok) { header('Location: /?enviado=1#contacto', true, 303); exit; }
     http_response_code($code);
     header('Content-Type: text/html; charset=utf-8');
-    echo '<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>No pudimos enviar la consulta | blens.ar</title><link rel="stylesheet" href="/styles.css?v=21"></head><body><main class="err404"><h1>No pudimos enviar la consulta.</h1><p class="lead">' . htmlspecialchars($msg, ENT_QUOTES, 'UTF-8') . '</p><p><a class="btn" href="/#contacto">Volver al formulario</a></p></main></body></html>';
+    echo '<!doctype html><html lang="es-AR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>No pudimos enviar la consulta | blens.ar</title><link rel="stylesheet" href="/styles.css?v=22"></head><body><main class="err404"><h1>No pudimos enviar la consulta.</h1><p class="lead">' . htmlspecialchars($msg, ENT_QUOTES, 'UTF-8') . '</p><p><a class="btn" href="/#contacto">Volver al formulario</a></p></main></body></html>';
     exit;
 }
 function clean(string $k, int $max): string {
