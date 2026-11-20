@@ -5,9 +5,6 @@ document.querySelectorAll('.dfr[data-did]').forEach(el => {
   im.src = 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(el.dataset.did) + '&sz=w800';
 });
 
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('/portal/sw.js', { scope: '/portal/' }).catch(() => {}));
-}
 (function () {
   const tip = document.querySelector('[data-pwa-tip]');
   if (!tip) return;

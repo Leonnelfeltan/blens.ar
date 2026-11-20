@@ -438,9 +438,6 @@ if (presuForm) {
   total();
 }
 
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('/admin/sw.js', { scope: '/admin/' }).catch(() => {}));
-}
 (function () {
   const buttons = Array.from(document.querySelectorAll('[data-pwa-install]'));
   if (!buttons.length) return;
@@ -477,10 +474,9 @@ if ('serviceWorker' in navigator) {
 })();
 
 (function () {
-  const btn = document.querySelector('[data-push-test]');
+  const btn = document.querySelector('[data-push-resync]');
   if (!btn) return;
-  const pushBtn = document.querySelector('[data-push]');
-  const token = pushBtn ? pushBtn.dataset.pushToken || '' : '';
+  const diag = document.querySelector('[data-push-diag]');
   const aviso = msg => {
     let box = document.querySelector('.push-toast');
     if (!box) {
@@ -499,19 +495,20 @@ if ('serviceWorker' in navigator) {
     const texto = btn.textContent;
     btn.disabled = true;
     btn.setAttribute('aria-busy', 'true');
-    btn.textContent = 'Enviando…';
+    btn.textContent = 'Sincronizando…';
     try {
-      const res = await fetch('/api/push-test.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
-      });
-      let data = {};
-      try { data = await res.json(); } catch (_) {}
-      if (!res.ok || data.ok === false) throw new Error(data.error || data.message || ('Error HTTP ' + res.status));
-      aviso(data.message || 'Push enviado.');
+      if (typeof window.blensPushResync !== 'function') throw new Error('No se pudo cargar el módulo de notificaciones.');
+      const info = await window.blensPushResync();
+      const lineas = ['Dominio: ' + (info.host || '-'), 'HTTP: ' + (Number(info.status) || 0)];
+      if (info.response) lineas.push('Cuerpo: ' + String(info.response).slice(0, 240));
+      if (info.error) lineas.push('Error: ' + String(info.error).slice(0, 240));
+      if (info.message) lineas.push('Servidor: ' + String(info.message).slice(0, 240));
+      if (diag) { diag.textContent = lineas.join('\n'); diag.hidden = false; }
+      aviso(info.ok ? 'Push de prueba enviado a este dispositivo.' : 'No se pudo enviar. Mirá el diagnóstico.');
     } catch (err) {
-      aviso(err && err.message ? err.message : 'No se pudo probar el push.');
+      const msg = err && err.message ? err.message : 'No se pudo sincronizar este dispositivo.';
+      if (diag) { diag.textContent = 'Error: ' + msg; diag.hidden = false; }
+      aviso(msg);
     } finally {
       btn.disabled = false;
       btn.removeAttribute('aria-busy');

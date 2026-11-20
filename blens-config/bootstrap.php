@@ -518,6 +518,9 @@ function blens_migrar(?PDO $p = null): void {
             INDEX idx_loc_estado (estado),
             CONSTRAINT fk_locaciones_cliente FOREIGN KEY (cliente_id) REFERENCES clientes (id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        if (blens_tabla_existe($p, 'cliente_locaciones')) blens_agregar_col($p, 'cliente_locaciones', 'fecha_agendada', 'DATETIME NULL');
+        if (blens_tabla_existe($p, 'clientes')) blens_agregar_col($p, 'clientes', 'etapa_proyecto', 'TINYINT UNSIGNED NOT NULL DEFAULT 1');
+        if (blens_tabla_existe($p, 'entregas')) blens_agregar_col($p, 'entregas', 'version_num', 'SMALLINT UNSIGNED NOT NULL DEFAULT 1');
         // Comprobantes opcionales en cobros (trabajos) y gastos, también para bases existentes
         foreach (['trabajos', 'gastos', 'recibos'] as $tabla) {
             if (!blens_tabla_existe($p, $tabla)) continue;
@@ -556,6 +559,19 @@ function blens_db(): PDO {
 require_once __DIR__ . '/push.php';
 require_once __DIR__ . '/presupuestos.php';
 
+const PROYECTO_ETAPAS = [1 => 'Planificación', 2 => 'Rodaje / Desarrollo', 3 => 'Edición / Testing', 4 => 'Listo para aprobar', 5 => 'Entregado'];
+function etapa_proyecto(int $n): int { return isset(PROYECTO_ETAPAS[$n]) ? $n : 1; }
+function etapa_proyecto_txt(int $n): string { return PROYECTO_ETAPAS[etapa_proyecto($n)]; }
+function etapa_track_html(int $n): string {
+    $actual = etapa_proyecto($n);
+    $h = '<ol class="etapa-track">';
+    foreach (PROYECTO_ETAPAS as $k => $label) {
+        $clase = $k < $actual ? 'done' : ($k === $actual ? 'on' : '');
+        $actualAttr = $k === $actual ? ' aria-current="step"' : '';
+        $h .= '<li class="' . $clase . '"' . $actualAttr . '><span>' . (int)$k . '</span><b>' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</b></li>';
+    }
+    return $h . '</ol>';
+}
 function locaciones_estados(): array {
     return ['pendiente' => 'Pendiente', 'agendado' => 'Agendado', 'grabado' => 'Grabado'];
 }

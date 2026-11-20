@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 $cid = (int)($_SESSION['cid'] ?? 0); $T = $e($_SESSION['t']); $cli = null; $forzar = !empty($_SESSION['forzar']); $vista = !empty($_SESSION['vista']);
-if ($cid) { $s = $pdo->prepare('SELECT nombre,empresa,logo,gestion_locaciones FROM clientes WHERE id=? AND (activo=1 OR ?=1)'); $s->execute([$cid, $vista ? 1 : 0]); $cli = $s->fetch(); if (!$cli) { blens_session_expire(); header('Location: ./'); exit; } }
+if ($cid) { $s = $pdo->prepare('SELECT nombre,empresa,logo,gestion_locaciones,etapa_proyecto FROM clientes WHERE id=? AND (activo=1 OR ?=1)'); $s->execute([$cid, $vista ? 1 : 0]); $cli = $s->fetch(); if (!$cli) { blens_session_expire(); header('Location: ./'); exit; } }
 $locOK = (int)($cli['gestion_locaciones'] ?? 0) === 1;
 $tabLoc = $locOK && (string)($_GET['tab'] ?? '') === 'locaciones';
 // ---- Propiedades / locaciones del cliente ----
@@ -150,8 +150,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['a'] ?? '') === 'ap
         http_response_code(404); exit('Entrega inexistente.');
     }
     try {
+        $pdo->beginTransaction();
         $pdo->prepare("UPDATE entregas SET estado_cliente='aprobado', comentario_cliente=NULL, comentario_fecha=NOW() WHERE id=? AND cliente_id=?")->execute([$eid, $cid]);
+        $pdo->prepare('UPDATE clientes SET etapa_proyecto=5 WHERE id=?')->execute([$cid]);
+        $pdo->commit();
     } catch (Throwable $x) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
         error_log('[blens portal aprobación] ' . $x->getMessage());
         if ($ajaxFeedback) $jsonOut(500, ['ok' => false, 'error' => 'No pudimos guardar tu respuesta. Probá de nuevo en un momento.']);
         $_SESSION['pflash'] = 'No pudimos guardar tu respuesta. Probá de nuevo en un momento.';
@@ -233,7 +237,7 @@ $locForm = function (array $r, bool $nueva) use ($e, $T): string {
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" media="print" data-fonts>
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap"></noscript>
-<link rel="stylesheet" href="../styles.css?v=22"><link rel="stylesheet" href="portal.css?v=18"></head><body>
+<link rel="stylesheet" href="../styles.css?v=23"><link rel="stylesheet" href="portal.css?v=19"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol><symbol id="photos" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m4 17 5-5 3.5 3.5L16 12l4 4"/></symbol></svg>
 <header class="ph"><a class="brand" href="../" aria-label="blens.ar, inicio"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
 <?php if ($cli): ?><div class="phr"><span class="mut">Portal de clientes</span><?= $vista ? '<span class="perr">Vista de administrador</span>' : '' ?><button type="button" class="push-btn" data-push data-push-tipo="cliente" data-push-token="<?= $T ?>" data-push-key="<?= $e(blens_vapid_public()) ?>" data-push-off="Activar notificaciones en este dispositivo" data-push-on="Notificaciones activadas ✓" aria-pressed="false">Activar notificaciones en este dispositivo</button><form method="post"><input type="hidden" name="a" value="salir"><input type="hidden" name="t" value="<?= $T ?>"><button class="out">Salir</button></form></div>
@@ -272,7 +276,7 @@ if ($en): $tipoEn = $tipoDe($en); ?>
 <?php elseif ($vid($en)): ?><div class="cvw"><video playsinline preload="none" data-lazy<?= $pst($en) ? ' poster="' . $e($pst($en)) . '"' : '' ?>><source data-src="<?= $e($vid($en)) ?>" type="video/mp4"></video></div><p class="mut sm">Vista previa del proyecto.</p>
 <?php elseif ($df = $did($en)): ?><div class="cvw dfr" data-did="<?= $e($df) ?>"><iframe src="https://drive.google.com/file/d/<?= $e($df) ?>/preview" allow="autoplay; fullscreen" allowfullscreen loading="lazy" title="Vista previa"></iframe></div><p class="mut sm">Vista previa desde Google Drive.</p>
 <?php endif; ?></div>
-<div><a class="back" href="./">&larr; Mis entregas</a><h1><?= $e($en['titulo']) ?></h1><p class="sub"><span class="b tipo-<?= $tipoEn ?>"><?= $tipoEn === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span> <?= $e(substr($en['creado'], 0, 10)) ?> · <?= $tipoEn === 'fotos' ? 'Pack de fotos' : 'Video' ?></p>
+<div><a class="back" href="./">&larr; Mis entregas</a><h1><?= $e($en['titulo']) ?> <span class="ent-ver">v<?= max(1, (int)($en['version_num'] ?? 1)) ?></span></h1><p class="sub"><span class="b tipo-<?= $tipoEn ?>"><?= $tipoEn === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span> <?= $e(substr($en['creado'], 0, 10)) ?> · <?= $tipoEn === 'fotos' ? 'Pack de fotos' : 'Video' ?></p>
 <?php if (trim((string)$en['descripcion']) !== ''): ?><div class="copy"><?= nl2br($e($en['descripcion'])) ?></div><?php endif; ?>
 <?php if ($tipoEn !== 'fotos'): ?><?php if ($drive($en)): ?><a class="btn" href="<?= $e($drive($en)) ?>" target="_blank" rel="noopener">Abrir en Drive / Descargar</a><p class="mut sm">El archivo final está en la mejor calidad, en Google Drive.</p><?php else: ?><p class="mut">El archivo final todavía no está disponible.</p><?php endif; ?><?php endif; ?>
 <?= $fb($en) ?></div></div></main>
@@ -316,6 +320,10 @@ $s = $pdo->prepare($SQL . ' ORDER BY e.id DESC'); $s->execute([$cid]); $es = $s-
 $nVideos = count(array_filter($es, fn($r) => $tipoDe($r) === 'video')); $nFotos = count($es) - $nVideos;
 $ft = (string)($_GET['ft'] ?? 'todos'); if (!in_array($ft, ['todos', 'video', 'fotos'], true)) $ft = 'todos';
 $esView = $ft === 'todos' ? $es : array_values(array_filter($es, fn($r) => $tipoDe($r) === $ft)); ?>
+<section class="pstage" aria-label="Etapa del proyecto">
+  <div class="pstage-head"><span class="lbl">Etapa del proyecto</span><b><?= $e(etapa_proyecto_txt((int)($cli['etapa_proyecto'] ?? 1))) ?></b></div>
+  <?= etapa_track_html((int)($cli['etapa_proyecto'] ?? 1)) ?>
+</section>
 <section class="pguide" aria-label="Guía rápida del portal">
   <details class="pguide-card" open>
     <summary>¿Cómo usar tu portal? (Guía rápida)</summary>
@@ -337,9 +345,9 @@ $esView = $ft === 'todos' ? $es : array_values(array_filter($es, fn($r) => $tipo
 <div class="pf-filtros"><a class="pf-pill<?= $ft === 'todos' ? ' on' : '' ?>" href="./?ft=todos">Todos <b><?= count($es) ?></b></a><a class="pf-pill<?= $ft === 'video' ? ' on' : '' ?>" href="./?ft=video">Videos <b><?= $nVideos ?></b></a><a class="pf-pill<?= $ft === 'fotos' ? ' on' : '' ?>" href="./?ft=fotos">Fotos <b><?= $nFotos ?></b></a></div>
 <?php if (!$esView) echo '<p class="mut">' . ($es ? 'No hay entregas de este tipo.' : 'Todavía no hay entregas cargadas.') . '</p>'; ?>
 <div class="pg"><?php foreach ($esView as $r): $tf = $tipoDe($r); ?><article class="pc tipo-<?= $tf ?>"><a class="pc-img" href="?e=<?= (int)$r['id'] ?>" aria-label="Ver <?= $e($r['titulo']) ?>"><?php if ($tf === 'fotos'): ?><span class="pc-gal"><svg class="gal-ico"><use href="#photos"/></svg><b>Galería de fotos</b></span><?php else: ?><?= $pst($r) ? '<img src="' . $e($pst($r)) . '" alt="" loading="lazy" width="800" height="500">' : ($did($r) ? '<img src="https://drive.google.com/thumbnail?id=' . $e($did($r)) . '&amp;sz=w800" alt="" loading="lazy" width="800" height="500" referrerpolicy="no-referrer">' : '') ?><?php endif; ?><span class="pc-date"><?= $e(substr($r['creado'], 0, 10)) ?></span></a>
-<div class="pc-body"><span class="pc-tipo tipo-<?= $tf ?>"><?= $tf === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span><h3><a href="?e=<?= (int)$r['id'] ?>"><?= $e($r['titulo']) ?></a></h3><?php if (trim((string)$r['descripcion']) !== '') echo '<p class="pc-desc">' . $e($r['descripcion']) . '</p>'; ?>
+<div class="pc-body"><span class="pc-tipo tipo-<?= $tf ?>"><?= $tf === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span><span class="ent-ver">v<?= max(1, (int)($r['version_num'] ?? 1)) ?></span><h3><a href="?e=<?= (int)$r['id'] ?>"><?= $e($r['titulo']) ?></a></h3><?php if (trim((string)$r['descripcion']) !== '') echo '<p class="pc-desc">' . $e($r['descripcion']) . '</p>'; ?>
 <?php if ($drive($r)): ?><a class="btn" href="<?= $e($drive($r)) ?>" target="_blank" rel="<?= $tf === 'fotos' ? 'noopener noreferrer' : 'noopener' ?>"><?= $tf === 'fotos' ? 'Ver y descargar fotos (Drive)' : 'Abrir en Drive / Descargar' ?></a><?php endif; ?></div><?= $fb($r) ?></article><?php endforeach; ?></div></main>
 <?php endif; endif; endif; ?>
 <aside class="pwa-tip" data-pwa-tip hidden><span data-pwa-msg>Instalá el portal en tu celular para entrar más rápido.</span><button type="button" class="pwa-tip-btn" data-pwa-install hidden>Instalar app</button><button type="button" class="pwa-tip-close" data-pwa-close aria-label="Cerrar">×</button></aside>
 <footer class="foot"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span><span class="loc">Posadas, Misiones · Argentina</span><nav class="social"><a href="../">Web</a><a href="<?= $e($contacto) ?>">Contacto</a></nav><span class="mut">© 2026 blens.ar</span></footer>
-<script src="../assets/fonts.js?v=2" defer></script><script src="../assets/player.js?v=13" defer></script><script src="dfr.js?v=12" defer></script><script src="feedback.js?v=1" defer></script><script src="../assets/push.js?v=5" defer></script></body></html>
+<script src="../assets/fonts.js?v=2" defer></script><script src="../assets/player.js?v=13" defer></script><script src="dfr.js?v=13" defer></script><script src="feedback.js?v=1" defer></script><script src="../assets/push.js?v=6" defer></script></body></html>

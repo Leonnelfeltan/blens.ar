@@ -111,10 +111,22 @@
     return data;
   }
 
+  let registro = null;
   async function ready() {
     if (!supported) throw new Error('Tu navegador no admite notificaciones push.');
     if (!token || !publicKey) throw new Error('La sesión venció. Recargá la página.');
-    return await navigator.serviceWorker.register(sw, { scope });
+    if (!registro) registro = navigator.serviceWorker.register(sw, { scope });
+    return await registro;
+  }
+  async function suscribir(reg) {
+    return await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes(publicKey) });
+  }
+  async function limpiar(sub) {
+    try { await send('unsubscribe', sub); } catch (_) {}
+    try { await sub.unsubscribe(); } catch (_) {}
+  }
+  function hostDe(endpoint) {
+    try { return new URL(endpoint).host; } catch (_) { return ''; }
   }
 
   async function sync() {
@@ -122,7 +134,16 @@
     if (Notification.permission === 'denied') { state(false); ocultarBanner(); return; }
     try {
       const reg = await ready();
-      const sub = await reg.pushManager.getSubscription();
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub && Notification.permission === 'granted') {
+        try {
+          sub = await suscribir(reg);
+          await send('subscribe', sub);
+        } catch (err) {
+          await limpiar(sub);
+          sub = null;
+        }
+      }
       state(!!sub);
       mostrarBanner(!sub);
     } catch (_) {
@@ -142,19 +163,17 @@
       const reg = await ready();
       let sub = await reg.pushManager.getSubscription();
       if (sub) {
-        await send('unsubscribe', sub);
-        await sub.unsubscribe();
+        await limpiar(sub);
         state(false);
         mostrarBanner(true);
         toast('Notificaciones desactivadas.');
         return;
       }
-      const key = bytes(publicKey);
-      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+      sub = await suscribir(reg);
       try {
         await send('subscribe', sub);
       } catch (err) {
-        await sub.unsubscribe();
+        await limpiar(sub);
         throw err;
       }
       state(true);
@@ -165,7 +184,46 @@
     }
   }
 
+  window.blensPushResync = async () => {
+    if (!supported) throw new Error('Tu navegador no admite notificaciones push.');
+    if (Notification.permission !== 'granted') throw new Error('Primero activá el permiso de notificaciones.');
+    const reg = await ready();
+    const anterior = await reg.pushManager.getSubscription();
+    if (anterior) await limpiar(anterior);
+    const sub = await suscribir(reg);
+    try {
+      await send('subscribe', sub);
+    } catch (err) {
+      await limpiar(sub);
+      throw err;
+    }
+    state(true);
+    ocultarBanner();
+    let datos = { ok: false, status: 0, host: hostDe(sub.endpoint), response: '', error: 'No se pudo consultar el servidor.', message: '' };
+    try {
+      const res = await fetch('/api/push-test.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, endpoint: sub.endpoint }),
+      });
+      let json = {};
+      try { json = await res.json(); } catch (_) {}
+      datos = {
+        ok: res.ok && json.ok !== false,
+        status: Number(json.status || 0),
+        host: json.host || hostDe(sub.endpoint),
+        response: String(json.response || ''),
+        error: String(json.error || ''),
+        message: String(json.message || ''),
+      };
+    } catch (err) {
+      datos.error = err && err.message ? err.message : datos.error;
+    }
+    return datos;
+  };
+
   state(false);
   buttons.forEach(b => b.addEventListener('click', toggle));
-  window.addEventListener('load', () => { sync(); });
+  if (document.readyState === 'complete') sync();
+  else window.addEventListener('load', () => { sync(); });
 })();

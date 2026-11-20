@@ -34,7 +34,8 @@ $navEjes = [
     <a href="presupuestos.php"<?= $navCls($navActual === 'presupuestos.php') ?>>Presupuestos</a>
     <a href="../portal/" target="_blank" rel="noopener">Ver portal</a>
     <button type="button" class="push-btn" data-push data-push-tipo="admin" data-push-token="<?= $navToken ?>" data-push-key="<?= $navVapid ?>" data-push-off="Notificaciones" data-push-on="Notificaciones ✓">Notificaciones</button>
-    <button type="button" class="g" data-push-test>Probar push en este celu</button>
+    <button type="button" class="g" data-push-resync>Re-sincronizar y probar este celu</button>
+    <div class="push-diag" data-push-diag hidden role="status" aria-live="polite"></div>
     <button type="button" class="g" data-pwa-install>Instalar app</button>
     <form method="post"><input type="hidden" name="a" value="logout"><input type="hidden" name="t" value="<?= $navToken ?>"><button class="g">Salir</button></form>
   </div>

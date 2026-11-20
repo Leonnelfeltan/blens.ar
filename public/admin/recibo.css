@@ -1,4 +1,4 @@
-body{background:#fff;color:#111;font:14px/1.5 system-ui,sans-serif;max-width:760px;margin:0 auto;padding:2rem 1.2rem}
+body{background:#fff;color:#111;font:14px/1.5 system-ui,sans-serif;max-width:760px;margin:0 auto;padding:calc(2rem + env(safe-area-inset-top,0px)) calc(1.2rem + env(safe-area-inset-right,0px)) calc(2rem + env(safe-area-inset-bottom,0px)) calc(1.2rem + env(safe-area-inset-left,0px))}
 .rh{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #FF5A1F;padding-bottom:1rem;margin-bottom:1.5rem}
 .rh h1{font-size:1.6rem;margin:0}.rh p{margin:.2rem 0;color:#555}
 table{width:100%;border-collapse:collapse;margin:1rem 0}th,td{padding:.5rem .4rem;border-bottom:1px solid #ddd;text-align:left}th{font-size:.8rem;color:#555}

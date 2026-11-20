@@ -48,6 +48,20 @@ function blens_ec_pem_from_point(string $point): string {
     return "-----BEGIN PUBLIC KEY-----\n" . chunk_split(base64_encode((string)$der), 64, "\n") . "-----END PUBLIC KEY-----\n";
 }
 
+function blens_push_host(string $endpoint): string {
+    return strtolower(trim((string)(parse_url($endpoint, PHP_URL_HOST) ?? '')));
+}
+function blens_push_debug_log(string $tipo, string $host, int $status, string $detalle = ''): void {
+    $path = dirname(__DIR__, 2) . '/blens-private/push-debug.log';
+    $linea = date('Y-m-d H:i:s') . ' | ' . $tipo . ' | ' . ($host !== '' ? $host : '-') . ' | ' . $status;
+    if ($detalle !== '') $linea .= ' | ' . preg_replace('/\s+/', ' ', substr($detalle, 0, 200));
+    $lineas = is_file($path) ? (@file($path, FILE_IGNORE_NEW_LINES) ?: []) : [];
+    $lineas[] = $linea;
+    @file_put_contents($path, implode("\n", array_slice($lineas, -20)) . "\n", LOCK_EX);
+}
+function blens_push_hash(string $tipo, ?int $clienteId, string $endpoint): string {
+    return hash('sha256', $tipo . '|' . ($clienteId ?? '') . '|' . $endpoint);
+}
 function blens_push_origin(string $endpoint): string {
     $u = parse_url($endpoint);
     if (!is_array($u) || strtolower((string)($u['scheme'] ?? '')) !== 'https') return '';
@@ -165,18 +179,26 @@ function blens_push_encrypt(string $plain, string $p256dh, string $auth, ?string
     return ['body' => $body, 'salt' => $salt, 'cek' => $cek, 'nonce' => $nonce, 'ephemeralPublic' => $asPublic];
 }
 
-function blens_push_send(array $sub, array $payload): array {
+function blens_push_send(array $sub, array $payload, string $tipo = 'admin'): array {
     $endpoint = trim((string)($sub['endpoint'] ?? ''));
     $p256dh = trim((string)($sub['p256dh'] ?? ''));
     $auth = trim((string)($sub['auth'] ?? ''));
+    $host = blens_push_host($endpoint);
     if (!blens_push_endpoint_valido($endpoint) || strlen($endpoint) > 2000 || $p256dh === '' || $auth === '') {
-        return ['ok' => false, 'status' => 0, 'delete' => false, 'error' => 'Endpoint inválido.', 'response' => ''];
+        blens_push_debug_log($tipo, $host, 0, 'Endpoint inválido.');
+        return ['ok' => false, 'status' => 0, 'delete' => false, 'error' => 'Endpoint inválido.', 'response' => '', 'host' => $host];
     }
     $jwt = blens_vapid_jwt($endpoint);
-    if ($jwt === '') return ['ok' => false, 'status' => 0, 'delete' => false, 'error' => 'JWT VAPID inválido.', 'response' => ''];
+    if ($jwt === '') {
+        blens_push_debug_log($tipo, $host, 0, 'JWT VAPID inválido.');
+        return ['ok' => false, 'status' => 0, 'delete' => false, 'error' => 'JWT VAPID inválido.', 'response' => '', 'host' => $host];
+    }
     $plain = (string)json_encode($payload, JSON_UNESCAPED_UNICODE);
     $enc = blens_push_encrypt($plain, $p256dh, $auth);
-    if (!isset($enc['body'])) return ['ok' => false, 'status' => 0, 'delete' => false, 'error' => 'No se pudo cifrar el payload.', 'response' => ''];
+    if (!isset($enc['body'])) {
+        blens_push_debug_log($tipo, $host, 0, 'No se pudo cifrar el payload.');
+        return ['ok' => false, 'status' => 0, 'delete' => false, 'error' => 'No se pudo cifrar el payload.', 'response' => '', 'host' => $host];
+    }
 
     $ch = curl_init($endpoint);
     curl_setopt_array($ch, [
@@ -198,7 +220,11 @@ function blens_push_send(array $sub, array $payload): array {
     $error = curl_error($ch);
     curl_close($ch);
     if ($status >= 400 || $status === 0) {
+        $detalle = trim(substr($response, 0, 200) . ' ' . $error);
         error_log('[blens push] HTTP ' . $status . ' body=' . substr($response, 0, 500) . ' error=' . $error);
+        blens_push_debug_log($tipo, $host, $status, $detalle);
+    } else {
+        blens_push_debug_log($tipo, $host, $status);
     }
     return [
         'ok' => $status >= 200 && $status < 300,
@@ -206,6 +232,7 @@ function blens_push_send(array $sub, array $payload): array {
         'delete' => in_array($status, [404, 410], true),
         'error' => $error,
         'response' => substr($response, 0, 500),
+        'host' => $host,
     ];
 }
 
@@ -221,6 +248,27 @@ function blens_push_subscriptions(PDO $pdo, string $tipo, ?int $clienteId): arra
 function blens_push_delete(PDO $pdo, int $id): void {
     $pdo->prepare('DELETE FROM push_subscriptions WHERE id=?')->execute([$id]);
 }
+function blens_push_send_target(PDO $pdo, string $tipo, ?int $clienteId, string $endpoint, array $payload): array {
+    $endpoint = trim($endpoint);
+    $host = blens_push_host($endpoint);
+    if (!blens_push_endpoint_valido($endpoint) || strlen($endpoint) > 2000) {
+        blens_push_debug_log($tipo, $host, 0, 'Endpoint inválido.');
+        return ['ok' => false, 'status' => 0, 'delete' => false, 'error' => 'Endpoint de notificaciones no permitido.', 'response' => '', 'host' => $host];
+    }
+    $sql = 'SELECT id,endpoint,p256dh,auth FROM push_subscriptions WHERE endpoint_hash=? AND tipo=?';
+    $args = [blens_push_hash($tipo, $clienteId, $endpoint), $tipo];
+    if ($clienteId !== null) { $sql .= ' AND cliente_id=?'; $args[] = $clienteId; }
+    $s = $pdo->prepare($sql);
+    $s->execute($args);
+    $sub = $s->fetch();
+    if (!$sub) {
+        blens_push_debug_log($tipo, $host, 0, 'Suscripción no encontrada.');
+        return ['ok' => false, 'status' => 0, 'delete' => false, 'error' => 'Suscripción no encontrada. Volvé a sincronizar.', 'response' => '', 'host' => $host];
+    }
+    $res = blens_push_send($sub, $payload, $tipo);
+    if (!empty($res['delete'])) blens_push_delete($pdo, (int)$sub['id']);
+    return $res;
+}
 
 function blens_push_notify_detailed(PDO $pdo, string $tipo, ?int $clienteId, array $payload): array {
     $res = ['ok' => false, 'intentados' => 0, 'enviados' => 0, 'eliminados' => 0, 'estados' => [], 'errores' => []];
@@ -230,7 +278,7 @@ function blens_push_notify_detailed(PDO $pdo, string $tipo, ?int $clienteId, arr
     }
     foreach (blens_push_subscriptions($pdo, $tipo, $clienteId) as $sub) {
         try {
-            $envio = blens_push_send($sub, $payload);
+            $envio = blens_push_send($sub, $payload, $tipo);
             $res['intentados']++;
             $res['estados'][] = $envio['status'];
             if ($envio['delete']) {

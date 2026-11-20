@@ -70,6 +70,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare("UPDATE entregas SET estado_cliente=COALESCE(?, 'pendiente'), comentario_cliente=NULL, comentario_fecha=NULL WHERE id=? AND cliente_id=? AND estado_cliente='ajuste'")->execute([$estado, $eid, $c]);
             $_SESSION['flash'] = 'Ajuste marcado como resuelto.'; header("Location: clientes.php?c=$c"); exit;
         }
+        if ($a === 'etapa') {
+            $n = (int)($_POST['etapa'] ?? 0);
+            if ($c <= 0 || !isset(PROYECTO_ETAPAS[$n])) throw new RuntimeException('Etapa inválida.');
+            $pdo->prepare('UPDATE clientes SET etapa_proyecto=? WHERE id=?')->execute([$n, $c]);
+            $_SESSION['flash'] = 'Etapa actualizada: ' . etapa_proyecto_txt($n) . '.';
+            header("Location: clientes.php?c=$c#tab-resumen"); exit;
+        }
         if ($a === 'loc_estado') {
             $lid = (int)($_POST['id'] ?? 0); $estado = (string)($_POST['estado'] ?? '');
             if ($c <= 0 || $lid <= 0 || !isset(locaciones_estados()[$estado])) throw new RuntimeException('Datos de propiedad inválidos.');
@@ -183,10 +190,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             if ($old) {
                 if ($tipoEn === 'fotos') {
-                    $pdo->prepare('UPDATE entregas SET tipo=?,titulo=?,descripcion=?,link_hd=?,link_4k=?,preview=NULL,poster=NULL,proyecto_id=NULL WHERE id=?')->execute([$tipoEn, $t, $d, $hd, $k4, $id]);
+                    $pdo->prepare('UPDATE entregas SET tipo=?,titulo=?,descripcion=?,link_hd=?,link_4k=?,preview=NULL,poster=NULL,proyecto_id=NULL,version_num=version_num+1 WHERE id=?')->execute([$tipoEn, $t, $d, $hd, $k4, $id]);
                     rmp($old['preview']); rmp($old['poster']);
                 } else {
-                    $pdo->prepare('UPDATE entregas SET tipo=?,titulo=?,descripcion=?,link_hd=?,link_4k=?,preview=COALESCE(?,preview),poster=COALESCE(?,poster),proyecto_id=? WHERE id=?')->execute([$tipoEn, $t, $d, $hd, $k4, $mp4, $pos, $pj, $id]);
+                    $pdo->prepare('UPDATE entregas SET tipo=?,titulo=?,descripcion=?,link_hd=?,link_4k=?,preview=COALESCE(?,preview),poster=COALESCE(?,poster),proyecto_id=?,version_num=version_num+1 WHERE id=?')->execute([$tipoEn, $t, $d, $hd, $k4, $mp4, $pos, $pj, $id]);
                     if ($mp4) rmp($old['preview']); if ($pos) rmp($old['poster']);
                 }
             } else {
@@ -194,6 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $nid = $id ?: (int)$pdo->lastInsertId();
             if (!$id) {
+                $pdo->prepare('UPDATE clientes SET etapa_proyecto=GREATEST(etapa_proyecto,4) WHERE id=?')->execute([$c]);
                 blens_push_notify($pdo, 'cliente', $c, [
                     'title' => 'Nuevo material en blens.ar',
                     'body' => $t,
@@ -249,6 +257,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
                 $n++;
             }
+            if ($n > 0) $pdo->prepare('UPDATE clientes SET etapa_proyecto=GREATEST(etapa_proyecto,4) WHERE id=?')->execute([$c]);
             $_SESSION['flash'] = 'Se importaron ' . $n . ' videos a las entregas.' . (isset($_POST['crear_trabajo']) ? ' Trabajos registrados para cobro.' : '');
             header("Location: clientes.php?c=$c"); exit;
         }
@@ -267,7 +276,7 @@ $ft = (string)($_GET['ft'] ?? 'todos'); if (!in_array($ft, ['todos', 'video', 'f
 $list = $cli = $ent = null; $ents = []; $entsList = []; $locs = [];
 if ($vc === null) { $list = $pdo->query('SELECT c.*, (SELECT COUNT(*) FROM entregas x WHERE x.cliente_id = c.id) AS n FROM clientes c ORDER BY c.nombre')->fetchAll(); }
 else {
-    $cli = ['id' => 0, 'nombre' => '', 'empresa' => '', 'usuario' => '', 'telefono' => '', 'activo' => 1, 'logo' => null, 'logo_web' => 1, 'tarifa_video' => null, 'tarifa_foto' => null, 'gestion_locaciones' => 0, 'portal_visitas' => 0, 'portal_ultima_visita' => null];
+    $cli = ['id' => 0, 'nombre' => '', 'empresa' => '', 'usuario' => '', 'telefono' => '', 'activo' => 1, 'logo' => null, 'logo_web' => 1, 'tarifa_video' => null, 'tarifa_foto' => null, 'gestion_locaciones' => 0, 'portal_visitas' => 0, 'portal_ultima_visita' => null, 'etapa_proyecto' => 1];
     if ($vc) { $s = $pdo->prepare('SELECT * FROM clientes WHERE id=?'); $s->execute([$vc]); $cli = $s->fetch() ?: $cli; }
     if ($cli['id']) {
         $mpCli = modo_prueba($pdo);
@@ -314,7 +323,7 @@ $formCliente = function (bool $conBorrar = false) use ($e, $cli, $T): string {
 <?php endif; ?>
 <?php return ob_get_clean();
 };
-?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=34"></head><body>
+?><!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex"><title>Clientes | blens.ar</title><link rel="icon" href="../assets/favicon.svg" type="image/svg+xml"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/apple-touch-icon.png"><meta name="theme-color" content="#0b0b0b"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="admin.css?v=35"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <?php require __DIR__ . '/nav.php'; ?>
 <?php if (isset($_GET['avisar']) && $cli && $cli['telefono']) { $s2 = $pdo->prepare('SELECT titulo FROM entregas WHERE id=? AND cliente_id=?'); $s2->execute([(int)$_GET['avisar'], $cli['id']]); if ($t2 = $s2->fetchColumn()) { $w = wa_url($cli['telefono'], 'Hola ' . explode(' ', trim($cli['nombre']))[0] . ', ya tenés una nueva entrega disponible en tu portal: «' . $t2 . '». Ingresá acá: ' . (blens_cfg()['sitio'] ?? 'https://blens.ar') . '/portal/'); if ($w) echo '<p class="ok">¿Avisamos al cliente? <a class="btn" href="' . $e($w) . '" target="_blank" rel="noopener">Enviar aviso por WhatsApp</a></p>'; } } ?>
@@ -404,6 +413,10 @@ $waLinks = [
         <form method="post"><input type="hidden" name="a" value="nueva_clave"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><button class="g">Regenerar clave</button></form>
       </div>
     </section>
+    <section class="c360-card stage-card">
+      <div class="stage-head"><span class="lbl">Etapa del proyecto</span><form method="post" class="stage-form"><input type="hidden" name="a" value="etapa"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><select name="etapa" aria-label="Etapa del proyecto"><?php foreach (PROYECTO_ETAPAS as $n => $label): ?><option value="<?= (int)$n ?>"<?= (int)$cli['etapa_proyecto'] === $n ? ' selected' : '' ?>><?= (int)$n ?> · <?= $e($label) ?></option><?php endforeach; ?></select><button class="g">Actualizar</button></form></div>
+      <?= etapa_track_html((int)$cli['etapa_proyecto']) ?>
+    </section>
   </div>
   <div class="lh2 ent-head">
     <h2>Entregas</h2>
@@ -432,11 +445,12 @@ $waLinks = [
   <?php $nVidEnt = count(array_filter($ents, fn($r) => $tipoDe($r) === 'video')); $nFotEnt = count($ents) - $nVidEnt; ?>
   <div class="lf-filtros"><a class="lf-pill<?= $ft === 'todos' ? ' on' : '' ?>" href="?c=<?= (int)$cli['id'] ?>&ft=todos#tab-resumen">Todos <b><?= count($ents) ?></b></a><a class="lf-pill<?= $ft === 'video' ? ' on' : '' ?>" href="?c=<?= (int)$cli['id'] ?>&ft=video#tab-resumen">Videos <b><?= $nVidEnt ?></b></a><a class="lf-pill<?= $ft === 'fotos' ? ' on' : '' ?>" href="?c=<?= (int)$cli['id'] ?>&ft=fotos#tab-resumen">Fotos <b><?= $nFotEnt ?></b></a></div>
   <table class="cards ent-table"><tr><th>Tipo</th><th>Título</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr>
-  <?php foreach ($entsList as $r): $est = (string)($r['estado_cliente'] ?? 'pendiente'); $com = trim((string)($r['comentario_cliente'] ?? '')); ?>
-  <tr><td data-label="Tipo"><span class="b tipo-<?= $tipoDe($r) ?>"><?= $tipoDe($r) === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span></td><td data-label="Título"><?= $e($r['titulo']) ?></td><td class="mut" data-label="Fecha"><?= $e(substr((string)$r['creado'], 0, 10)) ?></td>
+  <?php foreach ($entsList as $r): $est = (string)($r['estado_cliente'] ?? 'pendiente'); $com = trim((string)($r['comentario_cliente'] ?? '')); $ver = max(1, (int)($r['version_num'] ?? 1)); $txtEnt = 'Hola ' . $waNombre . ', te comparto la entrega «' . trim((string)$r['titulo']) . '» (v' . $ver . ') en tu portal de blens.ar: ' . wa_link_portal(); ?>
+  <tr><td data-label="Tipo"><span class="b tipo-<?= $tipoDe($r) ?>"><?= $tipoDe($r) === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span></td><td data-label="Título"><?= $e($r['titulo']) ?> <span class="ent-ver">v<?= $ver ?></span></td><td class="mut" data-label="Fecha"><?= $e(substr((string)$r['creado'], 0, 10)) ?></td>
   <td data-label="Estado"><span class="c360-est"><?php if ($est === 'ajuste'): ?><span class="b adj" title="<?= $e($com) ?>">Pidió ajuste</span><?php elseif ($est === 'aprobado'): ?><span class="badge ok">Aprobado</span><?php else: ?><span class="badge pend">Pendiente</span><?php endif; ?></span>
     <?php if ($est === 'ajuste'): ?><?php if ($com !== ''): ?><div class="mut ent-com" title="<?= $e($com) ?>"><?= $e(mb_substr($com, 0, 55)) ?></div><?php endif; ?><form method="post" class="resolver-f"><input type="hidden" name="accion" value="resolver_ajuste"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="g">Marcar resuelto</button></form><?php endif; ?></td>
-  <td data-label="Acciones"><div class="ent-actions"><a class="btn g" href="?c=<?= (int)$cli['id'] ?>&e=<?= (int)$r['id'] ?>">Editar</a><?php if ($tipoDe($r) === 'video' && trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== ''): ?><form method="post" class="ia-f"><input type="hidden" name="a" value="ia_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="g">IA</button></form><?php endif; ?><form method="post" class="del-f"><input type="hidden" name="a" value="del_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="r" data-confirm="¿Borrar esta entrega?">Borrar</button></form></div></td></tr>
+    <td data-label="Acciones"><div class="ent-actions"><button type="button" class="g" data-copiar="<?= $e($txtEnt) ?>">Copiar mensaje WhatsApp</button><a class="btn g" href="?c=<?= (int)$cli['id'] ?>&e=<?= (int)$r['id'] ?>">Editar</a>
+<?php if ($tipoDe($r) === 'video' && trim((string)(blens_cfg()['ai_api_key'] ?? '')) !== ''): ?><form method="post" class="ia-f"><input type="hidden" name="a" value="ia_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="g">IA</button></form><?php endif; ?><form method="post" class="del-f"><input type="hidden" name="a" value="del_entrega"><input type="hidden" name="t" value="<?= $T ?>"><input type="hidden" name="cid" value="<?= (int)$cli['id'] ?>"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="r" data-confirm="¿Borrar esta entrega?">Borrar</button></form></div></td></tr>
   <?php endforeach; if (!$entsList) echo '<tr><td colspan="5" class="mut">Sin entregas todavía.</td></tr>'; ?></table>
 </section>
 <?php if ($verLoc): ?>
@@ -498,4 +512,4 @@ $waLinks = [
 <?php else: ?>
 <?= $formCliente(false) ?>
 <?php endif; ?>
-<?php endif; ?><script src="admin.js?v=31"></script><script src="../assets/push.js?v=5"></script></body></html>
+<?php endif; ?><script src="admin.js?v=32"></script><script src="../assets/push.js?v=6"></script></body></html>

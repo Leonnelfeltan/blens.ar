@@ -22,13 +22,31 @@ if (empty($_SESSION['t']) || !hash_equals($_SESSION['t'], (string)($body['token'
 
 $pdo = blens_db();
 blens_migrar($pdo);
-$res = blens_push_notify_detailed($pdo, 'admin', null, [
+$endpoint = trim((string)($body['endpoint'] ?? ''));
+$payload = [
     'title' => 'Push de prueba · blens.ar',
     'body' => 'Si ves esto, las notificaciones nativas funcionan correctamente.',
     'url' => '/admin/',
     'tag' => 'blens-push-test-' . time(),
-]);
-
+];
+if ($endpoint !== '') {
+    $res = blens_push_send_target($pdo, 'admin', null, $endpoint, $payload);
+    $detalle = trim((string)($res['response'] ?? '') . ' ' . (string)($res['error'] ?? ''));
+    $message = $res['ok']
+        ? 'Enviado (HTTP ' . (int)$res['status'] . ')'
+        : 'No se pudo enviar: HTTP ' . (int)$res['status'] . ($detalle !== '' ? ' · ' . $detalle : '');
+    blens_push_test_out($res['ok'] ? 200 : 502, [
+        'ok' => $res['ok'],
+        'message' => $message,
+        'host' => $res['host'] ?? blens_push_host($endpoint),
+        'status' => (int)$res['status'],
+        'response' => (string)($res['response'] ?? ''),
+        'error' => (string)($res['error'] ?? ''),
+        'intentados' => 1,
+        'enviados' => $res['ok'] ? 1 : 0,
+    ]);
+}
+$res = blens_push_notify_detailed($pdo, 'admin', null, $payload);
 if ($res['enviados'] > 0) {
     $message = 'Enviado (HTTP ' . implode(', ', array_slice($res['estados'], 0, 3)) . ')';
 } elseif ($res['intentados'] === 0) {
@@ -36,7 +54,6 @@ if ($res['enviados'] > 0) {
 } else {
     $message = 'No se pudo enviar: ' . implode(' | ', array_slice($res['errores'], 0, 2));
 }
-
 blens_push_test_out($res['ok'] ? 200 : 502, [
     'ok' => $res['ok'],
     'message' => $message,

@@ -18,12 +18,14 @@ self.addEventListener('push', event => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; }
   catch (_) { data = { body: event.data ? event.data.text() : '' }; }
-  const title = data.title || 'blens.ar · Admin';
+  if (!data || typeof data !== 'object') data = { body: String(data || '') };
+  const title = typeof data.title === 'string' && data.title.trim() ? data.title : 'blens.ar · Admin';
+  const body = typeof data.body === 'string' ? data.body : String(data.body || '');
   const options = {
-    body: data.body || '',
+    body: body,
     icon: APP.icon,
     badge: APP.icon,
-    tag: data.tag || 'blens-admin',
+    tag: typeof data.tag === 'string' && data.tag ? data.tag : 'blens-admin',
     data: { url: blensPushUrl(data.url) },
   };
   event.waitUntil(self.registration.showNotification(title, options));

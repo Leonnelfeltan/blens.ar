@@ -39,7 +39,7 @@ $auth = trim((string)($sub['keys']['auth'] ?? $sub['auth'] ?? ''));
 if (!blens_push_endpoint_valido($endpoint) || strlen($endpoint) > 2000) blens_push_out(400, ['ok' => false, 'error' => 'Endpoint de notificaciones no permitido.']);
 if (strlen(blens_b64url_decode($p256dh)) !== 65 || strlen(blens_b64url_decode($auth)) !== 16) blens_push_out(400, ['ok' => false, 'error' => 'Claves de suscripción inválidas.']);
 
-$hash = hash('sha256', $tipo . '|' . ($clienteId ?? '') . '|' . $endpoint);
+$hash = blens_push_hash($tipo, $clienteId, $endpoint);
 $action = (string)($body['action'] ?? 'subscribe');
 if ($action === 'unsubscribe') {
     $s = $pdo->prepare('DELETE FROM push_subscriptions WHERE endpoint_hash=? AND tipo=?');

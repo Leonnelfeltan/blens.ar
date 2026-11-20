@@ -7,7 +7,7 @@ a{color:inherit;text-decoration:none}
 :focus-visible{outline:2px solid var(--o);outline-offset:3px}
 .mut{color:var(--mut)}
 .mark{width:28px;height:28px;color:var(--h)}
-.nav{position:fixed;inset:0 0 auto;z-index:50;display:flex;justify-content:space-between;align-items:center;padding:1rem clamp(1rem,4vw,3rem);transition:background .3s,border-color .3s;border-bottom:1px solid transparent}
+.nav{position:fixed;inset:0 0 auto;z-index:50;display:flex;justify-content:space-between;align-items:center;padding:calc(1rem + env(safe-area-inset-top,0px)) calc(clamp(1rem,4vw,3rem) + env(safe-area-inset-right,0px)) 1rem calc(clamp(1rem,4vw,3rem) + env(safe-area-inset-left,0px));transition:background .3s,border-color .3s;border-bottom:1px solid transparent}
 .nav.solid{background:rgba(20,17,15,.92);backdrop-filter:blur(8px);border-color:var(--line)}
 .brand{display:flex;gap:.6rem;align-items:center;font-weight:600;letter-spacing:-.02em}
 .nav nav{display:flex;gap:1.6rem;align-items:center;font-size:.9rem}
@@ -371,6 +371,16 @@ body.web-lightbox-open{overflow:hidden}
 .quote-summary ul{margin:.3rem 0 .8rem;padding-left:1.2rem;color:var(--mut)}
 .quote-summary li{margin:.15rem 0}
 .quote-cta{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.1rem}
+.etapa-track{list-style:none;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:.4rem;margin-top:.9rem}
+.etapa-track li{position:relative;display:grid;justify-items:center;gap:.35rem;text-align:center;padding:.8rem .35rem .6rem;background:var(--c2);border:1px solid var(--line);border-radius:3px;color:var(--mut)}
+.etapa-track li::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:var(--line)}
+.etapa-track li.done::before,.etapa-track li.on::before{background:var(--o)}
+.etapa-track li span{display:grid;place-items:center;width:24px;height:24px;border:1px solid var(--line);border-radius:50%;font:600 .78rem Sora,sans-serif}
+.etapa-track li.done span,.etapa-track li.on span{border-color:var(--o);color:var(--o)}
+.etapa-track li.on{color:var(--h);border-color:rgba(255,90,31,.5);background:rgba(255,90,31,.08)}
+.etapa-track li b{font:600 .72rem/1.35 Sora,sans-serif}
+.ent-ver{display:inline-block;margin-left:.35rem;padding:.05rem .4rem;border:1px solid var(--line);border-radius:2px;color:var(--o);font:600 .68rem Sora,sans-serif;vertical-align:middle}
+@media(max-width:640px){.etapa-track{gap:.25rem}.etapa-track li{padding:.6rem .2rem}.etapa-track li b{font-size:.62rem}}
 @media(max-width:800px){
   .quote-progress li{font-size:.75rem;padding:.5rem}
   .quote-options{grid-template-columns:1fr}
