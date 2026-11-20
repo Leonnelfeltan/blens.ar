@@ -162,6 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $publicar = isset($_POST['publicar_web']); $webPj = (int)($_POST['web_proyecto_id'] ?? 0);
             $webCat = (string)($_POST['web_categoria'] ?? 'reels'); if (!in_array($webCat, ['reels', 'cobertura', 'estrategia'], true)) $webCat = 'reels';
             $webVisible = isset($_POST['web_visible']); $webCli = isset($_POST['mostrar_cliente']);
+            $webFormato = blens_formato((string)($_POST['formato'] ?? '9:16'));
             if ($tipoEn === 'fotos') {
                 $pj = null;
                 if ($hd === '') throw new RuntimeException('Pegá el link de la carpeta o archivo de Google Drive del pack de fotos.');
@@ -174,6 +175,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($id) { $s = $pdo->prepare('SELECT * FROM entregas WHERE id=? AND cliente_id=?'); $s->execute([$id, $c]); $old = $s->fetch(); if (!$old) throw new RuntimeException('Entrega inexistente.'); }
             $mp4 = null; $pos = null; $auto = null;
             if ($tipoEn === 'video') {
+                $detectado = blens_video_formato((string)($_FILES['mp4']['tmp_name'] ?? ''));
+                if ($detectado !== '') $webFormato = $detectado;
                 $subido = up('mp4', VIDEOS, 500 * 1048576);
                 if ($subido) [$mp4, $auto] = procesar($subido);
                 $pos = up('poster', ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'], 8 * 1048576);
@@ -208,6 +211,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $resWeb = blens_publicar_entrega_web($pdo, $nid, [
                     'cliente_id' => $c, 'proyecto_id' => $webPj, 'titulo' => $t, 'descripcion' => $d,
                     'categoria' => $webCat, 'mostrar_cliente' => $webCli, 'visible' => $webVisible,
+                    'formato' => $webFormato,
                 ]);
                 $publicacion = ' Publicada en la web' . ($resWeb['nuevo'] ? ' con un proyecto nuevo' : '') . '.';
             } elseif ($old && !empty($old['publicado_web'])) {
@@ -374,14 +378,19 @@ $wl = $acc['tel'] ? wa_url($acc['tel'], $txt) : null; ?>
 <?php
 $webCats = ['reels' => 'Reels', 'cobertura' => 'Cobertura', 'estrategia' => 'Estrategia'];
 $webCatAct = in_array((string)($ent['categoria'] ?? ''), array_keys($webCats), true) ? (string)$ent['categoria'] : 'reels';
-$webVisibleAct = 1; $webCliAct = 1;
-if (!empty($ent['proyecto_id'])) { $qw = $pdo->prepare('SELECT visible,mostrar_cliente FROM proyectos WHERE id=?'); $qw->execute([(int)$ent['proyecto_id']]); if ($rw = $qw->fetch()) { $webVisibleAct = (int)$rw['visible']; $webCliAct = (int)$rw['mostrar_cliente']; } }
+$webVisibleAct = 1; $webCliAct = 1; $webFormatoAct = '9:16';
+if (!empty($ent['proyecto_id'])) { $qw = $pdo->prepare('SELECT visible,mostrar_cliente,formato FROM proyectos WHERE id=?'); $qw->execute([(int)$ent['proyecto_id']]); if ($rw = $qw->fetch()) { $webVisibleAct = (int)$rw['visible']; $webCliAct = (int)$rw['mostrar_cliente']; $webFormatoAct = blens_formato((string)$rw['formato']); } }
+if ($webFormatoAct === '9:16' && !empty($ent['preview'])) {
+    $detectado = blens_video_formato(PRIV . '/' . basename((string)$ent['preview']));
+    if ($detectado !== '') $webFormatoAct = $detectado;
+}
 $ps->execute([(int)$cli['id']]);
 ?>
 <label class="full chk"><input type="checkbox" name="publicar_web"<?= !empty($ent['publicado_web']) ? ' checked' : '' ?>> Publicar esta entrega en la web y vincularla a un proyecto público</label>
 <label class="full"><span class="lbl">Proyecto público <span class="opt">(opcional)</span> (si lo dejás vacío, se crea uno nuevo con esta entrega)</span><select name="web_proyecto_id"><option value="0">— Crear proyecto nuevo —</option><?php foreach ($ps as $x): ?><option value="<?= (int)$x['id'] ?>"<?= (int)($ent['proyecto_id'] ?? 0) === (int)$x['id'] ? ' selected' : '' ?>><?= $e($x['titulo'] . ($x['cliente'] ? ' · ' . $x['cliente'] : '')) ?></option><?php endforeach; ?></select></label>
 <div class="full fin-opts">
   <label><span class="lbl">Categoría en la web</span><select name="web_categoria"><?php foreach ($webCats as $k => $n): ?><option value="<?= $e($k) ?>"<?= $k === $webCatAct ? ' selected' : '' ?>><?= $e($n) ?></option><?php endforeach; ?></select></label>
+  <label><span class="lbl">Formato en la web</span><select name="formato"><option value="9:16"<?= $webFormatoAct === '9:16' ? ' selected' : '' ?>>Vertical 9:16</option><option value="16:9"<?= $webFormatoAct === '16:9' ? ' selected' : '' ?>>Horizontal 16:9</option></select></label>
   <label class="chk"><input type="checkbox" name="web_visible"<?= $webVisibleAct ? ' checked' : '' ?>>Visible en la web</label>
   <label class="chk"><input type="checkbox" name="mostrar_cliente"<?= $webCliAct ? ' checked' : '' ?>>Mostrar el nombre del cliente en la web</label>
 </div>

@@ -13,8 +13,8 @@ $consN = consultas_pendientes($pdo);
 $cobN = cobros_pendientes($pdo);
 if (!empty($_SESSION['ok'])) blens_acreditar_tna($pdo);  // acreditación diaria de intereses (idempotente)
 $colsProy = blens_columnas($pdo, 'proyectos');
-$faltaMig = !isset($colsProy['video_1080'], $colsProy['video_480'], $colsProy['estado'], $colsProy['entrega_id'], $colsProy['mostrar_cliente']);
-const MIG_CMD = "sudo mysql blens_web -e \"ALTER TABLE proyectos ADD COLUMN video_1080 VARCHAR(255) NULL, ADD COLUMN video_480 VARCHAR(255) NULL, ADD COLUMN calidades VARCHAR(40) NULL, ADD COLUMN estado VARCHAR(12) NOT NULL DEFAULT 'listo', ADD COLUMN error_msg VARCHAR(255) NULL, ADD COLUMN fuente_drive VARCHAR(500) NULL, ADD COLUMN cola_src VARCHAR(255) NULL, ADD COLUMN poster_auto TINYINT(1) NOT NULL DEFAULT 0;\"";
+$faltaMig = !isset($colsProy['video_1080'], $colsProy['video_480'], $colsProy['estado'], $colsProy['entrega_id'], $colsProy['mostrar_cliente'], $colsProy['formato']);
+const MIG_CMD = "sudo mysql blens_web -e \"ALTER TABLE proyectos ADD COLUMN video_1080 VARCHAR(255) NULL, ADD COLUMN video_480 VARCHAR(255) NULL, ADD COLUMN calidades VARCHAR(40) NULL, ADD COLUMN estado VARCHAR(12) NOT NULL DEFAULT 'listo', ADD COLUMN error_msg VARCHAR(255) NULL, ADD COLUMN fuente_drive VARCHAR(500) NULL, ADD COLUMN cola_src VARCHAR(255) NULL, ADD COLUMN poster_auto TINYINT(1) NOT NULL DEFAULT 0, ADD COLUMN formato VARCHAR(10) NOT NULL DEFAULT '9:16';\"";
 $faltaCat = isset($colsProy['categoria']) && stripos($colsProy['categoria'], 'varchar(40)') === false;
 const MIG_CAT_CMD = "sudo mysql blens_web -e \"ALTER TABLE proyectos MODIFY categoria VARCHAR(40) NOT NULL DEFAULT 'reels';\"";
 $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
@@ -161,17 +161,18 @@ if ($post) {
                 if (!isset($cats[$ci])) $cats[$ci] = cat_label($ci);
                 $clid = (int)($_POST['cliente_id'] ?? 0); $cli = '';
                 if ($clid) { $q0 = $pdo->prepare('SELECT empresa,nombre FROM clientes WHERE id=?'); $q0->execute([$clid]); if ($r0 = $q0->fetch()) $cli = $r0['empresa'] ?: $r0['nombre']; else $clid = 0; }
-                $w = isset($_POST['ancho']) ? 1 : 0;
+                $formato = blens_formato((string)($_POST['formato'] ?? '9:16'));
+                $w = $formato === '16:9' ? 1 : 0;
                 $vids = drive_folder_videos($fid);
                 if (!$vids) throw new RuntimeException('No encontré videos en esa carpeta. Revisá que esté compartida como «cualquier persona con el enlace» y que tenga archivos MP4, MOV, MKV o WebM.');
-                $ins = $pdo->prepare("INSERT INTO proyectos (titulo,cliente,categoria,descripcion,ancho,orden,visible,cliente_id,estado,fuente_drive,poster_auto) VALUES (?,?,?,?,?,?,1,?,'procesando',?,1)");
+                $ins = $pdo->prepare("INSERT INTO proyectos (titulo,cliente,categoria,descripcion,ancho,formato,orden,visible,cliente_id,estado,fuente_drive,poster_auto) VALUES (?,?,?,?,?,?,?,1,?,'procesando',?,1)");
                 $orden = (int)$pdo->query("SELECT COALESCE(MAX(orden),0) FROM proyectos WHERE categoria <> 'showreel'")->fetchColumn();
                 if (!is_dir(COLA)) @mkdir(COLA, 0750, true);
                 $n = 0; $err = 0;
                 foreach ($vids as $vid => $name) {
                     $titulo = trim(pathinfo($name, PATHINFO_FILENAME)); if ($titulo === '') $titulo = $name;
                     @file_put_contents(COLA . '/drive_' . $vid . '.name', $titulo);
-                    $ins->execute([mb_substr($titulo, 0, 120), $cli, $ci, '', $w, ++$orden, $clid ?: null, 'https://drive.google.com/file/d/' . $vid . '/view']);
+                    $ins->execute([mb_substr($titulo, 0, 120), $cli, $ci, '', $w, $formato, ++$orden, $clid ?: null, 'https://drive.google.com/file/d/' . $vid . '/view']);
                     $nid = (int)$pdo->lastInsertId();
                     try { lanzar($nid); $n++; }
                     catch (Throwable $x2) { $err++; $pdo->prepare("UPDATE proyectos SET estado='error', error_msg=? WHERE id=?")->execute([mb_substr($x2->getMessage(), 0, 250), $nid]); }
@@ -204,6 +205,7 @@ if ($post) {
                     'mostrar_cliente' => isset($_POST['mostrar_cliente']),
                     'visible' => isset($_POST['visible']),
                     'poster' => $poster ?: '',
+                    'formato' => blens_formato((string)($_POST['formato'] ?? '9:16')),
                 ]);
                 if (!$antes && $clientePush) {
                     blens_push_notify($pdo, 'cliente', $clientePush, [
@@ -238,7 +240,7 @@ if ($post) {
                 $cli = mb_substr(trim((string)($_POST['cliente'] ?? '')), 0, 80); $clid = (int)($_POST['cliente_id'] ?? 0);
                 if ($cli !== '') { $clid = 0; } elseif ($clid) { $q0 = $pdo->prepare('SELECT empresa,nombre FROM clientes WHERE id=?'); $q0->execute([$clid]); if ($r0 = $q0->fetch()) $cli = $r0['empresa'] ?: $r0['nombre']; else $clid = 0; }
                 $d = mb_substr(trim((string)($_POST['descripcion'] ?? '')), 0, 160);
-                $w = isset($_POST['ancho']) ? 1 : 0; $v = isset($_POST['visible']) ? 1 : 0;
+                $formato = blens_formato((string)($_POST['formato'] ?? '9:16')); $w = $formato === '16:9' ? 1 : 0; $v = isset($_POST['visible']) ? 1 : 0;
                 $sv = mb_substr(trim((string)($_POST['servicios'] ?? '')), 0, 160); $dt = mb_substr(trim((string)($_POST['detalle'] ?? '')), 0, 4000); $rs = mb_substr(trim((string)($_POST['resultado'] ?? '')), 0, 200);
                 $old = null;
                 if ($id) { $s = $pdo->prepare('SELECT * FROM proyectos WHERE id = ?'); $s->execute([$id]); $old = $s->fetch(); if (!$old) throw new RuntimeException('Proyecto inexistente.'); }
@@ -250,6 +252,8 @@ if ($post) {
                 }
                 $fuente = (string)($_POST['fuente'] ?? 'mantener'); $cola = null; $drive = null;
                 if ($fuente === 'archivo') {
+                    $detectado = blens_video_formato((string)($_FILES['mp4']['tmp_name'] ?? ''));
+                    if ($detectado !== '') { $formato = $detectado; $w = $detectado === '16:9' ? 1 : 0; }
                     $cola = up_cola('mp4', ['video/mp4' => 'mp4', 'video/quicktime' => 'mov', 'video/x-matroska' => 'mkv', 'video/webm' => 'webm'], 300 * 1048576);
                     if (!$cola) throw new RuntimeException('Elegí el archivo de video, o pasá a la opción «Link de Drive».');
                 } elseif ($fuente === 'drive') {
@@ -269,8 +273,8 @@ if ($post) {
                 $pos = up('poster', ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'], 8 * 1048576);
                 $pa = ($nuevo && !$pos) ? 1 : 0;
                 if ($old) {
-                    $pdo->prepare('UPDATE proyectos SET titulo=?,cliente=?,categoria=?,descripcion=?,ancho=?,orden=?,visible=?,servicios=?,detalle=?,resultado=?,cliente_id=? WHERE id=?')
-                        ->execute([$t, $cli, $c, $d, $w, $o, $v, $sv, $dt, $rs, $clid ?: null, $id]);
+                    $pdo->prepare('UPDATE proyectos SET titulo=?,cliente=?,categoria=?,descripcion=?,ancho=?,formato=?,orden=?,visible=?,servicios=?,detalle=?,resultado=?,cliente_id=? WHERE id=?')
+                        ->execute([$t, $cli, $c, $d, $w, $formato, $o, $v, $sv, $dt, $rs, $clid ?: null, $id]);
                     if ($pos) { $pdo->prepare('UPDATE proyectos SET poster=?, poster_auto=0 WHERE id=?')->execute([$pos, $id]); rmf($old['poster']); }
                     if ($nuevo) {
                         $oc = (string)($old['cola_src'] ?? ''); if ($oc !== '' && str_starts_with($oc, COLA . '/')) { @unlink($oc); @unlink($oc . '.name'); }
@@ -278,8 +282,8 @@ if ($post) {
                         $pdo->prepare("UPDATE proyectos SET estado='procesando', error_msg=NULL, fuente_drive=?, cola_src=?, poster_auto=? WHERE id=?")->execute([$drive, $cola, $pa, $id]);
                     }
                 } else {
-                    $pdo->prepare('INSERT INTO proyectos (titulo,cliente,categoria,descripcion,ancho,orden,visible,poster,servicios,detalle,resultado,cliente_id,estado,fuente_drive,cola_src,poster_auto) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-                        ->execute([$t, $cli, $c, $d, $w, $o, $v, $pos, $sv, $dt, $rs, $clid ?: null, $nuevo ? 'procesando' : 'listo', $drive, $cola, $pa]);
+                    $pdo->prepare('INSERT INTO proyectos (titulo,cliente,categoria,descripcion,ancho,formato,orden,visible,poster,servicios,detalle,resultado,cliente_id,estado,fuente_drive,cola_src,poster_auto) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+                        ->execute([$t, $cli, $c, $d, $w, $formato, $o, $v, $pos, $sv, $dt, $rs, $clid ?: null, $nuevo ? 'procesando' : 'listo', $drive, $cola, $pa]);
                     $id = (int)$pdo->lastInsertId();
                 }
                 if ($clid && $id) { $pdo->prepare('UPDATE entregas SET cliente_id=? WHERE proyecto_id=?')->execute([$clid, $id]); }
@@ -345,6 +349,7 @@ $entregasVinc = $pdo->query("SELECT e.id,e.titulo,e.tipo,COALESCE(NULLIF(c.empre
 <label><span class="lbl">Categoría</span><select name="categoria"><?php foreach ($catsForm as $k => $n): ?><option value="<?= $e($k) ?>"<?= $k === 'reels' ? ' selected' : '' ?>><?= $e($n) ?></option><?php endforeach; ?></select></label>
 <label><span class="lbl">Portada propia <span class="opt">(opcional)</span></span><input type="file" name="poster" accept="image/jpeg,image/png,image/webp"></label>
 </div>
+<label class="full"><span class="lbl">Formato en la web</span><select name="formato"><option value="9:16" selected>Vertical 9:16</option><option value="16:9">Horizontal 16:9</option></select></label>
 <label class="chk full"><input type="checkbox" name="visible" checked>Visible en la web</label>
 <label class="chk full"><input type="checkbox" name="mostrar_cliente" checked>Mostrar el nombre del cliente en la web</label>
 <div class="row full"><button>Vincular y publicar</button><button type="button" class="g" data-cerrar>Cancelar</button></div>
@@ -439,7 +444,7 @@ $catTxt = fn(array $c): string => $c ? implode(' · ', array_map(fn($k, $v) => $
 <td data-label="Servicio"><?= $e($r['servicio']) ?></td><td data-label="Mensaje"><?= nl2br($e($r['mensaje'])) ?></td></tr><?php endforeach; if (!$rows) echo '<tr><td colspan="4" class="mut">Todavía no hay consultas.</td></tr>'; ?></table>
 
 <?php elseif ($edit !== null):
-$p = ['id' => 0, 'titulo' => '', 'cliente' => '', 'cliente_id' => null, 'entrega_id' => null, 'mostrar_cliente' => 1, 'categoria' => 'reels', 'descripcion' => '', 'ancho' => 0, 'orden' => 0, 'visible' => 1, 'video_mp4' => '', 'poster' => '', 'servicios' => '', 'detalle' => '', 'resultado' => '', 'estado' => 'listo', 'error_msg' => '', 'calidades' => '', 'fuente_drive' => ''];
+$p = ['id' => 0, 'titulo' => '', 'cliente' => '', 'cliente_id' => null, 'entrega_id' => null, 'mostrar_cliente' => 1, 'categoria' => 'reels', 'descripcion' => '', 'ancho' => 0, 'formato' => '9:16', 'orden' => 0, 'visible' => 1, 'video_mp4' => '', 'poster' => '', 'servicios' => '', 'detalle' => '', 'resultado' => '', 'estado' => 'listo', 'error_msg' => '', 'calidades' => '', 'fuente_drive' => ''];
 if ($edit && !$faltaMig) { $s = $pdo->prepare('SELECT * FROM proyectos WHERE id = ?'); $s->execute([$edit]); $p = $s->fetch() ?: $p; }
 elseif ($edit) { $s = $pdo->prepare('SELECT * FROM proyectos WHERE id = ?'); $s->execute([$edit]); $p = ($s->fetch() ?: []) + $p; }
 $cls = $pdo->query('SELECT id,empresa,nombre FROM clientes ORDER BY empresa,nombre')->fetchAll();
@@ -451,6 +456,15 @@ if ($p['id']) {
         else { $q = $pdo->prepare('SELECT id,cliente_id,estado_cliente,comentario_cliente,comentario_fecha FROM entregas WHERE proyecto_id=? ORDER BY id LIMIT 1'); $q->execute([(int)$p['id']]); }
         $ent = $q->fetch();
     } catch (Throwable $x0) { }
+}
+$formato = blens_formato((string)($p['formato'] ?? '9:16'));
+if ($formato === '9:16') {
+    foreach (['video_1080', 'video_mp4'] as $k) {
+        $ruta = (string)($p[$k] ?? '');
+        if ($ruta === '' || preg_match('~^https?://~i', $ruta)) continue;
+        $detectado = blens_video_formato(__DIR__ . '/../' . ltrim($ruta, '/'));
+        if ($detectado !== '') { $formato = $detectado; break; }
+    }
 }
 if ($faltaMig) echo '<p class="err">Falta actualizar la base de datos. En el servidor corré:<br><code>' . $e(MIG_CMD) . '</code></p>';
 if ($faltaCat) echo '<p class="err">Falta ampliar la columna de categorías a 40 caracteres. En el servidor corré:<br><code>' . $e(MIG_CAT_CMD) . '</code></p>'; ?>
@@ -498,7 +512,8 @@ if ($faltaCat) echo '<p class="err">Falta ampliar la columna de categorías a 40
 <section class="pc" id="publicacion">
   <h2>Publicación</h2>
   <label class="chk"><input type="checkbox" name="visible" <?= $p['visible'] ? 'checked' : '' ?>>Visible en la web <span class="opt">(opcional)</span></label>
-  <label class="chk"><input type="checkbox" name="ancho" <?= $p['ancho'] ? 'checked' : '' ?>>Tarjeta ancha (para videos horizontales) <span class="opt">(opcional)</span></label>
+  <label><span class="lbl">Formato en la web</span><select name="formato"><option value="9:16"<?= $formato === '9:16' ? ' selected' : '' ?>>Vertical 9:16</option><option value="16:9"<?= $formato === '16:9' ? ' selected' : '' ?>>Horizontal 16:9</option></select></label>
+  <p class="mut">Si subís un video local, el formato se detecta solo con ffprobe; podés corregirlo acá.</p>
   <?php if ($p['id']): ?>
   <div class="row">
     <button type="button" class="g" data-importar="#vinc"><?= $ent ? 'Cambiar entrega publicada' : 'Vincular entrega publicada' ?></button>
@@ -554,6 +569,7 @@ $card = function (array $r, bool $drag) use ($cats, $e, $fbs): void { $est = $r[
       <?php if ($fb && $fb['estado_cliente'] === 'aprobado'): ?><span class="b ok2">Aprobado</span>
       <?php elseif ($fb && $fb['estado_cliente'] === 'ajuste'): ?><span class="b adj">Pidió ajuste: "<?= $e(mb_substr(trim((string)$fb['comentario_cliente']), 0, 70)) ?>"</span><?php endif; ?>
       <?php if (!empty($r['video_1080'])): ?><span class="b">1080p</span><?php endif; ?>
+      <?php if (blens_formato((string)($r['formato'] ?? '9:16')) === '16:9'): ?><span class="b">16:9</span><?php endif; ?>
       <?php if (!empty($r['entrega_id'])): ?><span class="b ok2">Entrega web</span><?php endif; ?>
       <?php if (!$r['visible']): ?><span class="b">Oculto</span><?php endif; ?>
     </div>
@@ -579,7 +595,7 @@ $card = function (array $r, bool $drag) use ($cats, $e, $fbs): void { $est = $r[
 <label><span class="lbl">Categoría <span class="req">* obligatorio</span></span><select name="categoria"><?php foreach ($catsImp as $k => $n): ?><option value="<?= $e($k) ?>"><?= $e($n) ?></option><?php endforeach; ?></select></label>
 </div>
 <label class="full"><span class="lbl">…o nueva categoría <span class="opt">(opcional)</span></span><input name="categoria_nueva" maxlength="40" placeholder="ej: institucional (reemplaza la del selector)"></label>
-<label class="chk full"><input type="checkbox" name="ancho"> Tarjeta ancha (para videos horizontales) <span class="opt">(opcional)</span></label>
+<label class="full"><span class="lbl">Formato en la web</span><select name="formato"><option value="9:16" selected>Vertical 9:16</option><option value="16:9">Horizontal 16:9</option></select></label>
 <div class="row full"><button>Importar videos</button><button type="button" class="g" data-cerrar>Cancelar</button></div>
 </form>
 </dialog>

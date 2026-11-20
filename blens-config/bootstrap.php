@@ -300,6 +300,29 @@ function blens_webp(string $ruta): string {
     $webp = preg_replace('/\.(jpe?g|png)$/i', '.webp', $ruta);
     return is_file(__DIR__ . '/../public/' . ltrim($webp, '/')) ? $webp : $ruta;
 }
+function blens_formato(string $formato): string { return trim($formato) === '16:9' ? '16:9' : '9:16'; }
+function blens_video_formato(string $archivo): string {
+    $archivo = trim($archivo);
+    if ($archivo === '' || !is_file($archivo)) return '';
+    $bin = trim((string)(getenv('FFPROBE_BIN') ?: ''));
+    if ($bin === '' || !is_file($bin) || !is_executable($bin)) {
+        $out = []; $rc = 1; @exec('command -v ' . escapeshellarg('ffprobe') . ' 2>/dev/null', $out, $rc);
+        $bin = $rc === 0 ? trim((string)($out[0] ?? '')) : '';
+    }
+    if ($bin === '') {
+        foreach ([dirname(__DIR__, 2) . '/blens-private/bin', __DIR__ . '/bin', '/usr/local/bin', '/usr/bin', '/bin', '/snap/bin'] as $dir) {
+            $candidato = $dir . '/ffprobe';
+            if (is_file($candidato) && is_executable($candidato)) { $bin = $candidato; break; }
+        }
+    }
+    if ($bin === '') return '';
+    $out = []; $rc = 1;
+    @exec(escapeshellarg($bin) . ' -v error -select_streams v:0 -show_entries stream=width,height -of default=noprint_wrappers=1:nokey=1 ' . escapeshellarg($archivo) . ' 2>/dev/null', $out, $rc);
+    if ($rc !== 0) return '';
+    $nums = [];
+    foreach ($out as $linea) { if (preg_match('/\d+/', (string)$linea, $m)) $nums[] = (int)$m[0]; }
+    return count($nums) >= 2 && $nums[0] > $nums[1] ? '16:9' : '9:16';
+}
 /* Aviso push de una consulta nueva de la web */
 function blens_ntfy_consulta(array $c): void {
     $nombre = trim((string)($c['nombre'] ?? ''));
@@ -537,7 +560,13 @@ function blens_migrar(?PDO $p = null): void {
                 'fuente_drive' => 'VARCHAR(500) NULL',
                 'cola_src' => 'VARCHAR(255) NULL',
                 'poster_auto' => 'TINYINT(1) NOT NULL DEFAULT 0',
+                'formato' => "VARCHAR(10) NOT NULL DEFAULT '9:16'",
             ] as $col => $def) blens_agregar_col($p, 'proyectos', $col, $def);
+            $colsFormato = blens_columnas($p, 'proyectos');
+            if (isset($colsFormato['formato'])) {
+                $p->exec("UPDATE proyectos SET formato='9:16' WHERE formato IS NULL OR formato NOT IN ('9:16','16:9')");
+                if (isset($colsFormato['ancho'])) $p->exec("UPDATE proyectos SET formato='16:9' WHERE ancho=1 AND formato='9:16'");
+            }
             blens_modificar_col($p, 'proyectos', 'categoria', "VARCHAR(40) NOT NULL DEFAULT 'reels'");
         }
         // Comprobantes opcionales en cobros (trabajos) y gastos, también para bases existentes
@@ -612,6 +641,8 @@ function blens_publicar_entrega_web(PDO $pdo, int $entregaId, array $opt = []): 
     $mc = array_key_exists('mostrar_cliente', $opt) ? ((int)(bool)$opt['mostrar_cliente']) : 1;
     $visible = array_key_exists('visible', $opt) ? ((int)(bool)$opt['visible']) : 1;
     $poster = trim((string)($opt['poster'] ?? ''));
+    $cambiaFormato = array_key_exists('formato', $opt);
+    $formato = $cambiaFormato ? blens_formato((string)$opt['formato']) : '9:16';
     $qc = $pdo->prepare('SELECT COALESCE(NULLIF(empresa,\'\'),nombre) FROM clientes WHERE id=?'); $qc->execute([$clienteId]);
     $nombre = trim((string)$qc->fetchColumn()) ?: 'Cliente';
     $nuevo = $pid === 0;
@@ -622,8 +653,10 @@ function blens_publicar_entrega_web(PDO $pdo, int $entregaId, array $opt = []): 
         if (!empty($oldProject['entrega_id']) && (int)$oldProject['entrega_id'] !== $entregaId) {
             $pdo->prepare('UPDATE entregas SET publicado_web=0, proyecto_id=NULL WHERE id=?')->execute([(int)$oldProject['entrega_id']]);
         }
-        $pdo->prepare('UPDATE proyectos SET titulo=?,descripcion=?,categoria=?,cliente=?,cliente_id=?,entrega_id=?,mostrar_cliente=?,visible=? WHERE id=?')
-            ->execute([$titulo, $desc, $cat, $nombre, $clienteId, $entregaId, $mc, $visible, $pid]);
+        $upd = 'UPDATE proyectos SET titulo=?,descripcion=?,categoria=?,cliente=?,cliente_id=?,entrega_id=?,mostrar_cliente=?,visible=?';
+        $params = [$titulo, $desc, $cat, $nombre, $clienteId, $entregaId, $mc, $visible];
+        if ($cambiaFormato) { $upd .= ',formato=?,ancho=?'; $params[] = $formato; $params[] = $formato === '16:9' ? 1 : 0; }
+        $pdo->prepare($upd . ' WHERE id=?')->execute([...$params, $pid]);
         if ($poster !== '') {
             $pdo->prepare('UPDATE proyectos SET poster=?, poster_auto=0 WHERE id=?')->execute([$poster, $pid]);
             $oldPoster = (string)($oldProject['poster'] ?? '');
@@ -631,8 +664,8 @@ function blens_publicar_entrega_web(PDO $pdo, int $entregaId, array $opt = []): 
         }
     } else {
         $orden = (int)$pdo->query("SELECT COALESCE(MAX(orden),0)+1 FROM proyectos WHERE categoria <> 'showreel'")->fetchColumn();
-        $pdo->prepare('INSERT INTO proyectos (titulo,cliente,categoria,descripcion,ancho,orden,visible,poster,cliente_id,entrega_id,mostrar_cliente,estado) VALUES (?,?,?,?,0,?,?,?,?,?,?,\'listo\')')
-            ->execute([$titulo, $nombre, $cat, $desc, $orden, $visible, $poster ?: null, $clienteId, $entregaId, $mc]);
+        $pdo->prepare('INSERT INTO proyectos (titulo,cliente,categoria,descripcion,ancho,formato,orden,visible,poster,cliente_id,entrega_id,mostrar_cliente,estado) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,\'listo\')')
+            ->execute([$titulo, $nombre, $cat, $desc, $formato === '16:9' ? 1 : 0, $formato, $orden, $visible, $poster ?: null, $clienteId, $entregaId, $mc]);
         $pid = (int)$pdo->lastInsertId();
     }
     $pdo->prepare('UPDATE proyectos SET entrega_id=NULL WHERE entrega_id=? AND id<>?')->execute([$entregaId, $pid]);

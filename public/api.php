@@ -6,9 +6,9 @@ require __DIR__ . '/../blens-config/bootstrap.php';
 try {
     $db = blens_db(); blens_migrar($db);
     try {
-        $rows = $db->query("SELECT p.id,p.titulo,p.cliente,p.categoria,p.descripcion,p.video_mp4,p.video_webm,p.video_1080,p.video_480,p.poster,p.ancho,p.cliente_id,p.entrega_id,p.mostrar_cliente,e.titulo AS entrega_titulo,e.descripcion AS entrega_descripcion,e.tipo AS entrega_tipo,e.link_hd AS entrega_link,e.link_4k AS entrega_link4,e.creado AS entrega_creado FROM proyectos p LEFT JOIN entregas e ON e.id=p.entrega_id WHERE p.visible=1 AND (p.estado='listo' OR p.video_mp4 IS NOT NULL OR p.entrega_id IS NOT NULL) ORDER BY p.orden ASC, p.id DESC")->fetchAll();
+        $rows = $db->query("SELECT p.id,p.titulo,p.cliente,p.categoria,p.descripcion,p.video_mp4,p.video_webm,p.video_1080,p.video_480,p.poster,p.ancho,p.formato,p.cliente_id,p.entrega_id,p.mostrar_cliente,e.titulo AS entrega_titulo,e.descripcion AS entrega_descripcion,e.tipo AS entrega_tipo,e.link_hd AS entrega_link,e.link_4k AS entrega_link4,e.creado AS entrega_creado FROM proyectos p LEFT JOIN entregas e ON e.id=p.entrega_id WHERE p.visible=1 AND (p.estado='listo' OR p.video_mp4 IS NOT NULL OR p.entrega_id IS NOT NULL) ORDER BY p.orden ASC, p.id DESC")->fetchAll();
     } catch (Throwable $x) {
-        $rows = $db->query('SELECT id,titulo,cliente,categoria,descripcion,video_mp4,video_webm,poster,ancho FROM proyectos WHERE visible=1 ORDER BY orden ASC, id DESC')->fetchAll();
+        $rows = $db->query('SELECT id,titulo,cliente,categoria,descripcion,video_mp4,video_webm,poster,ancho,formato FROM proyectos WHERE visible=1 ORDER BY orden ASC, id DESC')->fetchAll();
     }
     $mejor = function (array $r): string {
         return (string)($r['video_1080'] ?? '') ?: (string)($r['video_mp4'] ?? '') ?: (string)($r['video_480'] ?? '');
@@ -17,6 +17,7 @@ try {
     foreach ($rows as $r) { if (($r['categoria'] ?? '') === 'showreel') { $show ??= $r; } else { $list[] = $r; } }
     if ($show) {
         $show['poster'] = blens_webp((string)($show['poster'] ?? ''));
+        $show['formato'] = blens_formato((string)($show['formato'] ?? ''));
         $show['video_mp4'] = $mejor($show);
         unset($show['video_1080'], $show['video_480'], $show['video_webm']);
     }
@@ -27,6 +28,7 @@ try {
         if ($c === '' || $c === 'auto') $r['categoria'] = $c = 'reels';
         if (!isset($cats[$c])) $cats[$c] = ucfirst(str_replace('-', ' ', $c));
         $r['poster'] = blens_webp((string)($r['poster'] ?? ''));
+        $r['formato'] = blens_formato((string)($r['formato'] ?? ''));
         $r['video_mp4'] = $mejor($r);
         unset($r['video_1080'], $r['video_480'], $r['video_webm']);
         if (array_key_exists('mostrar_cliente', $r) && (int)$r['mostrar_cliente'] === 0) $r['cliente'] = '';

@@ -38,7 +38,9 @@ $canonical = $sitio . '/proyecto.php?id=' . (int)$p['id'];
 $img = ($poster !== '' && !preg_match('~^https?://~i', $poster) && is_file(__DIR__ . '/' . ltrim($poster, '/'))) ? @getimagesize(__DIR__ . '/' . ltrim($poster, '/')) : false;
 $iw = $img ? (int)$img[0] : 1200;
 $ih = $img ? (int)$img[1] : 630;
-$horizontal = !empty($p['ancho']) || ($img && $iw > $ih);
+$formato = blens_formato((string)($p['formato'] ?? ''));
+if ($formato === '9:16' && (!empty($p['ancho']) || ($img && $iw > $ih))) $formato = '16:9';
+$modificador = $formato === '16:9' ? 'pj-16-9' : 'pj-9-16';
 $detalle = trim((string)($p['detalle'] ?? '')) !== '' ? (string)$p['detalle'] : $desc;
 $upload = !empty($p['creado']) ? date('c', (int)strtotime((string)$p['creado'])) : date('c');
 $waNum = blens_wa_numero();
@@ -67,12 +69,12 @@ $ldJson = json_encode($ld, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSO
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" media="print" data-fonts>
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap"></noscript>
-<link rel="stylesheet" href="styles.css?v=25"></head><body>
+<link rel="stylesheet" href="styles.css?v=26"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <header class="nav solid"><a class="brand" href="./" aria-label="blens.ar, inicio"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
 <button class="burger" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="menu"><span></span><span></span><span></span></button>
   <nav id="menu" aria-label="Principal"><a href="./#proyectos">Proyectos</a><a href="./#servicios">Servicios</a><a href="./#nosotros">Nosotros</a><a class="keep" href="portal/">Acceso clientes</a><a class="btn sm" href="./#contacto">Contacto</a></nav></header>
-<main class="pj <?= $horizontal ? 'pj-wide' : 'pj-tall' ?>">
+<main class="pj <?= $modificador ?>">
   <div class="pj-layout">
     <div class="pj-media">
       <?php if ($video): ?><div class="cvw"><video playsinline preload="none" data-lazy<?= $poster !== '' ? ' poster="' . $e($poster) . '"' : '' ?>><source data-src="<?= $e($video) ?>" type="video/mp4"></video></div>
