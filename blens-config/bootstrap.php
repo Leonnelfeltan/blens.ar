@@ -117,7 +117,7 @@ function fin_cobrado_mes(PDO $pdo, string $ym, ?int $clienteId = null): array {
     $where = ['t.prueba=?', "DATE_FORMAT(COALESCE(t.fecha_pago,t.fecha),'%Y-%m')=?"];
     $args = [modo_prueba($pdo), fin_mes_valido($ym)];
     if ($clienteId) { $where[] = 't.cliente_id=?'; $args[] = $clienteId; }
-    $s = $pdo->prepare('SELECT t.unidad_negocio,t.medio_pago,t.medio,t.monto_senia,t.cantidad,t.monto_unit,t.estado, SUM(' . fin_sql_abonado() . ') AS total FROM trabajos t WHERE ' . implode(' AND ', $where) . ' GROUP BY t.unidad_negocio,t.medio_pago,t.medio');
+    $s = $pdo->prepare('SELECT t.unidad_negocio,t.medio_pago,t.medio, SUM(' . fin_sql_abonado() . ') AS total FROM trabajos t WHERE ' . implode(' AND ', $where) . ' GROUP BY t.unidad_negocio,t.medio_pago,t.medio');
     $s->execute($args);
     $total = 0.0; $porUnidad = ['audiovisual' => 0.0, 'web' => 0.0]; $porMedio = [];
     foreach ($s->fetchAll() as $r) {
@@ -315,19 +315,54 @@ function blens_ntfy_consulta(array $c): void {
     blens_ntfy('Nueva consulta · blens.ar', $cuerpo, 'high', 'incoming_envelope', $acciones);
 }
 
-// ---- Migración automática: agrega columnas nuevas si faltan (es idempotente y segura) ----
+function &blens_col_cache(): array { static $cache = []; return $cache; }
+function blens_columnas(PDO $p, string $tabla): array {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $tabla)) return [];
+    $cache =& blens_col_cache();
+    if (isset($cache[$tabla])) return $cache[$tabla];
+    $s = $p->prepare('SELECT COLUMN_NAME, COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?');
+    $s->execute([$tabla]);
+    $cols = [];
+    foreach ($s->fetchAll() as $c) $cols[strtolower((string)$c['COLUMN_NAME'])] = strtolower((string)$c['COLUMN_TYPE']);
+    return $cache[$tabla] = $cols;
+}
+function blens_col_invalidate(string $tabla): void { $cache =& blens_col_cache(); unset($cache[$tabla]); }
+function &blens_table_cache(): array { static $cache = []; return $cache; }
+function blens_tabla_existe(PDO $p, string $tabla): bool {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $tabla)) return false;
+    $cache =& blens_table_cache();
+    if (isset($cache[$tabla])) return $cache[$tabla];
+    $s = $p->prepare("SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND TABLE_TYPE='BASE TABLE'");
+    $s->execute([$tabla]);
+    return $cache[$tabla] = (bool)$s->fetchColumn();
+}
+function blens_tabla_invalidate(string $tabla): void { $cache =& blens_table_cache(); unset($cache[$tabla]); }
+function blens_agregar_col(PDO $p, string $tabla, string $col, string $def): void {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $tabla) || !preg_match('/^[A-Za-z0-9_]+$/', $col)) return;
+    if (isset(blens_columnas($p, $tabla)[strtolower($col)])) return;
+    $p->exec("ALTER TABLE `$tabla` ADD COLUMN `$col` $def");
+    blens_col_invalidate($tabla);
+}
+function blens_crear_tabla(PDO $p, string $tabla, string $ddl): void {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $tabla)) return;
+    if (blens_tabla_existe($p, $tabla)) return;
+    $p->exec($ddl);
+    blens_tabla_invalidate($tabla); blens_col_invalidate($tabla);
+}
 function blens_migrar(?PDO $p = null): void {
-    static $hecho = false; if ($hecho) return; $hecho = true;
+    static $intentado = false; if ($intentado) return; $intentado = true;
+    $p ??= blens_db();
+    $locked = false;
     try {
-        $p ??= blens_db();
-        $cols = [];
-        foreach ($p->query('SHOW COLUMNS FROM clientes')->fetchAll(PDO::FETCH_ASSOC) as $c) $cols[$c['Field']] = true;
+        $locked = (bool)$p->query("SELECT GET_LOCK('blens_migrar_v2', 5)")->fetchColumn();
+        if (!$locked) return;
+        $cols = blens_columnas($p, 'clientes');
         $nuevas = [
             'portal_visitas'       => 'INT NOT NULL DEFAULT 0', // visitas al portal privado
             'portal_ultima_visita' => 'DATETIME NULL',       // última entrada al portal
             'gestion_locaciones'   => 'TINYINT(1) NOT NULL DEFAULT 0',
         ];
-        foreach ($nuevas as $col => $def) if (!isset($cols[$col])) $p->exec("ALTER TABLE clientes ADD COLUMN `$col` $def");
+        foreach ($nuevas as $col => $def) blens_agregar_col($p, 'clientes', $col, $def);
         try {
             $sm = $p->prepare('SELECT valor FROM ajustes WHERE clave=?');
             $sm->execute(['locaciones_flag_haene_v1']);
@@ -337,29 +372,27 @@ function blens_migrar(?PDO $p = null): void {
             }
         } catch (Throwable $x) { error_log('[blens locaciones flag] ' . $x->getMessage()); }
         // Feedback del cliente sobre las entregas del portal
-        $colsE = [];
-        foreach ($p->query('SHOW COLUMNS FROM entregas')->fetchAll(PDO::FETCH_ASSOC) as $c) $colsE[$c['Field']] = (string)$c['Type'];
+        $colsE = blens_columnas($p, 'entregas');
         $nuevasE = [
             'estado_cliente'     => "ENUM('pendiente','aprobado','ajuste') NOT NULL DEFAULT 'pendiente'",
             'comentario_cliente' => 'TEXT NULL',
             'comentario_fecha'   => 'DATETIME NULL',
             'tipo'               => "VARCHAR(16) NOT NULL DEFAULT 'video'",
         ];
-        foreach ($nuevasE as $col => $def) if (!isset($colsE[$col])) $p->exec("ALTER TABLE entregas ADD COLUMN `$col` $def");
+        foreach ($nuevasE as $col => $def) blens_agregar_col($p, 'entregas', $col, $def);
         if (isset($colsE['estado_cliente']) && (stripos($colsE['estado_cliente'], 'enum(') === false || stripos($colsE['estado_cliente'], "'aprobado'") === false)) {
             $p->exec("UPDATE entregas SET estado_cliente='pendiente' WHERE estado_cliente NOT IN ('pendiente','aprobado','ajuste')");
             $p->exec("ALTER TABLE entregas MODIFY COLUMN estado_cliente ENUM('pendiente','aprobado','ajuste') NOT NULL DEFAULT 'pendiente'");
+            blens_col_invalidate('entregas');
         }
-        if ($p->query("SHOW TABLES LIKE 'consultas'")->fetch()) {
-            $colsC = [];
-            foreach ($p->query('SHOW COLUMNS FROM consultas')->fetchAll(PDO::FETCH_ASSOC) as $c) $colsC[$c['Field']] = true;
-            if (!isset($colsC['respondida'])) $p->exec('ALTER TABLE consultas ADD COLUMN respondida TINYINT(1) NOT NULL DEFAULT 0');
+        if (blens_tabla_existe($p, 'consultas')) {
+            blens_agregar_col($p, 'consultas', 'respondida', 'TINYINT(1) NOT NULL DEFAULT 0');
         }
         // Adjuntos de comprobantes: siempre fuera de /public
         if (!is_dir(COMPROBANTES_DIR)) @mkdir(COMPROBANTES_DIR, 02770, true);
         @chmod(COMPROBANTES_DIR, 02770);
         // Tabla de gastos (registro de salidas de dinero)
-        $p->exec("CREATE TABLE IF NOT EXISTS gastos (
+        blens_crear_tabla($p, 'gastos', "CREATE TABLE IF NOT EXISTS gastos (
             id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
             fecha DATE NOT NULL,
             concepto VARCHAR(160) NOT NULL,
@@ -371,7 +404,7 @@ function blens_migrar(?PDO $p = null): void {
             INDEX g_fecha (fecha)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         // Agenda de rodajes, entregas y reuniones
-        $p->exec("CREATE TABLE IF NOT EXISTS agenda (
+        blens_crear_tabla($p, 'agenda', "CREATE TABLE IF NOT EXISTS agenda (
             id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
             cliente_id INT UNSIGNED NULL,
             tipo ENUM('rodaje','entrega','reunion') NOT NULL DEFAULT 'rodaje',
@@ -386,11 +419,9 @@ function blens_migrar(?PDO $p = null): void {
             INDEX a_cliente (cliente_id),
             CONSTRAINT fk_agenda_cliente FOREIGN KEY (cliente_id) REFERENCES clientes (id) ON DELETE SET NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-        $colsA = [];
-        foreach ($p->query('SHOW COLUMNS FROM agenda')->fetchAll(PDO::FETCH_ASSOC) as $c) $colsA[$c['Field']] = true;
-        if (!isset($colsA['descripcion'])) $p->exec('ALTER TABLE agenda ADD COLUMN descripcion TEXT NULL AFTER lugar_nota');
+        blens_agregar_col($p, 'agenda', 'descripcion', 'TEXT NULL AFTER lugar_nota');
         // Presupuestos rápidos (items_json guarda las filas del detalle)
-        $p->exec("CREATE TABLE IF NOT EXISTS presupuestos (
+        blens_crear_tabla($p, 'presupuestos', "CREATE TABLE IF NOT EXISTS presupuestos (
             id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
             numero VARCHAR(20) NOT NULL DEFAULT '',
             cliente_nombre VARCHAR(120) NOT NULL,
@@ -407,7 +438,7 @@ function blens_migrar(?PDO $p = null): void {
             INDEX p_estado (estado),
             INDEX p_trabajo (trabajo_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-        $p->exec("CREATE TABLE IF NOT EXISTS push_subscriptions (
+        blens_crear_tabla($p, 'push_subscriptions', "CREATE TABLE IF NOT EXISTS push_subscriptions (
             id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
             tipo ENUM('admin','cliente') NOT NULL,
             cliente_id INT NULL,
@@ -420,7 +451,7 @@ function blens_migrar(?PDO $p = null): void {
             UNIQUE KEY uq_push_endpoint (endpoint_hash),
             INDEX idx_push_tipo_cliente (tipo, cliente_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-        $p->exec("CREATE TABLE IF NOT EXISTS cliente_locaciones (
+        blens_crear_tabla($p, 'cliente_locaciones', "CREATE TABLE IF NOT EXISTS cliente_locaciones (
             id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
             cliente_id INT UNSIGNED NOT NULL,
             nombre VARCHAR(160) NOT NULL,
@@ -440,25 +471,33 @@ function blens_migrar(?PDO $p = null): void {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         // Comprobantes opcionales en cobros (trabajos) y gastos, también para bases existentes
         foreach (['trabajos', 'gastos', 'recibos'] as $tabla) {
-            if (!$p->query("SHOW TABLES LIKE '$tabla'")->fetch()) continue;
-            $colsT = [];
-            foreach ($p->query("SHOW COLUMNS FROM `$tabla`")->fetchAll(PDO::FETCH_ASSOC) as $c) $colsT[$c['Field']] = strtolower((string)$c['Type']);
-            if ($tabla !== 'recibos' && !isset($colsT['comprobante'])) $p->exec("ALTER TABLE `$tabla` ADD COLUMN comprobante VARCHAR(255) NULL");
-            if ($tabla === 'gastos' && !isset($colsT['prueba'])) $p->exec('ALTER TABLE gastos ADD COLUMN prueba TINYINT(1) NOT NULL DEFAULT 0');
+            if (!blens_tabla_existe($p, $tabla)) continue;
+            $colsT = blens_columnas($p, $tabla);
+            if ($tabla !== 'recibos') blens_agregar_col($p, $tabla, 'comprobante', 'VARCHAR(255) NULL');
+            if ($tabla === 'gastos') blens_agregar_col($p, $tabla, 'prueba', 'TINYINT(1) NOT NULL DEFAULT 0');
             if ($tabla === 'trabajos') {
                 foreach (['unidad_negocio' => "VARCHAR(30) NOT NULL DEFAULT 'audiovisual'", 'medio_pago' => 'VARCHAR(40) NULL', 'monto_senia' => 'DECIMAL(12,2) NOT NULL DEFAULT 0'] as $col => $def) {
-                    if (!isset($colsT[$col])) $p->exec("ALTER TABLE trabajos ADD COLUMN `$col` $def");
+                    blens_agregar_col($p, $tabla, $col, $def);
                 }
             }
             if ($tabla === 'gastos') {
-                if (!isset($colsT['categoria'])) $p->exec("ALTER TABLE gastos ADD COLUMN categoria VARCHAR(50) NOT NULL DEFAULT 'Operativo'");
-                elseif (!str_contains(strtolower((string)$colsT['categoria']), 'varchar(50)')) $p->exec("ALTER TABLE gastos MODIFY COLUMN categoria VARCHAR(50) NOT NULL DEFAULT 'Operativo'");
+                blens_agregar_col($p, $tabla, 'categoria', "VARCHAR(50) NOT NULL DEFAULT 'Operativo'");
+                $colsT = blens_columnas($p, $tabla);
+                if (isset($colsT['categoria']) && !str_contains($colsT['categoria'], 'varchar(50)')) {
+                    $p->exec("ALTER TABLE gastos MODIFY COLUMN categoria VARCHAR(50) NOT NULL DEFAULT 'Operativo'");
+                    blens_col_invalidate($tabla);
+                }
                 $p->exec("UPDATE gastos SET categoria='Operativo' WHERE categoria='' OR categoria='general'");
             }
+            $colsT = blens_columnas($p, $tabla);
             $moneyCol = $tabla === 'trabajos' ? 'monto_unit' : ($tabla === 'recibos' ? 'total' : 'monto');
-            if (isset($colsT[$moneyCol]) && !str_starts_with($colsT[$moneyCol], 'decimal')) $p->exec("ALTER TABLE `$tabla` MODIFY COLUMN `$moneyCol` DECIMAL(12,2) NOT NULL DEFAULT 0");
+            if (isset($colsT[$moneyCol]) && !str_starts_with($colsT[$moneyCol], 'decimal')) {
+                $p->exec("ALTER TABLE `$tabla` MODIFY COLUMN `$moneyCol` DECIMAL(12,2) NOT NULL DEFAULT 0");
+                blens_col_invalidate($tabla);
+            }
         }
     } catch (Throwable $e) { error_log('[blens migrar] ' . $e->getMessage()); }
+    finally { if ($locked) { try { $p->query("SELECT RELEASE_LOCK('blens_migrar_v2')"); } catch (Throwable $x) {} } }
 }
 function blens_db(): PDO {
     static $p = null; if ($p) return $p; $c = blens_cfg();
