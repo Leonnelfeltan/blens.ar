@@ -4,23 +4,22 @@ require __DIR__ . '/../../blens-config/bootstrap.php';
 session_name('blens_cliente'); session_start();
 $cid = (int)($_SESSION['cliente_id'] ?? $_SESSION['cid'] ?? 0);
 if (!$cid || !empty($_SESSION['forzar'])) { http_response_code(403); exit; }
-$s = blens_db()->prepare('SELECT e.preview,e.poster FROM entregas e JOIN clientes c ON c.id=e.cliente_id WHERE e.id=? AND e.cliente_id=? AND c.activo=1'); $s->execute([(int)($_GET['e'] ?? 0), $cid]); $r = $s->fetch();
+$db = blens_db();
+try { $s = $db->prepare('SELECT e.id,e.titulo,e.preview,e.poster,e.link_hd,e.link_4k,e.portada_drive_id FROM entregas e JOIN clientes c ON c.id=e.cliente_id WHERE e.id=? AND e.cliente_id=? AND c.activo=1'); $s->execute([(int)($_GET['e'] ?? 0), $cid]); }
+catch (Throwable $x) { $s = $db->prepare('SELECT e.id,e.titulo,e.preview,e.poster,e.link_hd,e.link_4k FROM entregas e JOIN clientes c ON c.id=e.cliente_id WHERE e.id=? AND e.cliente_id=? AND c.activo=1'); $s->execute([(int)($_GET['e'] ?? 0), $cid]); }
+$r = $s->fetch();
 $t = ($_GET['t'] ?? 'v') === 'p' ? 'p' : 'v';
-$f = $r ? ($t === 'p' ? $r['poster'] : $r['preview']) : null;
-$path = $f ? '/var/www/blens-private/entregas/' . basename($f) : '';
-if (!$f || !is_file($path)) { http_response_code(404); exit; }
+if (!$r) { http_response_code(404); exit; }
 session_write_close();
-$size = filesize($path);
-header('Content-Type: ' . ($t === 'p' ? (mime_content_type($path) ?: 'image/jpeg') : 'video/mp4'));
-header('Accept-Ranges: bytes'); header('Cache-Control: private, max-age=3600'); header('X-Content-Type-Options: nosniff');
-$start = 0; $end = $size - 1;
-if (isset($_SERVER['HTTP_RANGE']) && preg_match('/bytes=(\d*)-(\d*)/', $_SERVER['HTTP_RANGE'], $m)) {
-    if ($m[1] !== '') { $start = (int)$m[1]; if ($m[2] !== '') $end = min((int)$m[2], $end); }
-    elseif ($m[2] !== '') { $start = max(0, $size - (int)$m[2]); }
-    if ($start > $end || $start >= $size) { http_response_code(416); header("Content-Range: bytes */$size"); exit; }
-    http_response_code(206); header("Content-Range: bytes $start-$end/$size");
+if ($t === 'p') {
+    $path = blens_entrega_portada_origen($db, $r);
+    if (!$path || !is_file($path)) { http_response_code(404); exit; }
+    $mime = (string)(mime_content_type($path) ?: 'image/jpeg');
+    if (!str_starts_with($mime, 'image/')) $mime = 'image/jpeg';
+    blens_stream_archivo($path, $mime);
+    exit;
 }
-header('Content-Length: ' . ($end - $start + 1));
-$fp = fopen($path, 'rb'); fseek($fp, $start); $left = $end - $start + 1;
-while ($left > 0 && !feof($fp)) { $chunk = fread($fp, min(131072, $left)); echo $chunk; $left -= strlen($chunk); flush(); }
-fclose($fp);
+$f = (string)($r['preview'] ?? '');
+$path = $f !== '' ? BLENS_ENTREGAS_DIR . '/' . basename(str_replace('\\', '/', $f)) : '';
+if ($path === '' || !is_file($path)) { http_response_code(404); exit; }
+blens_stream_archivo($path, 'video/mp4');

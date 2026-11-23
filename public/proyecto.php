@@ -6,7 +6,7 @@ $id = (int)($_GET['id'] ?? 0); $p = null;
 try {
     $db = blens_db(); blens_migrar($db);
     try {
-        $s = $db->prepare("SELECT p.*, c.logo AS clogo, e.titulo AS entrega_titulo, e.descripcion AS entrega_descripcion, e.tipo AS entrega_tipo, e.link_hd AS entrega_link, e.link_4k AS entrega_link4 FROM proyectos p LEFT JOIN clientes c ON c.id = p.cliente_id LEFT JOIN entregas e ON e.id = p.entrega_id WHERE p.id = ? AND p.visible = 1 AND p.categoria <> 'showreel' AND (p.estado = 'listo' OR p.video_mp4 IS NOT NULL OR p.entrega_id IS NOT NULL)");
+        $s = $db->prepare("SELECT p.*, c.logo AS clogo, e.titulo AS entrega_titulo, e.descripcion AS entrega_descripcion, e.tipo AS entrega_tipo, e.link_hd AS entrega_link, e.link_4k AS entrega_link4, e.poster AS entrega_poster FROM proyectos p LEFT JOIN clientes c ON c.id = p.cliente_id LEFT JOIN entregas e ON e.id = p.entrega_id WHERE p.id = ? AND p.visible = 1 AND p.categoria <> 'showreel' AND (p.estado = 'listo' OR p.video_mp4 IS NOT NULL OR p.entrega_id IS NOT NULL)");
         $s->execute([$id]); $p = $s->fetch() ?: null;
     } catch (Throwable $x0) {
         $s = $db->prepare("SELECT p.*, c.logo AS clogo FROM proyectos p LEFT JOIN clientes c ON c.id = p.cliente_id WHERE p.id = ? AND p.visible = 1 AND p.categoria <> 'showreel'");
@@ -22,6 +22,7 @@ $clienteWeb = (int)($p['mostrar_cliente'] ?? 1) === 1 ? (string)($p['cliente'] ?
 $desc = $p['descripcion'] ?: ($p['entrega_descripcion'] ?: ($p['servicios'] ?: 'Proyecto audiovisual de blens.ar'));
 $poster = blens_webp((string)($p['poster'] ?? ''));
 $clogo = '';
+
 if ($clienteWeb !== '') {
     $logo = trim((string)($p['clogo'] ?? ''));
     if ($logo !== '' && !preg_match('~^https?://~i', $logo)) {
@@ -29,10 +30,11 @@ if ($clienteWeb !== '') {
         if (is_file(__DIR__ . '/' . $rel)) $clogo = $rel;
     }
 }
-$video = !empty($p['video_1080']) ? $p['video_1080'] : (!empty($p['video_mp4']) ? $p['video_mp4'] : null);
+$videoLocal = blens_video_local($p);
 $entregaLink = (string)($p['entrega_link'] ?? '') ?: (string)($p['entrega_link4'] ?? '');
-$driveId = $video ? '' : blens_drive_id($entregaLink);
-if (!$poster && $driveId) $poster = 'https://drive.google.com/thumbnail?id=' . $driveId . '&sz=w800';
+$driveId = blens_drive_id((string)($p['fuente_drive'] ?? '')) ?: blens_drive_id($entregaLink) ?: blens_drive_id((string)($p['video_drive_id'] ?? ''));
+$video = $videoLocal !== '' ? $videoLocal : ($driveId !== '' ? 'media-proyecto.php?id=' . (int)$p['id'] : null);
+if ($poster === '' && ($driveId !== '' || !empty($p['entrega_poster']))) $poster = 'media-proyecto.php?id=' . (int)$p['id'] . '&t=p';
 $sitio = rtrim((string)(blens_cfg()['sitio'] ?? 'https://blens.ar'), '/');
 $canonical = $sitio . '/proyecto.php?id=' . (int)$p['id'];
 $img = ($poster !== '' && !preg_match('~^https?://~i', $poster) && is_file(__DIR__ . '/' . ltrim($poster, '/'))) ? @getimagesize(__DIR__ . '/' . ltrim($poster, '/')) : false;
@@ -69,7 +71,7 @@ $ldJson = json_encode($ld, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSO
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" media="print" data-fonts>
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap"></noscript>
-<link rel="stylesheet" href="styles.css?v=26"></head><body>
+<link rel="stylesheet" href="styles.css?v=27"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol></svg>
 <header class="nav solid"><a class="brand" href="./" aria-label="blens.ar, inicio"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
 <button class="burger" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="menu"><span></span><span></span><span></span></button>
@@ -77,9 +79,8 @@ $ldJson = json_encode($ld, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSO
 <main class="pj <?= $modificador ?>">
   <div class="pj-layout">
     <div class="pj-media">
-      <?php if ($video): ?><div class="cvw"><video playsinline preload="none" data-lazy<?= $poster !== '' ? ' poster="' . $e($poster) . '"' : '' ?>><source data-src="<?= $e($video) ?>" type="video/mp4"></video></div>
-      <?php elseif ($driveId): ?><div class="cvw dfr"><iframe src="https://drive.google.com/file/d/<?= $e($driveId) ?>/preview" allow="autoplay; fullscreen" allowfullscreen loading="lazy" title="Video del proyecto"></iframe></div><p class="mut sm"><a class="link" href="<?= $e($entregaLink) ?>" target="_blank" rel="noopener">Abrir video en Drive ↗</a></p>
-      <?php elseif ($entregaLink && ($p['entrega_tipo'] ?? '') === 'fotos'): ?><div class="pj-gal"><b>Pack de fotos</b><p class="mut">Las fotos de este proyecto están en Google Drive.</p><a class="btn" href="<?= $e($entregaLink) ?>" target="_blank" rel="noopener noreferrer">Ver galería ↗</a></div><?php endif; ?>
+      <?php if ($video): ?><div class="cvw native"><video controls playsinline preload="metadata"<?= $poster !== '' ? ' poster="' . $e($poster) . '"' : '' ?>><source src="<?= $e($video) ?>" type="video/mp4"></video></div>
+      <?php elseif (($p['entrega_tipo'] ?? '') === 'fotos'): ?><div class="pj-gal"><b>Pack de fotos</b><p class="mut">Las fotos de este proyecto están disponibles para el cliente en su portal.</p></div><?php endif; ?>
     </div>
     <div class="pj-info">
       <a class="back" href="./#proyectos">&larr; Todos los proyectos</a>
@@ -96,4 +97,4 @@ $ldJson = json_encode($ld, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSO
   </div>
 </main>
 <footer class="foot"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span><span class="loc">Posadas, Misiones · Argentina</span><span class="mut">© 2026 blens.ar</span></footer>
-<script src="assets/fonts.js?v=2" defer></script><script src="assets/player.js?v=13" defer></script><script src="assets/nav.js?v=3" defer></script></body></html>
+<script src="assets/fonts.js?v=2" defer></script><script src="assets/player.js?v=14" defer></script><script src="assets/nav.js?v=3" defer></script></body></html>

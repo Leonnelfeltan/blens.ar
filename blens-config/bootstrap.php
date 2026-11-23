@@ -25,6 +25,7 @@ function blens_clave_nueva(): string {
     return $p($adj) . '-' . $p($sus) . '-' . $p($sus) . random_int(10, 99);
 }
 function blens_cfg(): array { static $c = null; return $c ??= require __DIR__ . '/config.php'; }
+require_once __DIR__ . '/media-drive.php';
 
 const SESION_DIAS = 60, SESION_LIFETIME = 5184000;
 if (PHP_SAPI !== 'cli') {
@@ -546,6 +547,7 @@ function blens_migrar(?PDO $p = null): void {
         if (blens_tabla_existe($p, 'entregas')) {
             blens_agregar_col($p, 'entregas', 'version_num', 'SMALLINT UNSIGNED NOT NULL DEFAULT 1');
             blens_agregar_col($p, 'entregas', 'publicado_web', 'TINYINT(1) NOT NULL DEFAULT 0');
+            blens_agregar_col($p, 'entregas', 'portada_drive_id', 'VARCHAR(64) NULL');
         }
         if (blens_tabla_existe($p, 'proyectos')) {
             foreach ([
@@ -558,6 +560,7 @@ function blens_migrar(?PDO $p = null): void {
                 'estado' => "VARCHAR(12) NOT NULL DEFAULT 'listo'",
                 'error_msg' => 'VARCHAR(255) NULL',
                 'fuente_drive' => 'VARCHAR(500) NULL',
+                'video_drive_id' => 'VARCHAR(64) NULL',
                 'cola_src' => 'VARCHAR(255) NULL',
                 'poster_auto' => 'TINYINT(1) NOT NULL DEFAULT 0',
                 'formato' => "VARCHAR(10) NOT NULL DEFAULT '9:16'",
@@ -621,12 +624,27 @@ function etapa_track_html(int $n): string {
     return $h . '</ol>';
 }
 function blens_drive_id(string $url): string {
-    if (preg_match('~^https://drive\.google\.com/(?:file/(?:u/\d+/)?d/|open\?id=|uc\?(?:[^#]*&)?id=)([A-Za-z0-9_-]{10,})~', trim($url), $m)) return $m[1];
+    $s = trim($url);
+    if (preg_match('~^drive:([A-Za-z0-9_-]{10,})~', $s, $m)) return $m[1];
+    $pat = [
+        '~drive\.google\.com/file/(?:u/\d+/)?d/([A-Za-z0-9_-]{10,})~i',
+        '~drive\.google\.com/(?:open|uc)\?[^\s"\'<>]*\bid=([A-Za-z0-9_-]{10,})~i',
+        '~drive\.usercontent\.google\.com/download\?[^\s"\'<>]*\bid=([A-Za-z0-9_-]{10,})~i',
+        '~lh3\.googleusercontent\.com/d/([A-Za-z0-9_-]{10,})~i',
+    ];
+    foreach ($pat as $re) if (preg_match($re, $s, $m)) return $m[1];
+    if (preg_match('~^[A-Za-z0-9_-]{20,}$~', $s)) return $s;
     return '';
 }
 function blens_publicar_entrega_web(PDO $pdo, int $entregaId, array $opt = []): array {
-    $q = $pdo->prepare('SELECT id,cliente_id,titulo,descripcion,proyecto_id,publicado_web FROM entregas WHERE id=?');
-    $q->execute([$entregaId]); $entrega = $q->fetch();
+    try {
+        $q = $pdo->prepare('SELECT id,cliente_id,titulo,descripcion,proyecto_id,publicado_web,poster,link_hd,link_4k,portada_drive_id FROM entregas WHERE id=?');
+        $q->execute([$entregaId]);
+    } catch (Throwable $x) {
+        $q = $pdo->prepare('SELECT id,cliente_id,titulo,descripcion,proyecto_id,publicado_web,poster,link_hd,link_4k FROM entregas WHERE id=?');
+        $q->execute([$entregaId]);
+    }
+    $entrega = $q->fetch();
     if (!$entrega) throw new RuntimeException('Entrega inexistente.');
     $clienteId = (int)($opt['cliente_id'] ?? $entrega['cliente_id']);
     if ($clienteId <= 0 || (int)$entrega['cliente_id'] !== $clienteId) throw new RuntimeException('La entrega no pertenece a este cliente.');
@@ -641,6 +659,7 @@ function blens_publicar_entrega_web(PDO $pdo, int $entregaId, array $opt = []): 
     $mc = array_key_exists('mostrar_cliente', $opt) ? ((int)(bool)$opt['mostrar_cliente']) : 1;
     $visible = array_key_exists('visible', $opt) ? ((int)(bool)$opt['visible']) : 1;
     $poster = trim((string)($opt['poster'] ?? ''));
+    $posterExplicito = $poster !== '';
     $cambiaFormato = array_key_exists('formato', $opt);
     $formato = $cambiaFormato ? blens_formato((string)$opt['formato']) : '9:16';
     $qc = $pdo->prepare('SELECT COALESCE(NULLIF(empresa,\'\'),nombre) FROM clientes WHERE id=?'); $qc->execute([$clienteId]);
@@ -657,19 +676,25 @@ function blens_publicar_entrega_web(PDO $pdo, int $entregaId, array $opt = []): 
         $params = [$titulo, $desc, $cat, $nombre, $clienteId, $entregaId, $mc, $visible];
         if ($cambiaFormato) { $upd .= ',formato=?,ancho=?'; $params[] = $formato; $params[] = $formato === '16:9' ? 1 : 0; }
         $pdo->prepare($upd . ' WHERE id=?')->execute([...$params, $pid]);
-        if ($poster !== '') {
+        if ($posterExplicito) {
             $pdo->prepare('UPDATE proyectos SET poster=?, poster_auto=0 WHERE id=?')->execute([$poster, $pid]);
             $oldPoster = (string)($oldProject['poster'] ?? '');
             if ($oldPoster !== '' && $oldPoster !== $poster && str_starts_with($oldPoster, 'media/uploads/')) @unlink(__DIR__ . '/../public/' . $oldPoster);
         }
     } else {
         $orden = (int)$pdo->query("SELECT COALESCE(MAX(orden),0)+1 FROM proyectos WHERE categoria <> 'showreel'")->fetchColumn();
-        $pdo->prepare('INSERT INTO proyectos (titulo,cliente,categoria,descripcion,ancho,formato,orden,visible,poster,cliente_id,entrega_id,mostrar_cliente,estado) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,\'listo\')')
-            ->execute([$titulo, $nombre, $cat, $desc, $formato === '16:9' ? 1 : 0, $formato, $orden, $visible, $poster ?: null, $clienteId, $entregaId, $mc]);
+        $pdo->prepare('INSERT INTO proyectos (titulo,cliente,categoria,descripcion,ancho,formato,orden,visible,cliente_id,entrega_id,mostrar_cliente,estado) VALUES (?,?,?,?,?,?,?,?,?,?,?,\'listo\')')
+            ->execute([$titulo, $nombre, $cat, $desc, $formato === '16:9' ? 1 : 0, $formato, $orden, $visible, $clienteId, $entregaId, $mc]);
         $pid = (int)$pdo->lastInsertId();
     }
     $pdo->prepare('UPDATE proyectos SET entrega_id=NULL WHERE entrega_id=? AND id<>?')->execute([$entregaId, $pid]);
     $pdo->prepare('UPDATE entregas SET publicado_web=1, proyecto_id=? WHERE id=?')->execute([$pid, $entregaId]);
+    $qa = $pdo->prepare('SELECT poster,video_1080,video_mp4 FROM proyectos WHERE id=?'); $qa->execute([$pid]); $actual = $qa->fetch();
+    if (!$posterExplicito && $actual && trim((string)$actual['poster']) === '') {
+        $auto = blens_publicar_portada($pdo, $entrega, $pid);
+        if ($auto !== '') $pdo->prepare('UPDATE proyectos SET poster=?,poster_auto=0 WHERE id=?')->execute([$auto, $pid]);
+    }
+    if (!$actual || (blens_video_local($actual) === '' && blens_proyecto_drive_id($pdo, $pid) !== '')) blens_lanzar_cachear_drive($pid);
     return ['proyecto_id' => $pid, 'titulo' => $titulo, 'nuevo' => $nuevo, 'antes' => (int)$entrega['publicado_web']];
 }
 function blens_despublicar_entrega_web(PDO $pdo, int $entregaId): void {

@@ -188,9 +188,13 @@ if ($cid && empty($_SESSION['vista']) && empty($_SESSION['visita_ok'])) {
 $wa = blens_wa_numero();
 $contacto = $wa ? 'https://wa.me/' . $wa . '?text=' . rawurlencode('Hola, quiero coordinar un plan con blens.ar') : '../#contacto';
 $drive = fn($r) => $r['link_hd'] ?: $r['link_4k'];
+$did = fn($r) => blens_drive_id((string)($r['link_hd'] ?? '')) ?: blens_drive_id((string)($r['link_4k'] ?? '')) ?: blens_drive_id((string)($r['poster'] ?? ''));
 $vid = fn($r) => $r['preview'] ? 'media.php?e=' . (int)$r['id'] . '&t=v' : ($r['pv'] ? '../' . $r['pv'] : '');
-$pst = fn($r) => $r['poster'] ? 'media.php?e=' . (int)$r['id'] . '&t=p' : ($r['pp'] ? '../' . blens_webp((string)$r['pp']) : '');
-$did = function ($r) { foreach ([$r['link_hd'] ?? '', $r['link_4k'] ?? ''] as $l) { if (preg_match('~^https://drive\.google\.com/(?:file/(?:u/\d+/)?d/|open\?id=|uc\?(?:[^#]*&)?id=)([A-Za-z0-9_-]{10,})~', (string)$l, $m)) return $m[1]; } return ''; };
+$pst = function ($r) use ($did) {
+    if (!empty($r['poster']) || $did($r) !== '') return 'media.php?e=' . (int)$r['id'] . '&t=p';
+    if (!empty($r['pp'])) return '../' . blens_webp((string)$r['pp']);
+    return '';
+};
 $SQL = 'SELECT e.*, COALESCE(p.video_480, p.video_mp4, p.video_1080) AS pv, p.poster AS pp FROM entregas e LEFT JOIN proyectos p ON p.id = e.proyecto_id WHERE e.cliente_id = ?';
 $fb = function (array $r) use ($e, $T, $vista): string {
     $est = (string)($r['estado_cliente'] ?? 'pendiente'); $com = trim((string)($r['comentario_cliente'] ?? '')); $id = (int)$r['id'];
@@ -237,7 +241,7 @@ $locForm = function (array $r, bool $nueva) use ($e, $T): string {
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap" media="print" data-fonts>
 <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@200;400;600;800&display=swap"></noscript>
-<link rel="stylesheet" href="../styles.css?v=26"><link rel="stylesheet" href="portal.css?v=20"></head><body>
+<link rel="stylesheet" href="../styles.css?v=27"><link rel="stylesheet" href="portal.css?v=21"></head><body>
 <svg class="sprite" aria-hidden="true"><symbol id="mark" viewBox="0 0 130 130"><polygon points="0,0 70,0 100,30 100,100 0,100" fill="#F5F1EA"/><polygon points="60,45 125,45 125,125 45,125 45,60" fill="#F5F1EA"/><polygon points="60,45 100,45 100,64 86,72 100,80 100,100 45,100 45,60" fill="#FF5A1F"/></symbol><symbol id="photos" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m4 17 5-5 3.5 3.5L16 12l4 4"/></symbol></svg>
 <header class="ph"><a class="brand" href="../" aria-label="blens.ar, inicio"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span></a>
 <?php if ($cli): ?><div class="phr"><span class="mut">Portal de clientes</span><?= $vista ? '<span class="perr">Vista de administrador</span>' : '' ?><button type="button" class="push-btn" data-push data-push-tipo="cliente" data-push-token="<?= $T ?>" data-push-key="<?= $e(blens_vapid_public()) ?>" data-push-off="Activar notificaciones en este dispositivo" data-push-on="Notificaciones activadas ✓" aria-pressed="false">Activar notificaciones en este dispositivo</button><form method="post"><input type="hidden" name="a" value="salir"><input type="hidden" name="t" value="<?= $T ?>"><button class="out">Salir</button></form></div>
@@ -286,6 +290,7 @@ if ($en): $tipoEn = $tipoDe($en); ?>
 <?php endif; ?></div>
 <div><a class="back" href="./">&larr; Mis entregas</a><h1><?= $e($en['titulo']) ?> <span class="ent-ver">v<?= max(1, (int)($en['version_num'] ?? 1)) ?></span></h1><p class="sub"><span class="b tipo-<?= $tipoEn ?>"><?= $tipoEn === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span> <?= $e(substr($en['creado'], 0, 10)) ?> · <?= $tipoEn === 'fotos' ? 'Pack de fotos' : 'Video' ?></p>
 <?php if (trim((string)$en['descripcion']) !== ''): ?><div class="copy"><?= nl2br($e($en['descripcion'])) ?></div><?php endif; ?>
+<?php if ($pst($en)): ?><a class="btn g" href="descargar.php?entrega_id=<?= (int)$en['id'] ?>&amp;tipo=portada">Descargar portada</a><?php endif; ?>
 <?php if ($tipoEn !== 'fotos'): ?><?php if ($drive($en)): ?><a class="btn" href="<?= $e($drive($en)) ?>" target="_blank" rel="noopener">Abrir en Drive / Descargar</a><p class="mut sm">El archivo final está en la mejor calidad, en Google Drive.</p><?php else: ?><p class="mut">El archivo final todavía no está disponible.</p><?php endif; ?><?php endif; ?>
 <?= $fb($en) ?></div></div></main>
 <?php else:
@@ -360,10 +365,10 @@ $esView = $ft === 'todos' ? $es : array_values(array_filter($es, fn($r) => $tipo
 <main class="pt"><?= $cli['logo'] ? '<img class="clogo" loading="lazy" src="../media/logos/' . $e($cli['logo']) . '" alt="" width="180" height="80">' : '' ?><h1>Hola, <?= $e(explode(' ', trim($cli['nombre']))[0]) ?></h1><p class="sub"><?= $cli['empresa'] ? $e($cli['empresa']) . ' · ' : '' ?>Tus entregas (<?= count($es) ?>)</p>
 <div class="pf-filtros"><a class="pf-pill<?= $ft === 'todos' ? ' on' : '' ?>" href="./?ft=todos">Todos <b><?= count($es) ?></b></a><a class="pf-pill<?= $ft === 'video' ? ' on' : '' ?>" href="./?ft=video">Videos <b><?= $nVideos ?></b></a><a class="pf-pill<?= $ft === 'fotos' ? ' on' : '' ?>" href="./?ft=fotos">Fotos <b><?= $nFotos ?></b></a></div>
 <?php if (!$esView) echo '<p class="mut">' . ($es ? 'No hay entregas de este tipo.' : 'Todavía no hay entregas cargadas.') . '</p>'; ?>
-<div class="pg"><?php foreach ($esView as $r): $tf = $tipoDe($r); ?><article class="pc tipo-<?= $tf ?>"><a class="pc-img" href="?e=<?= (int)$r['id'] ?>" aria-label="Ver <?= $e($r['titulo']) ?>"><?php if ($tf === 'fotos'): ?><span class="pc-gal"><svg class="gal-ico"><use href="#photos"/></svg><b>Galería de fotos</b></span><?php else: ?><?= $pst($r) ? '<img src="' . $e($pst($r)) . '" alt="" loading="lazy" width="800" height="500">' : ($did($r) ? '<img src="https://drive.google.com/thumbnail?id=' . $e($did($r)) . '&amp;sz=w800" alt="" loading="lazy" width="800" height="500" referrerpolicy="no-referrer">' : '') ?><?php endif; ?><span class="pc-date"><?= $e(substr($r['creado'], 0, 10)) ?></span></a>
+<div class="pg"><?php foreach ($esView as $r): $tf = $tipoDe($r); ?><article class="pc tipo-<?= $tf ?>"><a class="pc-img" href="?e=<?= (int)$r['id'] ?>" aria-label="Ver <?= $e($r['titulo']) ?>"><?php if ($tf === 'fotos'): ?><span class="pc-gal"><svg class="gal-ico"><use href="#photos"/></svg><b>Galería de fotos</b></span><?php else: ?><?= $pst($r) ? '<img src="' . $e($pst($r)) . '" alt="" loading="lazy" width="800" height="500">' : '' ?><?php endif; ?><span class="pc-date"><?= $e(substr($r['creado'], 0, 10)) ?></span></a>
 <div class="pc-body"><span class="pc-tipo tipo-<?= $tf ?>"><?= $tf === 'fotos' ? 'FOTOS' : 'VIDEO' ?></span><span class="ent-ver">v<?= max(1, (int)($r['version_num'] ?? 1)) ?></span><h3><a href="?e=<?= (int)$r['id'] ?>"><?= $e($r['titulo']) ?></a></h3><?php if (trim((string)$r['descripcion']) !== '') echo '<p class="pc-desc">' . $e($r['descripcion']) . '</p>'; ?>
-<?php if ($drive($r)): ?><a class="btn" href="<?= $e($drive($r)) ?>" target="_blank" rel="<?= $tf === 'fotos' ? 'noopener noreferrer' : 'noopener' ?>"><?= $tf === 'fotos' ? 'Ver y descargar fotos (Drive)' : 'Abrir en Drive / Descargar' ?></a><?php endif; ?></div><?= $fb($r) ?></article><?php endforeach; ?></div></main>
+<?php if ($pst($r)): ?><a class="btn g" href="descargar.php?entrega_id=<?= (int)$r['id'] ?>&amp;tipo=portada">Descargar portada</a><?php endif; ?><?php if ($drive($r)): ?><a class="btn" href="<?= $e($drive($r)) ?>" target="_blank" rel="<?= $tf === 'fotos' ? 'noopener noreferrer' : 'noopener' ?>"><?= $tf === 'fotos' ? 'Ver y descargar fotos (Drive)' : 'Abrir en Drive / Descargar' ?></a><?php endif; ?></div><?= $fb($r) ?></article><?php endforeach; ?></div></main>
 <?php endif; endif; endif; ?>
 <aside class="pwa-tip" data-pwa-tip hidden><span data-pwa-msg>Instalá el portal en tu celular para entrar más rápido.</span><button type="button" class="pwa-tip-btn" data-pwa-install hidden>Instalar app</button><button type="button" class="pwa-tip-close" data-pwa-close aria-label="Cerrar">×</button></aside>
 <footer class="foot"><svg class="mark"><use href="#mark"/></svg><span class="wm">blens<i></i><b>ar</b></span><span class="loc">Posadas, Misiones · Argentina</span><nav class="social"><a href="../">Web</a><a href="<?= $e($contacto) ?>">Contacto</a></nav><span class="mut">© 2026 blens.ar</span></footer>
-<script src="../assets/fonts.js?v=2" defer></script><script src="../assets/player.js?v=13" defer></script><script src="dfr.js?v=14" defer></script><script src="feedback.js?v=1" defer></script><script src="../assets/push.js?v=8" defer></script></body></html>
+<script src="../assets/fonts.js?v=2" defer></script><script src="../assets/player.js?v=14" defer></script><script src="dfr.js?v=14" defer></script><script src="feedback.js?v=1" defer></script><script src="../assets/push.js?v=8" defer></script></body></html>

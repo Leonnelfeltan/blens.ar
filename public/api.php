@@ -6,20 +6,40 @@ require __DIR__ . '/../blens-config/bootstrap.php';
 try {
     $db = blens_db(); blens_migrar($db);
     try {
-        $rows = $db->query("SELECT p.id,p.titulo,p.cliente,p.categoria,p.descripcion,p.video_mp4,p.video_webm,p.video_1080,p.video_480,p.poster,p.ancho,p.formato,p.cliente_id,p.entrega_id,p.mostrar_cliente,e.titulo AS entrega_titulo,e.descripcion AS entrega_descripcion,e.tipo AS entrega_tipo,e.link_hd AS entrega_link,e.link_4k AS entrega_link4,e.creado AS entrega_creado FROM proyectos p LEFT JOIN entregas e ON e.id=p.entrega_id WHERE p.visible=1 AND (p.estado='listo' OR p.video_mp4 IS NOT NULL OR p.entrega_id IS NOT NULL) ORDER BY p.orden ASC, p.id DESC")->fetchAll();
+        $rows = $db->query("SELECT p.id,p.titulo,p.cliente,p.categoria,p.descripcion,p.video_mp4,p.video_webm,p.video_1080,p.video_480,p.poster,p.fuente_drive,p.video_drive_id,p.ancho,p.formato,p.cliente_id,p.entrega_id,p.mostrar_cliente,e.titulo AS entrega_titulo,e.descripcion AS entrega_descripcion,e.tipo AS entrega_tipo,e.link_hd AS entrega_link,e.link_4k AS entrega_link4,e.poster AS entrega_poster,e.portada_drive_id AS entrega_portada_drive_id,e.creado AS entrega_creado FROM proyectos p LEFT JOIN entregas e ON e.id=p.entrega_id WHERE p.visible=1 AND (p.estado='listo' OR p.video_mp4 IS NOT NULL OR p.entrega_id IS NOT NULL) ORDER BY p.orden ASC, p.id DESC")->fetchAll();
     } catch (Throwable $x) {
         $rows = $db->query('SELECT id,titulo,cliente,categoria,descripcion,video_mp4,video_webm,poster,ancho,formato FROM proyectos WHERE visible=1 ORDER BY orden ASC, id DESC')->fetchAll();
     }
-    $mejor = function (array $r): string {
-        return (string)($r['video_1080'] ?? '') ?: (string)($r['video_mp4'] ?? '') ?: (string)($r['video_480'] ?? '');
+    $videoUrl = function (array $r): string {
+        $local = blens_video_local($r);
+        if ($local !== '') return $local;
+        $id = blens_drive_id((string)($r['video_drive_id'] ?? '')) ?: blens_drive_id((string)($r['fuente_drive'] ?? ''))
+            ?: blens_drive_id((string)($r['entrega_link'] ?? '')) ?: blens_drive_id((string)($r['entrega_link4'] ?? ''));
+        return $id !== '' ? 'media-proyecto.php?id=' . (int)$r['id'] : '';
+    };
+    $posterUrl = function (array $r): string {
+        $raw = trim((string)($r['poster'] ?? ''));
+        if ($raw !== '' && blens_drive_id($raw) === '' && !preg_match('~^https?://~i', $raw)) {
+            $local = blens_webp($raw);
+            if ($local !== '') return $local;
+        }
+        $id = blens_drive_id((string)($r['video_drive_id'] ?? '')) ?: blens_drive_id((string)($r['fuente_drive'] ?? ''))
+            ?: blens_drive_id((string)($r['entrega_link'] ?? '')) ?: blens_drive_id((string)($r['entrega_link4'] ?? ''));
+        if ($raw !== '' || !empty($r['entrega_poster']) || !empty($r['entrega_portada_drive_id']) || $id !== '') return 'media-proyecto.php?id=' . (int)$r['id'] . '&t=p';
+        return '';
+    };
+    $limpiar = function (array $r) use ($videoUrl, $posterUrl): array {
+        $video = $videoUrl($r); $poster = $posterUrl($r);
+        unset($r['video_1080'], $r['video_480'], $r['video_webm'], $r['video_drive_id'], $r['fuente_drive'], $r['entrega_link'], $r['entrega_link4'], $r['entrega_poster'], $r['entrega_portada_drive_id'], $r['drive_id'], $r['poster_remote']);
+        $r['video_mp4'] = $video;
+        $r['poster'] = $poster;
+        return $r;
     };
     $show = null; $list = [];
     foreach ($rows as $r) { if (($r['categoria'] ?? '') === 'showreel') { $show ??= $r; } else { $list[] = $r; } }
     if ($show) {
-        $show['poster'] = blens_webp((string)($show['poster'] ?? ''));
         $show['formato'] = blens_formato((string)($show['formato'] ?? ''));
-        $show['video_mp4'] = $mejor($show);
-        unset($show['video_1080'], $show['video_480'], $show['video_webm']);
+        $show = $limpiar($show);
     }
     $base = ['reels' => 'Reels', 'cobertura' => 'Cobertura', 'estrategia' => 'Estrategia'];
     $cats = $base;
@@ -27,17 +47,9 @@ try {
         $c = (string)($r['categoria'] ?? '');
         if ($c === '' || $c === 'auto') $r['categoria'] = $c = 'reels';
         if (!isset($cats[$c])) $cats[$c] = ucfirst(str_replace('-', ' ', $c));
-        $r['poster'] = blens_webp((string)($r['poster'] ?? ''));
+        $r = $limpiar($r);
         $r['formato'] = blens_formato((string)($r['formato'] ?? ''));
-        $r['video_mp4'] = $mejor($r);
-        unset($r['video_1080'], $r['video_480'], $r['video_webm']);
         if (array_key_exists('mostrar_cliente', $r) && (int)$r['mostrar_cliente'] === 0) $r['cliente'] = '';
-        $link = (string)($r['entrega_link'] ?? '') ?: (string)($r['entrega_link4'] ?? '');
-        $did = $link !== '' ? blens_drive_id($link) : '';
-        if ($did !== '') {
-            $r['drive_id'] = $did;
-            if (!$r['poster']) $r['poster_remote'] = 'https://drive.google.com/thumbnail?id=' . $did . '&sz=w800';
-        }
     }
     unset($r);
     $cli = [];

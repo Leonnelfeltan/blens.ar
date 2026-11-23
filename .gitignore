@@ -8,3 +8,7 @@ public/media/*
 !public/media/web/
 !public/media/web/*.webp
 public/content/
+public/uploads/*
+!public/uploads/proyectos/
+public/uploads/proyectos/*
+!public/uploads/proyectos/.gitkeep

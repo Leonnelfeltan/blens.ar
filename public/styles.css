@@ -92,6 +92,8 @@ input:focus,select:focus,textarea:focus{border-color:var(--o);outline:0}
 .pj-media video{display:block;width:auto;max-width:100%;max-height:76vh;margin:0 auto}
 .pj-9-16 .pj-media .cvw.dfr{aspect-ratio:9/16}.pj-16-9 .pj-media .cvw.dfr{aspect-ratio:16/9}
 .pj-media .pj-gal{max-width:none;margin:0}
+.cvw.native{aspect-ratio:16/9;width:100%;max-width:1100px;margin:0 auto}.pj-9-16 .pj-media .cvw.native{aspect-ratio:9/16;max-width:420px}.pj-16-9 .pj-media .cvw.native{aspect-ratio:16/9;max-width:1100px}
+.cvw.native video{position:absolute;inset:0;width:100%;height:100%;max-width:none;max-height:none;object-fit:contain}
 .pj-info{min-width:0;display:flex;flex-direction:column}
 .pj-info .back{align-self:flex-start;margin-bottom:.9rem}
 .pj-cat{width:fit-content;font-size:.72rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--o);border:1px solid rgba(255,90,31,.45);background:rgba(255,90,31,.08);padding:.28rem .6rem;border-radius:3px}

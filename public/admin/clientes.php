@@ -159,6 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $tipoEn = (string)($_POST['tipo_entrega'] ?? 'video');
             if (!in_array($tipoEn, ['video', 'fotos'], true)) $tipoEn = 'video';
             $hd = trim((string)($_POST['link_hd'] ?? '')); $k4 = ''; $pj = (int)($_POST['proyecto_id'] ?? 0) ?: null;
+            $portadaUrl = trim((string)($_POST['portada_url'] ?? '')); $portadaDriveId = '';
             $publicar = isset($_POST['publicar_web']); $webPj = (int)($_POST['web_proyecto_id'] ?? 0);
             $webCat = (string)($_POST['web_categoria'] ?? 'reels'); if (!in_array($webCat, ['reels', 'cobertura', 'estrategia'], true)) $webCat = 'reels';
             $webVisible = isset($_POST['web_visible']); $webCli = isset($_POST['mostrar_cliente']);
@@ -171,6 +172,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($hd === '' && !$pj) throw new RuntimeException('Pegá el link de Google Drive o vinculá un proyecto de la web.');
             }
             if (($hd !== '' && !drive_ok($hd)) || ($k4 !== '' && !drive_ok($k4))) throw new RuntimeException('Los links tienen que ser de Google Drive y empezar con https://');
+            if ($portadaUrl !== '' && !drive_ok($portadaUrl)) throw new RuntimeException('La portada tiene que ser un link de Google Drive y empezar con https://');
+            if ($portadaUrl !== '') {
+                $portadaDriveId = blens_drive_id($portadaUrl);
+                if ($portadaDriveId === '') throw new RuntimeException('No pude leer el ID de la portada de Drive.');
+            }
             $old = null;
             if ($id) { $s = $pdo->prepare('SELECT * FROM entregas WHERE id=? AND cliente_id=?'); $s->execute([$id, $c]); $old = $s->fetch(); if (!$old) throw new RuntimeException('Entrega inexistente.'); }
             $mp4 = null; $pos = null; $auto = null;
@@ -182,6 +188,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pos = up('poster', ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'], 8 * 1048576);
                 if ($auto) { if ($pos) rmf($auto); else $pos = $auto; }
                 $mp4 = privado($mp4); $pos = privado($pos);
+                if (!$pos && $portadaDriveId !== '') $pos = 'drive:' . $portadaDriveId;
+                if (!$pos && empty($old['poster'])) {
+                    $idVideo = blens_drive_id($hd);
+                    if ($idVideo !== '') { $pos = 'drive:' . $idVideo; $portadaDriveId = $idVideo; }
+                }
                 if ($mp4 && !empty($_FILES['mp4']['name'])) @file_put_contents(PRIV . '/' . basename($mp4) . '.name', trim(pathinfo((string)$_FILES['mp4']['name'], PATHINFO_FILENAME)));
             }
             if ($t === '') {
@@ -206,6 +217,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare('INSERT INTO entregas (cliente_id,tipo,titulo,descripcion,link_hd,link_4k,preview,poster,proyecto_id) VALUES (?,?,?,?,?,?,?,?,?)')->execute([$c, $tipoEn, $t, $d, $hd, $k4, $mp4, $pos, $pj]);
             }
             $nid = $id ?: (int)$pdo->lastInsertId();
+            if ($portadaDriveId !== '') { try { $pdo->prepare('UPDATE entregas SET portada_drive_id=? WHERE id=?')->execute([$portadaDriveId, $nid]); } catch (Throwable $x2) { error_log('[blens portada drive] ' . $x2->getMessage()); } }
             $publicacion = '';
             if ($publicar) {
                 $resWeb = blens_publicar_entrega_web($pdo, $nid, [
@@ -397,6 +409,7 @@ $ps->execute([(int)$cli['id']]);
 <label class="full only-video"><span class="lbl">Video para la vista previa <span class="opt">(opcional)</span> (si no subís nada, el portal muestra el video desde el link de Drive) <?= $ent['preview'] ? '· ya cargado; dejá vacío para mantenerlo' : '' ?></span><input type="file" name="mp4" accept="video/*"></label>
 <p class="mut full only-video">Se convierte solo a 720p y solo lo ve este cliente al entrar con su usuario. Puede tardar unos minutos: no cierres la página.</p>
 <label class="full only-video"><span class="lbl">Portada propia <span class="opt">(opcional)</span></span><input type="file" name="poster" accept="image/jpeg,image/png,image/webp"></label>
+<label class="full only-video"><span class="lbl">Portada desde Google Drive <span class="opt">(opcional)</span> (si no subís archivo, se usa el video de Drive y también se publica en la web)</span><input name="portada_url" value="<?= $e(!empty($ent['portada_drive_id']) ? 'https://drive.google.com/file/d/' . $ent['portada_drive_id'] . '/view' : '') ?>" placeholder="https://drive.google.com/file/d/..."></label>
 <div class="full fin-opts" data-crear-opts>
   <label><span class="lbl">Línea de negocio</span><select name="unidad_negocio"><?= fin_opts(FIN_UNIDADES, 'audiovisual') ?></select></label>
   <label><span class="lbl">Estado de pago</span><select name="estado_pago"><?= fin_opts(FIN_ESTADOS_PAGO, 'pendiente') ?></select></label>
