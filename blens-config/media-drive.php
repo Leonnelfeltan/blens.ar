@@ -23,13 +23,58 @@ function blens_slug(?string $s): string {
     $s = preg_replace('/[^a-z0-9]+/', '-', $s) ?? '';
     return trim(substr($s, 0, 60), '-');
 }
-function blens_curl_a_archivo(string $url, string $dest, ?string $jar = null, ?string $range = null, int $timeout = 120): string {
+function blens_curl_a_archivo(string $url, string $dest, ?string $jar = null, ?string $range = null, int $timeout = 120): array {
     $cmd = 'curl -sSL --max-time ' . max(1, $timeout) . ' -A ' . escapeshellarg('Mozilla/5.0');
     if ($jar) $cmd .= ' -c ' . escapeshellarg($jar) . ' -b ' . escapeshellarg($jar);
     if ($range) $cmd .= ' -r ' . escapeshellarg($range);
-    $cmd .= ' -o ' . escapeshellarg($dest) . ' -w ' . escapeshellarg('%{content_type}') . ' ' . escapeshellarg($url) . ' 2>/dev/null';
+    $cmd .= ' -o ' . escapeshellarg($dest) . ' -w ' . escapeshellarg('%{http_code}|%{content_type}') . ' ' . escapeshellarg($url) . ' 2>/dev/null';
     $out = []; $rc = 1; @exec($cmd, $out, $rc);
-    return $rc === 0 ? trim(implode('', $out)) : '';
+    $parts = explode('|', trim(implode('', $out)), 2);
+    $code = $rc === 0 ? (int)($parts[0] ?? 0) : 0;
+    return ['http_code' => $code, 'content_type' => $rc === 0 ? trim((string)($parts[1] ?? '')) : '', 'ok' => $code >= 200 && $code < 400];
+}
+function blens_curl_head(string $url, ?string $jar = null, int $timeout = 60): array {
+    $h = blens_tmp('blensdh');
+    $cmd = 'curl -sSIL --max-time ' . max(1, $timeout) . ' -A ' . escapeshellarg('Mozilla/5.0');
+    if ($jar) $cmd .= ' -c ' . escapeshellarg($jar) . ' -b ' . escapeshellarg($jar);
+    $cmd .= ' -D ' . escapeshellarg($h) . ' -o /dev/null ' . escapeshellarg($url) . ' 2>/dev/null';
+    $out = []; $rc = 1; @exec($cmd, $out, $rc);
+    $txt = (string)@file_get_contents($h); @unlink($h);
+    $blocks = preg_split('/\r?\n\r?\n/', trim($txt)) ?: [];
+    $last = (string)end($blocks);
+    preg_match_all('~HTTP/\S+\s+(\d{3})~', $txt, $codes);
+    $code = (int)(end($codes[1]) ?: 0);
+    $ct = ''; $loc = '';
+    foreach (explode("\n", str_replace("\r", '', $last)) as $line) {
+        if (preg_match('~^Content-Type:\s*(.+)$~i', $line, $m)) $ct = trim($m[1]);
+        if (preg_match('~^Location:\s*(.+)$~i', $line, $m)) $loc = trim($m[1]);
+    }
+    return ['http_code' => $code, 'content_type' => $ct, 'location' => $loc, 'ok' => $code >= 200 && $code < 400];
+}
+function blens_header_html(string $tag, string $nombre): string {
+    $re = '/\b' . preg_quote($nombre, '/') . '\s*=\s*("([^"]*)"|\'([^\']*)\'|([^\s>]+))/i';
+    if (!preg_match($re, $tag, $m)) return '';
+    $valor = isset($m[2]) && $m[2] !== '' ? $m[2] : (isset($m[3]) && $m[3] !== '' ? $m[3] : (string)($m[4] ?? ''));
+    return html_entity_decode($valor, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+}
+function blens_url_absoluta(string $url, string $base = 'https://drive.google.com'): string {
+    $url = trim($url);
+    if ($url === '') return '';
+    if (preg_match('~^https?://~i', $url)) return $url;
+    if (str_starts_with($url, '//')) return 'https:' . $url;
+    return rtrim($base, '/') . '/' . ltrim($url, '/');
+}
+function blens_url_versionada(string $rel): string {
+    $rel = ltrim(str_replace('\\', '/', trim($rel)), '/');
+    if ($rel === '' || preg_match('~^https?://~i', $rel)) return $rel;
+    $sep = str_contains($rel, '?') ? '&' : '?';
+    $abs = blens_ruta_publica(explode('?', $rel)[0]);
+    return $rel . ($abs !== '' && is_file($abs) ? $sep . 'v=' . (int)@filemtime($abs) : '');
+}
+function blens_accel_ruta(string $rel): string {
+    $rel = ltrim(str_replace('\\', '/', trim($rel)), '/');
+    if ($rel === '' || str_contains($rel, '..') || preg_match('~^https?://~i', $rel)) return '';
+    return '/media-proyecto-file/' . $rel;
 }
 function blens_tmp(string $prefijo): string {
     $f = @tempnam(sys_get_temp_dir(), $prefijo);
@@ -40,25 +85,40 @@ function blens_drive_directa(string $url, int $timeout = 7200): string {
     if ($id === '') return '';
     $jar = blens_tmp('blensdj'); $probe = blens_tmp('blensdp');
     $actual = 'https://drive.google.com/uc?export=download&id=' . $id;
+    $vistos = [];
     try {
         for ($i = 0; $i < 5; $i++) {
-            $ct = blens_curl_a_archivo($actual, $probe, $jar, 'bytes=0-0', min(60, $timeout));
-            if ($ct === '') return '';
-            if (stripos($ct, 'text/html') === false) return $actual;
+            if (isset($vistos[$actual])) return '';
+            $vistos[$actual] = true;
+            $h = blens_curl_head($actual, $jar, min(60, $timeout));
+            if (!$h['ok'] && $h['http_code'] !== 206) return '';
+            if (stripos($h['content_type'], 'text/html') === false) return $actual;
+            $page = blens_curl_a_archivo($actual, $probe, $jar, null, min(60, $timeout));
+            if (!$page['ok']) return '';
             $html = (string)@file_get_contents($probe, false, null, 0, 400000);
             $next = '';
-            if (preg_match('/<form[^>]*id="download-form"[^>]*action="([^"]+)"/i', $html, $fm)) {
-                $action = html_entity_decode($fm[1], ENT_QUOTES | ENT_HTML5, 'UTF-8');
-                preg_match_all('/<input[^>]*type="hidden"[^>]*name="([^"]+)"[^>]*value="([^"]*)"/i', $html, $in, PREG_SET_ORDER);
+            if (preg_match('/<form\b([^>]*)>/i', $html, $fm)) {
+                $action = blens_header_html($fm[1], 'action');
+                preg_match_all('/<input\b([^>]*)>/i', $html, $in);
                 $q = [];
-                foreach ($in as $x) $q[html_entity_decode($x[1], ENT_QUOTES | ENT_HTML5, 'UTF-8')] = html_entity_decode($x[2], ENT_QUOTES | ENT_HTML5, 'UTF-8');
-                $next = $action . (str_contains($action, '?') ? '&' : '?') . http_build_query($q);
-            } elseif (preg_match('/confirm=([0-9A-Za-z_-]+)/', $html, $cm)) {
-                $next = 'https://drive.google.com/uc?export=download&confirm=' . $cm[1] . '&id=' . $id;
-            } elseif (preg_match('/name="confirm"[^>]*value="([^"]+)"/i', $html, $cm)) {
-                $next = 'https://drive.google.com/uc?export=download&confirm=' . rawurlencode($cm[1]) . '&id=' . $id;
+                foreach ($in[1] ?? [] as $attrs) {
+                    $name = blens_header_html($attrs, 'name');
+                    $type = strtolower(blens_header_html($attrs, 'type'));
+                    if ($name === '' || ($type !== '' && $type !== 'hidden')) continue;
+                    $q[$name] = blens_header_html($attrs, 'value');
+                }
+                if (!isset($q['id'])) $q['id'] = $id;
+                if (!isset($q['export'])) $q['export'] = 'download';
+                if ($action !== '' && $q !== []) {
+                    $urlNext = blens_url_absoluta($action);
+                    $next = $urlNext . (str_contains($urlNext, '?') ? '&' : '?') . http_build_query($q, '', '&', PHP_QUERY_RFC3986);
+                }
             }
-            if ($next === '' || $next === $actual) return '';
+            if ($next === '') {
+                if (preg_match('/confirm=([0-9A-Za-z_-]+)/', $html, $cm)) $next = 'https://drive.google.com/uc?export=download&confirm=' . $cm[1] . '&id=' . $id;
+                elseif (preg_match('/name="confirm"[^>]*value="([^"]+)"/i', $html, $cm)) $next = 'https://drive.google.com/uc?export=download&confirm=' . rawurlencode($cm[1]) . '&id=' . $id;
+            }
+            if ($next === '') return '';
             $actual = $next;
         }
         return '';
@@ -77,8 +137,8 @@ function blens_drive_descargar(string $url, string $dest, int $timeout = 7200): 
         $jar = blens_tmp('blensdj');
         try {
             @unlink($dest);
-            $ct = blens_curl_a_archivo($u, $dest, $jar, null, $timeout);
-            if (stripos($ct, 'text/html') === false && is_file($dest) && filesize($dest) >= 1024) return;
+            $res = blens_curl_a_archivo($u, $dest, $jar, null, $timeout);
+            if ($res['ok'] && stripos($res['content_type'], 'text/html') === false && is_file($dest) && filesize($dest) >= 1024) return;
         } finally { @unlink($jar); }
     }
     @unlink($dest);
@@ -90,7 +150,7 @@ function blens_ff_bin(string $name): string {
     $out = []; $rc = 1; @exec('command -v ' . escapeshellarg($name) . ' 2>/dev/null', $out, $rc);
     $cmd = trim((string)($out[0] ?? ''));
     if ($rc === 0 && $cmd !== '') return $cmd;
-    foreach ([dirname(__DIR__, 2) . '/blens-private/bin', __DIR__ . '/bin', '/usr/local/bin', '/usr/bin', '/bin'] as $d) {
+    foreach ([dirname(__DIR__, 2) . '/blens-private/bin', __DIR__ . '/bin', '/usr/local/bin', '/usr/bin', '/bin', '/snap/bin'] as $d) {
         if (@is_file($d . '/' . $name) && @is_executable($d . '/' . $name)) return $d . '/' . $name;
     }
     throw new RuntimeException('Falta ' . $name . ' en el servidor.');
@@ -103,10 +163,33 @@ function blens_imagen_convertir(string $src, string $dest, string $tipo = 'webp'
     $cmd = $ff . ' -y -hide_banner -loglevel error -i ' . escapeshellarg($src) . ' -frames:v 1 -vf ' . escapeshellarg('scale=min(1200\\,iw):-2') . ' ' . $codec . ' ' . escapeshellarg($dest);
     return blens_ejecutar($cmd) && is_file($dest) && filesize($dest) > 100;
 }
+function blens_video_transcode_web(string $src, string $dest): bool {
+    if (!is_file($src)) return false;
+    $ff = blens_ff_bin('ffmpeg');
+    $filtro = "scale='min(1080,iw)':'min(1920,ih)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2";
+    $cmd = $ff . ' -y -hide_banner -loglevel error -i ' . escapeshellarg($src)
+        . ' -map 0:v:0 -map 0:a? -vf ' . escapeshellarg($filtro)
+        . ' -c:v libx264 -preset fast -crf 23 -maxrate 6M -bufsize 12M -pix_fmt yuv420p'
+        . ' -c:a aac -b:a 128k -movflags +faststart ' . escapeshellarg($dest);
+    return blens_ejecutar($cmd) && is_file($dest) && filesize($dest) > 10240;
+}
+function blens_poster_video(string $video, string $dest): bool {
+    if (!is_file($video)) return false;
+    $ff = blens_ff_bin('ffmpeg');
+    $cmd = $ff . ' -y -hide_banner -loglevel error -ss 1 -i ' . escapeshellarg($video)
+        . ' -frames:v 1 -vf ' . escapeshellarg('scale=min(720\\,iw):-2')
+        . ' -c:v libwebp -quality 82 ' . escapeshellarg($dest);
+    return blens_ejecutar($cmd) && is_file($dest) && filesize($dest) > 100;
+}
+function blens_persistir_poster(PDO $pdo, int $pid, string $rel): void {
+    if ($pid <= 0 || $rel === '') return;
+    try { $pdo->prepare("UPDATE proyectos SET poster=?,poster_auto=0 WHERE id=? AND (poster IS NULL OR poster='')")->execute([$rel, $pid]); }
+    catch (Throwable $x) { error_log('[blens poster] ' . $x->getMessage()); }
+}
 function blens_portada_drive_cachear(string $id, string $dest): bool {
     foreach (['https://drive.google.com/thumbnail?id=' . $id . '&sz=w1200', 'https://lh3.googleusercontent.com/d/' . $id . '=w1200'] as $u) {
-        $ct = blens_curl_a_archivo($u, $dest, null, null, 45);
-        if ($ct !== '' && stripos($ct, 'image/') === 0 && is_file($dest) && filesize($dest) > 1024) return true;
+        $res = blens_curl_a_archivo($u, $dest, null, null, 45);
+        if ($res['ok'] && stripos($res['content_type'], 'image/') === 0 && is_file($dest) && filesize($dest) > 1024) return true;
     }
     @unlink($dest);
     return false;
@@ -170,6 +253,16 @@ function blens_video_local(array $r): string {
     }
     return '';
 }
+function blens_proyecto_tiene_media(array $r): bool {
+    if (blens_video_local($r) !== '') return true;
+    foreach (['video_drive_id', 'fuente_drive', 'entrega_link', 'entrega_link4'] as $k) {
+        if (blens_drive_id((string)($r[$k] ?? '')) !== '') return true;
+    }
+    foreach (['poster', 'entrega_poster', 'entrega_portada_drive_id'] as $k) {
+        if (trim((string)($r[$k] ?? '')) !== '') return true;
+    }
+    return false;
+}
 function blens_proyecto_drive_id(PDO $pdo, int $pid): string {
     try {
         $s = $pdo->prepare('SELECT p.*, e.link_hd AS entrega_link, e.link_4k AS entrega_link4 FROM proyectos p LEFT JOIN entregas e ON e.id=p.entrega_id WHERE p.id=?');
@@ -216,15 +309,18 @@ function blens_drive_cachear_video(PDO $pdo, int $pid, bool $forzar = false): ?s
         }
         @unlink($part);
         blens_drive_descargar($url, $part);
-        $ffprobe = blens_ff_bin('ffprobe'); $ffmpeg = blens_ff_bin('ffmpeg');
+        $ffprobe = blens_ff_bin('ffprobe');
         $probe = $ffprobe . ' -v error -show_entries format=duration -of default=nw=1:nk=1 ' . escapeshellarg($part);
         $out = []; $rc = 1; @exec($probe, $out, $rc);
         if ($rc !== 0 || (float)(trim((string)($out[0] ?? '')) ?: 0) <= 0) throw new RuntimeException('El archivo de Drive no es un video válido.');
-        $baseCmd = $ffmpeg . ' -y -hide_banner -loglevel error -i ' . escapeshellarg($part) . ' -map 0:v:0 -map ' . escapeshellarg('0:a?');
-        if (!blens_ejecutar($baseCmd . ' -c copy -movflags +faststart ' . escapeshellarg($mp4))) {
-            @unlink($mp4);
-            if (!blens_ejecutar($baseCmd . ' -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart ' . escapeshellarg($mp4))) throw new RuntimeException('No pude optimizar el video a MP4.');
+        $mp4Tmp = $dir . '/' . $base . '-web.part';
+        @unlink($mp4Tmp);
+        if (!blens_video_transcode_web($part, $mp4Tmp)) {
+            @unlink($mp4Tmp);
+            throw new RuntimeException('No pude optimizar el video a MP4 web.');
         }
+        if (!@rename($mp4Tmp, $mp4)) { @unlink($mp4Tmp); throw new RuntimeException('No pude guardar el MP4 optimizado.'); }
+        @chmod($mp4, 0664);
         if (!is_file($mp4) || filesize($mp4) < 10240) throw new RuntimeException('El MP4 generado quedó vacío.');
         $rel = 'uploads/proyectos/' . $base . '.mp4';
         $poster = '';
@@ -232,33 +328,42 @@ function blens_drive_cachear_video(PDO $pdo, int $pid, bool $forzar = false): ?s
             $poster = blens_publicar_portada($pdo, $p, $pid) ?: '';
             if ($poster === '') {
                 $posterAbs = blens_uploads_proyectos() . '/' . $base . '-poster.webp';
-                if (blens_ejecutar($ffmpeg . ' -y -hide_banner -loglevel error -ss 1 -i ' . escapeshellarg($mp4) . ' -frames:v 1 -vf ' . escapeshellarg('min(720,iw):-2') . ' -c:v libwebp -quality 82 ' . escapeshellarg($posterAbs))) $poster = 'uploads/proyectos/' . $base . '-poster.webp';
+                if (blens_poster_video($mp4, $posterAbs)) $poster = 'uploads/proyectos/' . $base . '-poster.webp';
             }
         }
-        if ($poster !== '') $pdo->prepare('UPDATE proyectos SET poster=?,poster_auto=0 WHERE id=?')->execute([$poster, $pid]);
+        if ($poster !== '') blens_persistir_poster($pdo, $pid, $poster);
         $pdo->prepare("UPDATE proyectos SET video_mp4=?,video_1080=?,video_drive_id=?,estado='listo',error_msg=NULL WHERE id=?")->execute([$rel, $rel, $id, $pid]);
         return $rel;
     } catch (Throwable $x) {
         error_log('[blens drive video ' . $pid . '] ' . $x->getMessage());
-        try { $pdo->prepare("UPDATE proyectos SET estado='listo',error_msg=? WHERE id=?")->execute([mb_substr($x->getMessage(), 0, 255), $pid]); } catch (Throwable $x2) { }
+        try { $pdo->prepare("UPDATE proyectos SET estado='error',error_msg=? WHERE id=?")->execute([mb_substr($x->getMessage(), 0, 255), $pid]); } catch (Throwable $x2) { }
         return null;
     } finally {
         @unlink($part ?? '');
+        @unlink($mp4Tmp ?? '');
         if ($lock) { try { $pdo->query("SELECT RELEASE_LOCK('blens_video_drive_" . $pid . "')"); } catch (Throwable $x) { } }
     }
 }
-function blens_lanzar_cachear_drive(int $pid): void {
+function blens_lanzar_cachear_drive(int $pid, bool $forzar = false): void {
     $script = dirname(__DIR__) . '/scripts/cachear-drive.php';
     if (!is_file($script)) return;
     $php = PHP_BINARY ?: (trim((string)@shell_exec('command -v php')) ?: '/usr/bin/php');
-    @exec('setsid nohup ' . escapeshellarg($php) . ' ' . escapeshellarg($script) . ' ' . (int)$pid . ' > /dev/null 2>&1 &');
+    $args = (int)$pid . ($forzar ? ' --force' : '');
+    @exec('setsid nohup ' . escapeshellarg($php) . ' ' . escapeshellarg($script) . ' ' . $args . ' > /dev/null 2>&1 &');
 }
-function blens_stream_archivo(string $path, string $mime, ?string $attachment = null): void {
+function blens_stream_archivo(string $path, string $mime, ?string $attachment = null, ?string $accel = null): void {
     if (!is_file($path)) { http_response_code(404); exit; }
+    if ($accel !== null && $accel !== '' && $attachment === null && !headers_sent()) {
+        header('Content-Type: ' . $mime);
+        header('Accept-Ranges: bytes');
+        header('Cache-Control: public, max-age=31536000, immutable');
+        header('X-Content-Type-Options: nosniff');
+        header('X-Accel-Redirect: ' . $accel);
+    }
     $size = (int)filesize($path);
     header('Content-Type: ' . $mime);
     header('Accept-Ranges: bytes');
-    header('Cache-Control: ' . ($attachment !== null ? 'private, no-store' : 'public, max-age=3600'));
+    header('Cache-Control: ' . ($attachment !== null ? 'private, no-store' : ($accel !== null && $accel !== '' ? 'public, max-age=31536000, immutable' : 'public, max-age=3600')));
     header('X-Content-Type-Options: nosniff');
     if ($attachment !== null) header('Content-Disposition: attachment; filename="' . str_replace(['"', "\r", "\n"], '', $attachment) . '"');
     $start = 0; $end = max(0, $size - 1);
@@ -303,7 +408,7 @@ function blens_stream_drive(string $url, string $mime = 'video/mp4'): bool {
     $ch = curl_init($directa);
     curl_setopt_array($ch, [
         CURLOPT_FOLLOWLOCATION => true, CURLOPT_CONNECTTIMEOUT => 15, CURLOPT_TIMEOUT => 7200,
-        CURLOPT_SSL_VERIFYPEER => false, CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2,
         CURLOPT_HTTPHEADER => ['Range: ' . $range, 'User-Agent: Mozilla/5.0'],
         CURLOPT_WRITEFUNCTION => function ($ch, $s) { echo $s; return strlen($s); },
     ]);

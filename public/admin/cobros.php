@@ -9,9 +9,9 @@ $pdo = blens_db(); $agN = agenda_pendientes($pdo); $consN = consultas_pendientes
 $T = $e($_SESSION['t']);
 $vc = isset($_GET['c']) ? (int)$_GET['c'] : (isset($_GET['cliente']) ? (int)$_GET['cliente'] : null);
 $tipoDe = fn(array $r): string => ((string)($r['tipo'] ?? 'video') === 'fotos') ? 'fotos' : 'video';
-if (!$pdo->query("SHOW TABLES LIKE 'trabajos'")->fetch()) exit('Faltan las tablas de cobros. En el servidor corré: sudo mysql < /tmp/nuevo/blens-config/migracion-cobros.sql');
-if (!$pdo->query("SHOW TABLES LIKE 'ajustes'")->fetch()) exit('Falta actualizar la base. En el servidor corré: sudo mysql < /tmp/nuevo/blens-config/migracion-4.sql');
-if (!$pdo->query("SHOW COLUMNS FROM trabajos LIKE 'entrega_id'")->fetch()) exit('Falta actualizar la base. En el servidor corré: sudo mysql < /tmp/nuevo/blens-config/migracion-5.sql');
+if (!$pdo->query("SHOW TABLES LIKE 'trabajos'")->fetch()) exit('Faltan las tablas de cobros. Recargá el admin para aplicar las migraciones automáticas.');
+if (!$pdo->query("SHOW TABLES LIKE 'ajustes'")->fetch()) exit('Falta actualizar la base. Recargá el admin para aplicar las migraciones automáticas.');
+if (!$pdo->query("SHOW COLUMNS FROM trabajos LIKE 'entrega_id'")->fetch()) exit('Falta actualizar la base. Recargá el admin para aplicar las migraciones automáticas.');
 $mp = modo_prueba($pdo);
 $ym = fin_mes_valido((string)($_GET['mes'] ?? ''));
 if (isset($_GET['csv'])) {

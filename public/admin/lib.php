@@ -71,7 +71,7 @@ function up(string $f, array $ok, int $max): ?string {
     if (!move_uploaded_file($u['tmp_name'], "$dir/$name")) throw new RuntimeException('No se pudo guardar el archivo.');
     return "media/uploads/$name";
 }
-function rmf(?string $p): void { if ($p && str_starts_with($p, 'media/uploads/')) @unlink(__DIR__ . '/../' . $p); }
+function rmf(?string $p): void { if ($p) blens_borrar_media_archivo(blens_db(), $p); }
 
 /* ---- Comprobantes de cobros y gastos (guardados fuera de /public) ---- */
 const COMPROBANTE_MAX = 8 * 1048576;
@@ -185,7 +185,7 @@ function wa_link_portal(): string { return rtrim((string)(blens_cfg()['sitio'] ?
 if (!function_exists('wa_link')) {
     function wa_link(?string $tel, string $plantilla = '', array|string $datos = []): ?string {
         if ($tel === null || trim($tel) === '') return null;
-        $n = wa_num($tel);
+        $n = blens_wa_num($tel);
         if (!$n) return null;
         if (is_array($datos)) {
             $texto = wa_render($plantilla, $datos);
@@ -198,16 +198,7 @@ if (!function_exists('wa_link')) {
     }
 }
 
-// Número en formato WhatsApp Argentina (549 + área + número)
-function wa_num(string $tel): ?string {
-    $d = preg_replace('/\D+/', '', $tel) ?? ''; if ($d === '') return null;
-    if (str_starts_with($d, '00')) $d = substr($d, 2);
-    if (str_starts_with($d, '54')) return str_starts_with($d, '549') ? $d : '549' . substr($d, 2);
-    $d = ltrim($d, '0');
-    if (strlen($d) === 12) foreach (str_starts_with($d, '11') ? [2] : [3, 4] as $a) { if (substr($d, $a, 2) === '15') { $d = substr($d, 0, $a) . substr($d, $a + 2); break; } }
-    return strlen($d) === 10 ? '549' . $d : null;
-}
-function wa_url(string $tel, string $texto): ?string { $n = wa_num($tel); return $n ? 'https://wa.me/' . $n . '?text=' . rawurlencode($texto) : null; }
+function wa_url(string $tel, string $texto): ?string { $n = blens_wa_num($tel); return $n ? 'https://wa.me/' . $n . '?text=' . rawurlencode($texto) : null; }
 
 const TIPOS = ['video' => 'Video', 'foto' => 'Foto', 'otro' => 'Otro'];
 const MEDIOS = ['efectivo' => 'Efectivo', 'transferencia' => 'Transferencia', 'mercadopago' => 'Mercado Pago', 'otro' => 'Otro'];
@@ -232,4 +223,4 @@ function logo_proc(string $rel): string {
     if ($rc !== 0 || !is_file("$dir/$name")) throw new RuntimeException('No se pudo procesar el logo. Probá con un PNG o JPG.');
     return $name;
 }
-function rmlogo(?string $f): void { if ($f) @unlink(__DIR__ . '/../media/logos/' . basename($f)); }
+function rmlogo(?string $f): void { if ($f) blens_borrar_media_archivo(blens_db(), $f); }

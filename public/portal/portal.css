@@ -54,7 +54,10 @@ body{min-height:100vh}
 .pnotif-close:hover,.papp-close:hover{color:var(--h)}
 @media(max-width:640px){.pnotif,.pappcard{align-items:flex-start;flex-wrap:wrap;gap:.6rem;padding:.8rem}.pnotif-copy,.papp-copy{flex:1 1 100%;order:2}.pnotif .btn,.pappcard .btn{order:3;width:100%}}
 
-.pd .cvw.dfr{position:relative;width:100%;aspect-ratio:9/16;max-height:85vh;background:#000}.cvw.dfr iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.pd .cvw.dfr{position:relative;width:100%;aspect-ratio:9/16;max-height:85vh;background:#000}.pd .cvw.dfr.ratio-square{aspect-ratio:1/1}.pd .cvw.dfr.ratio-wide{aspect-ratio:16/9}
+.cvw.dfr iframe{position:absolute;inset:0;width:100%;height:100%;border:0}.cvw.dfr video{width:100%;height:100%;object-fit:contain;background:#000}
+.cvw.dfr .dfr-fallback{display:none;position:absolute;inset:0;place-content:center;gap:.8rem;padding:1.2rem;text-align:center;color:var(--mut);font-size:.9rem;line-height:1.5}
+.cvw.dfr.dfr-error video,.cvw.dfr.dfr-error .cv-bar,.cvw.dfr.dfr-error .cv-big,.cvw.dfr.dfr-error .cv-snd{display:none}.cvw.dfr.dfr-error .dfr-fallback{display:grid}
 
 /* ===== Entregas: video y pack de fotos ===== */
 .pf-filtros{display:flex;gap:.4rem;flex-wrap:wrap;margin:0 0 1.6rem}

@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/../blens-config/bootstrap.php';
+header('X-Frame-Options: SAMEORIGIN');
 $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 $id = (int)($_GET['id'] ?? 0); $p = null;
 try {
@@ -13,14 +14,14 @@ try {
         $s->execute([$id]); $p = $s->fetch() ?: null;
     }
 } catch (Throwable $x) { error_log('[blens proyecto] ' . $x->getMessage()); }
-if (!$p) { http_response_code(404); readfile(__DIR__ . '/404.html'); exit; }
+if (!$p || !blens_proyecto_tiene_media($p)) { http_response_code(404); readfile(__DIR__ . '/404.html'); exit; }
 $cats = ['reels' => 'Reels', 'cobertura' => 'Cobertura', 'estrategia' => 'Estrategia'];
 $cat = (string)($p['categoria'] ?? '');
 if ($cat === '' || $cat === 'auto') $cat = 'reels';
 $catLabel = $cats[$cat] ?? ucfirst(str_replace('-', ' ', $cat));
 $clienteWeb = (int)($p['mostrar_cliente'] ?? 1) === 1 ? (string)($p['cliente'] ?? '') : '';
 $desc = $p['descripcion'] ?: ($p['entrega_descripcion'] ?: ($p['servicios'] ?: 'Proyecto audiovisual de blens.ar'));
-$poster = blens_webp((string)($p['poster'] ?? ''));
+$poster = blens_url_versionada(blens_webp((string)($p['poster'] ?? '')));
 $clogo = '';
 
 if ($clienteWeb !== '') {
@@ -33,11 +34,12 @@ if ($clienteWeb !== '') {
 $videoLocal = blens_video_local($p);
 $entregaLink = (string)($p['entrega_link'] ?? '') ?: (string)($p['entrega_link4'] ?? '');
 $driveId = blens_drive_id((string)($p['fuente_drive'] ?? '')) ?: blens_drive_id($entregaLink) ?: blens_drive_id((string)($p['video_drive_id'] ?? ''));
-$video = $videoLocal !== '' ? $videoLocal : ($driveId !== '' ? 'media-proyecto.php?id=' . (int)$p['id'] : null);
+$video = $videoLocal !== '' ? blens_url_versionada($videoLocal) : ($driveId !== '' ? 'media-proyecto.php?id=' . (int)$p['id'] : null);
 if ($poster === '' && ($driveId !== '' || !empty($p['entrega_poster']))) $poster = 'media-proyecto.php?id=' . (int)$p['id'] . '&t=p';
 $sitio = rtrim((string)(blens_cfg()['sitio'] ?? 'https://blens.ar'), '/');
 $canonical = $sitio . '/proyecto.php?id=' . (int)$p['id'];
-$img = ($poster !== '' && !preg_match('~^https?://~i', $poster) && is_file(__DIR__ . '/' . ltrim($poster, '/'))) ? @getimagesize(__DIR__ . '/' . ltrim($poster, '/')) : false;
+$posterPath = explode('?', $poster)[0];
+$img = ($posterPath !== '' && !preg_match('~^https?://~i', $posterPath) && is_file(__DIR__ . '/' . ltrim($posterPath, '/'))) ? @getimagesize(__DIR__ . '/' . ltrim($posterPath, '/')) : false;
 $iw = $img ? (int)$img[0] : 1200;
 $ih = $img ? (int)$img[1] : 630;
 $formato = blens_formato((string)($p['formato'] ?? ''));

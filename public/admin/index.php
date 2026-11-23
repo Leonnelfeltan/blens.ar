@@ -14,9 +14,8 @@ $cobN = cobros_pendientes($pdo);
 if (!empty($_SESSION['ok'])) blens_acreditar_tna($pdo);  // acreditación diaria de intereses (idempotente)
 $colsProy = blens_columnas($pdo, 'proyectos');
 $faltaMig = !isset($colsProy['video_1080'], $colsProy['video_480'], $colsProy['estado'], $colsProy['entrega_id'], $colsProy['mostrar_cliente'], $colsProy['formato']);
-const MIG_CMD = "sudo mysql blens_web -e \"ALTER TABLE proyectos ADD COLUMN video_1080 VARCHAR(255) NULL, ADD COLUMN video_480 VARCHAR(255) NULL, ADD COLUMN calidades VARCHAR(40) NULL, ADD COLUMN estado VARCHAR(12) NOT NULL DEFAULT 'listo', ADD COLUMN error_msg VARCHAR(255) NULL, ADD COLUMN fuente_drive VARCHAR(500) NULL, ADD COLUMN cola_src VARCHAR(255) NULL, ADD COLUMN poster_auto TINYINT(1) NOT NULL DEFAULT 0, ADD COLUMN formato VARCHAR(10) NOT NULL DEFAULT '9:16';\"";
+const MIG_AVISO = 'Las migraciones se aplican automáticamente al cargar el admin. Si persiste, revisá los permisos de la base de datos.';
 $faltaCat = isset($colsProy['categoria']) && stripos($colsProy['categoria'], 'varchar(40)') === false;
-const MIG_CAT_CMD = "sudo mysql blens_web -e \"ALTER TABLE proyectos MODIFY categoria VARCHAR(40) NOT NULL DEFAULT 'reels';\"";
 $e = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8');
 $_SESSION['t'] ??= bin2hex(random_bytes(16));
 function cat_slug(string $s): string {
@@ -58,11 +57,6 @@ function up_cola(string $f, array $ok, int $max): ?string {
     @file_put_contents($dest . '.name', trim(pathinfo((string)$u['name'], PATHINFO_FILENAME)));
     return $dest;
 }
-function drive_ok(string $u): bool {
-    $h = strtolower((string)parse_url($u, PHP_URL_HOST));
-    return str_starts_with($u, 'https://') && in_array($h, ['drive.google.com', 'docs.google.com', 'drive.usercontent.google.com'], true)
-        && (bool)(preg_match('#/d/([A-Za-z0-9_-]{10,})#', $u) || preg_match('#[?&]id=([A-Za-z0-9_-]{10,})#', $u));
-}
 function drive_sidecar(string $u): ?string {
     if (preg_match('#/d/([A-Za-z0-9_-]{10,})#', $u, $m) || preg_match('#[?&]id=([A-Za-z0-9_-]{10,})#', $u, $m)) return COLA . '/drive_' . $m[1] . '.name';
     return null;
@@ -74,8 +68,9 @@ function lanzar(int $id, string $tipo = 'proyecto'): void {
     $arg = $tipo === 'proyecto' ? '' : ' ' . $tipo;
     exec('setsid nohup ' . escapeshellarg($php) . ' ' . escapeshellarg($w) . ' ' . (int)$id . $arg . ' > /dev/null 2>&1 &');
 }
-function borrar_archivos(array $r): void {
-    foreach (['video_mp4', 'video_webm', 'video_1080', 'video_480', 'poster'] as $k) rmf($r[$k] ?? null);
+function borrar_archivos(array $r, ?PDO $pdo = null): void {
+    $pdo ??= blens_db();
+    foreach (['video_mp4', 'video_webm', 'video_1080', 'video_480', 'poster'] as $k) blens_borrar_media_archivo($pdo, $r[$k] ?? null);
     $c = (string)($r['cola_src'] ?? ''); if ($c !== '' && str_starts_with($c, COLA . '/')) { @unlink($c); @unlink($c . '.name'); }
     $ds = drive_sidecar((string)($r['fuente_drive'] ?? '')); if ($ds) @unlink($ds);
 }
@@ -136,7 +131,7 @@ if ($post) {
             if ($a === 'toggle') { $pdo->prepare('UPDATE proyectos SET visible = 1 - visible WHERE id = ?')->execute([(int)$_POST['id']]); fin('./?ok=1'); }
             if ($a === 'delete') {
                 $s = $pdo->prepare('SELECT * FROM proyectos WHERE id = ?'); $s->execute([(int)$_POST['id']]);
-                if ($r = $s->fetch()) { $pdo->prepare('DELETE FROM proyectos WHERE id = ?')->execute([$r['id']]); borrar_archivos($r); }
+                if ($r = $s->fetch()) { $pdo->prepare('DELETE FROM proyectos WHERE id = ?')->execute([$r['id']]); borrar_archivos($r, $pdo); }
                 fin('./?ok=1');
             }
             if ($a === 'reintentar') {
@@ -258,7 +253,7 @@ if ($post) {
                     if (!$cola) throw new RuntimeException('Elegí el archivo de video, o pasá a la opción «Link de Drive».');
                 } elseif ($fuente === 'drive') {
                     $drive = trim((string)($_POST['drive'] ?? ''));
-                    if (!drive_ok($drive)) throw new RuntimeException('Pegá un link de Google Drive válido (drive.google.com/file/d/…), compartido como «cualquier persona con el enlace».');
+                    if (!blens_drive_url_valida($drive, true)) throw new RuntimeException('Pegá un link de Google Drive válido (drive.google.com/file/d/…), compartido como «cualquier persona con el enlace».');
                 }
                 if ($t === '') {
                     $nombreArchivo = (string)($_FILES['mp4']['name'] ?? '');
@@ -275,8 +270,9 @@ if ($post) {
                 if ($old) {
                     $pdo->prepare('UPDATE proyectos SET titulo=?,cliente=?,categoria=?,descripcion=?,ancho=?,formato=?,orden=?,visible=?,servicios=?,detalle=?,resultado=?,cliente_id=? WHERE id=?')
                         ->execute([$t, $cli, $c, $d, $w, $formato, $o, $v, $sv, $dt, $rs, $clid ?: null, $id]);
-                    if ($pos) { $pdo->prepare('UPDATE proyectos SET poster=?, poster_auto=0 WHERE id=?')->execute([$pos, $id]); rmf($old['poster']); }
+                    if ($pos) { $pdo->prepare('UPDATE proyectos SET poster=?, poster_auto=0 WHERE id=?')->execute([$pos, $id]); blens_borrar_media_archivo($pdo, $old['poster']); }
                     if ($nuevo) {
+                        foreach (['video_mp4', 'video_webm', 'video_1080', 'video_480'] as $k) blens_borrar_media_archivo($pdo, $old[$k] ?? null);
                         $oc = (string)($old['cola_src'] ?? ''); if ($oc !== '' && str_starts_with($oc, COLA . '/')) { @unlink($oc); @unlink($oc . '.name'); }
                         $ods = drive_sidecar((string)($old['fuente_drive'] ?? '')); if ($ods) @unlink($ods);
                         $pdo->prepare("UPDATE proyectos SET estado='procesando', error_msg=NULL, fuente_drive=?, cola_src=?, poster_auto=? WHERE id=?")->execute([$drive, $cola, $pa, $id]);
@@ -544,8 +540,8 @@ if ($faltaCat) echo '<p class="err">Falta ampliar la columna de categorías a 40
 <label class="chk"><input type="checkbox" required>Confirmo que quiero eliminarlo y borrar sus archivos <span class="req">* obligatorio</span></label><button class="r">Eliminar</button></form><?php endif; ?>
 
 <?php else:
-if ($faltaMig) echo '<p class="err">Falta actualizar la base de datos. En el servidor corré:<br><code>' . $e(MIG_CMD) . '</code></p>';
-if ($faltaCat) echo '<p class="err">Falta ampliar la columna de categorías a 40 caracteres. En el servidor corré:<br><code>' . $e(MIG_CAT_CMD) . '</code></p>';
+if ($faltaMig) echo '<p class="err">' . $e(MIG_AVISO) . '</p>';
+if ($faltaCat) echo '<p class="err">' . $e(MIG_AVISO) . '</p>';
 $rows = $pdo->query('SELECT p.*, c.empresa AS cliente_nombre FROM proyectos p LEFT JOIN clientes c ON c.id=p.cliente_id ORDER BY p.orden ASC, p.id DESC')->fetchAll();
 $show = array_values(array_filter($rows, fn($r) => ($r['categoria'] ?? '') === 'showreel'));
 $port = array_values(array_filter($rows, fn($r) => ($r['categoria'] ?? '') !== 'showreel'));

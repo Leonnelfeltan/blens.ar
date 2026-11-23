@@ -21,11 +21,6 @@ function privado(?string $rel): ?string {
     if (!is_dir(PRIV)) @mkdir(PRIV, 0750, true);
     return @rename(__DIR__ . '/../' . $rel, PRIV . '/' . basename($rel)) ? basename($rel) : throw new RuntimeException('No se pudo guardar en la carpeta privada (permisos de /var/www/blens-private).');
 }
-function rmp(?string $f): void { if ($f) { @unlink(PRIV . '/' . basename($f)); @unlink(PRIV . '/' . basename($f) . '.name'); } }
-function drive_ok(string $u): bool {
-    if ($u === '') return true;
-    return str_starts_with($u, 'https://') && in_array(strtolower((string)parse_url($u, PHP_URL_HOST)), ['drive.google.com', 'docs.google.com', 'drive.usercontent.google.com'], true);
-}
 function loc_agenda_descripcion(array $l): string {
     $lineas = [];
     foreach ([
@@ -146,8 +141,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($a === 'del_cliente') {
             $q = $pdo->prepare('SELECT preview,poster FROM entregas WHERE cliente_id=?'); $q->execute([$c]);
-            foreach ($q as $r) { rmp($r['preview']); rmp($r['poster']); }
-            $q2 = $pdo->prepare('SELECT logo FROM clientes WHERE id=?'); $q2->execute([$c]); rmlogo((string)$q2->fetchColumn());
+            foreach ($q as $r) { blens_borrar_media_archivo($pdo, $r['preview']); blens_borrar_media_archivo($pdo, $r['poster']); }
+            $q2 = $pdo->prepare('SELECT logo FROM clientes WHERE id=?'); $q2->execute([$c]); blens_borrar_media_archivo($pdo, (string)$q2->fetchColumn());
             $pdo->prepare('DELETE FROM clientes WHERE id=?')->execute([$c]);
             $_SESSION['flash'] = 'Cliente eliminado.'; header('Location: clientes.php'); exit;
         }
@@ -171,8 +166,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($pj) { $q0 = $pdo->prepare('SELECT id FROM proyectos WHERE id=? AND (cliente_id=? OR cliente_id IS NULL)'); $q0->execute([$pj, $c]); if (!$q0->fetchColumn()) throw new RuntimeException('Ese proyecto no pertenece a este cliente.'); }
                 if ($hd === '' && !$pj) throw new RuntimeException('Pegá el link de Google Drive o vinculá un proyecto de la web.');
             }
-            if (($hd !== '' && !drive_ok($hd)) || ($k4 !== '' && !drive_ok($k4))) throw new RuntimeException('Los links tienen que ser de Google Drive y empezar con https://');
-            if ($portadaUrl !== '' && !drive_ok($portadaUrl)) throw new RuntimeException('La portada tiene que ser un link de Google Drive y empezar con https://');
+            if (($hd !== '' && !blens_drive_url_valida($hd)) || ($k4 !== '' && !blens_drive_url_valida($k4))) throw new RuntimeException('Los links tienen que ser de Google Drive y empezar con https://');
+            if ($portadaUrl !== '' && !blens_drive_url_valida($portadaUrl)) throw new RuntimeException('La portada tiene que ser un link de Google Drive y empezar con https://');
             if ($portadaUrl !== '') {
                 $portadaDriveId = blens_drive_id($portadaUrl);
                 if ($portadaDriveId === '') throw new RuntimeException('No pude leer el ID de la portada de Drive.');
@@ -208,10 +203,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($old) {
                 if ($tipoEn === 'fotos') {
                     $pdo->prepare('UPDATE entregas SET tipo=?,titulo=?,descripcion=?,link_hd=?,link_4k=?,preview=NULL,poster=NULL,proyecto_id=NULL,version_num=version_num+1 WHERE id=?')->execute([$tipoEn, $t, $d, $hd, $k4, $id]);
-                    rmp($old['preview']); rmp($old['poster']);
+                    blens_borrar_media_archivo($pdo, $old['preview']); blens_borrar_media_archivo($pdo, $old['poster']);
                 } else {
                     $pdo->prepare('UPDATE entregas SET tipo=?,titulo=?,descripcion=?,link_hd=?,link_4k=?,preview=COALESCE(?,preview),poster=COALESCE(?,poster),proyecto_id=?,version_num=version_num+1 WHERE id=?')->execute([$tipoEn, $t, $d, $hd, $k4, $mp4, $pos, $pj, $id]);
-                    if ($mp4) rmp($old['preview']); if ($pos) rmp($old['poster']);
+                    if ($mp4) blens_borrar_media_archivo($pdo, $old['preview']); if ($pos) blens_borrar_media_archivo($pdo, $old['poster']);
                 }
             } else {
                 $pdo->prepare('INSERT INTO entregas (cliente_id,tipo,titulo,descripcion,link_hd,link_4k,preview,poster,proyecto_id) VALUES (?,?,?,?,?,?,?,?,?)')->execute([$c, $tipoEn, $t, $d, $hd, $k4, $mp4, $pos, $pj]);
@@ -295,7 +290,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if ($a === 'del_entrega') {
             $s = $pdo->prepare('SELECT preview,poster FROM entregas WHERE id=? AND cliente_id=?'); $s->execute([(int)($_POST['id'] ?? 0), $c]);
-            if ($r = $s->fetch()) { rmp($r['preview']); rmp($r['poster']); $pdo->prepare('DELETE FROM entregas WHERE id=? AND cliente_id=?')->execute([(int)$_POST['id'], $c]); }
+            if ($r = $s->fetch()) { blens_borrar_media_archivo($pdo, $r['preview']); blens_borrar_media_archivo($pdo, $r['poster']); $pdo->prepare('DELETE FROM entregas WHERE id=? AND cliente_id=?')->execute([(int)$_POST['id'], $c]); }
             $_SESSION['flash'] = 'Entrega eliminada.'; header("Location: clientes.php?c=$c"); exit;
         }
     } catch (Throwable $x) {

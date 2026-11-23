@@ -291,6 +291,7 @@ function blens_wa_num(string $tel): ?string {
     if (str_starts_with($d, '00')) $d = substr($d, 2);
     if (str_starts_with($d, '54')) return str_starts_with($d, '549') ? $d : '549' . substr($d, 2);
     $d = ltrim($d, '0');
+    if (strlen($d) === 12) foreach (str_starts_with($d, '11') ? [2] : [3, 4] as $a) { if (substr($d, $a, 2) === '15') { $d = substr($d, 0, $a) . substr($d, $a + 2); break; } }
     return strlen($d) === 10 ? '549' . $d : null;
 }
 function blens_wa_numero(): string { return blens_wa_num((string)(blens_cfg()['wa_negocio'] ?? '')) ?? ''; }
@@ -390,6 +391,49 @@ function blens_modificar_col(PDO $p, string $tabla, string $col, string $def, ?s
     if (!$cambia) return;
     $p->exec("ALTER TABLE `$tabla` MODIFY COLUMN `$col` $def");
     blens_col_invalidate($tabla);
+}
+function blens_indice(PDO $p, string $tabla, string $nombre, string $columnas): void {
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $tabla) || !preg_match('/^[A-Za-z0-9_]+$/', $nombre)) return;
+    if (!preg_match('/^[A-Za-z0-9_]+(?:\s*,\s*[A-Za-z0-9_]+)*$/', $columnas)) return;
+    if (!blens_tabla_existe($p, $tabla)) return;
+    $cols = blens_columnas($p, $tabla);
+    foreach (array_map('trim', explode(',', $columnas)) as $col) if (!isset($cols[strtolower($col)])) return;
+    $q = $p->prepare('SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND INDEX_NAME=?');
+    $q->execute([$tabla, $nombre]);
+    if ((int)$q->fetchColumn() > 0) return;
+    $p->exec("CREATE INDEX `$nombre` ON `$tabla` ($columnas)");
+}
+function blens_borrar_media_archivo(PDO $pdo, ?string $archivo): void {
+    $rel = trim((string)$archivo);
+    if ($rel === '' || preg_match('~^https?://~i', $rel)) return;
+    $rel = ltrim(str_replace('\\', '/', $rel), '/');
+    if ($rel === '' || preg_match('~(^|/)\.\.(/|$)~', $rel)) return;
+    $publicRoot = realpath(__DIR__ . '/../public');
+    $candidatos = [];
+    if (preg_match('~^(media|uploads)/~i', $rel)) $candidatos[] = __DIR__ . '/../public/' . $rel;
+    if (defined('BLENS_ENTREGAS_DIR')) $candidatos[] = BLENS_ENTREGAS_DIR . '/' . basename($rel);
+    foreach (array_unique($candidatos) as $archivoAbs) {
+        $real = realpath($archivoAbs);
+        if (!$real || !is_file($real)) continue;
+        $dentroPublic = $publicRoot && str_starts_with($real, $publicRoot . DIRECTORY_SEPARATOR);
+        $dentroPrivado = defined('BLENS_ENTREGAS_DIR') && str_starts_with($real, rtrim(BLENS_ENTREGAS_DIR, '/\\') . DIRECTORY_SEPARATOR);
+        if (!$dentroPublic && !$dentroPrivado) continue;
+        @unlink($real); @unlink($real . '.name');
+    }
+    $refs = [
+        'proyectos' => ['video_mp4', 'video_webm', 'video_1080', 'video_480', 'poster', 'fuente_drive', 'cola_src'],
+        'entregas'  => ['preview', 'poster', 'link_hd', 'link_4k'],
+        'clientes'  => ['logo'],
+    ];
+    foreach ($refs as $tabla => $columnas) {
+        if (!blens_tabla_existe($pdo, $tabla)) continue;
+        $cols = blens_columnas($pdo, $tabla);
+        foreach ($columnas as $col) {
+            if (!isset($cols[strtolower($col)])) continue;
+            try { $pdo->prepare("UPDATE `$tabla` SET `$col`=NULL WHERE `$col`=?")->execute([$rel]); }
+            catch (Throwable $x) {}
+        }
+    }
 }
 function blens_migrar(?PDO $p = null): void {
     static $intentado = false; if ($intentado) return; $intentado = true;
@@ -599,13 +643,31 @@ function blens_migrar(?PDO $p = null): void {
                 blens_col_invalidate($tabla);
             }
         }
+        blens_indice($p, 'proyectos', 'idx_proy_visible_orden', 'visible, orden, id');
+        blens_indice($p, 'proyectos', 'idx_proy_cliente', 'cliente_id, id');
+        blens_indice($p, 'proyectos', 'idx_proy_entrega', 'entrega_id');
+        blens_indice($p, 'proyectos', 'idx_proy_estado', 'estado');
+        blens_indice($p, 'proyectos', 'idx_proy_categoria', 'categoria');
+        blens_indice($p, 'proyectos', 'idx_proy_creado', 'creado');
+        blens_indice($p, 'entregas', 'idx_ent_cliente', 'cliente_id, id');
+        blens_indice($p, 'entregas', 'idx_ent_proyecto', 'proyecto_id');
+        blens_indice($p, 'entregas', 'idx_ent_publicada', 'publicado_web, creado');
+        blens_indice($p, 'entregas', 'idx_ent_estado_cliente', 'estado_cliente');
+        blens_indice($p, 'clientes', 'idx_cli_activo', 'activo');
+        blens_indice($p, 'clientes', 'idx_cli_usuario', 'usuario');
+        blens_indice($p, 'trabajos', 'idx_trab_cliente_fecha', 'cliente_id, fecha');
+        blens_indice($p, 'trabajos', 'idx_trab_entrega', 'entrega_id');
+        blens_indice($p, 'trabajos', 'idx_trab_proyecto', 'proyecto_id');
+        blens_indice($p, 'consultas', 'idx_cons_respondida', 'respondida, creado');
     } catch (Throwable $e) { error_log('[blens migrar] ' . $e->getMessage()); }
     finally { if ($locked) { try { $p->query("SELECT RELEASE_LOCK('blens_migrar_v2')"); } catch (Throwable $x) {} } }
 }
 function blens_db(): PDO {
     static $p = null; if ($p) return $p; $c = blens_cfg();
-    return $p = new PDO('mysql:host=' . $c['db_host'] . ';dbname=' . $c['db_name'] . ';charset=utf8mb4', $c['db_user'], $c['db_pass'], [
+    $p = new PDO('mysql:host=' . $c['db_host'] . ';dbname=' . $c['db_name'] . ';charset=utf8mb4', $c['db_user'], $c['db_pass'], [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES => false, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+    $p->exec("SET time_zone='-03:00'");
+    return $p;
 }
 require_once __DIR__ . '/push.php';
 require_once __DIR__ . '/presupuestos.php';
@@ -622,6 +684,12 @@ function etapa_track_html(int $n): string {
         $h .= '<li class="' . $clase . '"' . $actualAttr . '><span>' . (int)$k . '</span><b>' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</b></li>';
     }
     return $h . '</ol>';
+}
+function blens_drive_url_valida(string $url, bool $requerirId = false): bool {
+    $url = trim($url);
+    if ($url === '') return true;
+    if (!str_starts_with($url, 'https://') || !in_array(strtolower((string)parse_url($url, PHP_URL_HOST)), ['drive.google.com', 'docs.google.com', 'drive.usercontent.google.com'], true)) return false;
+    return !$requerirId || blens_drive_id($url) !== '';
 }
 function blens_drive_id(string $url): string {
     $s = trim($url);

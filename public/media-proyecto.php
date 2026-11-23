@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require __DIR__ . '/../blens-config/bootstrap.php';
 header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: SAMEORIGIN');
 $id = (int)($_GET['id'] ?? 0);
 $tipo = ($_GET['t'] ?? 'v') === 'p' ? 'p' : 'v';
 if ($id <= 0) { http_response_code(404); exit; }
@@ -31,24 +32,28 @@ if ($tipo === 'p') {
         ];
         $rel = (string)blens_publicar_portada($db, $entrega, $id);
         $poster2 = blens_webp($rel);
+        if ($poster2 !== '' && blens_ruta_publica($poster2) !== '') $poster = $poster2;
         $abs = $poster2 !== '' ? blens_ruta_publica($poster2) : ($rel !== '' && is_file($rel) ? $rel : '');
     }
     if ($abs === '' || !is_file($abs)) {
         $driveId = blens_proyecto_drive_id($db, $id);
         if ($driveId !== '') {
+            $rel = 'uploads/proyectos/proyecto-' . $id . '-portada.jpg';
             $abs = blens_uploads_proyectos() . '/proyecto-' . $id . '-portada.jpg';
             if (!is_file($abs)) @blens_portada_drive_cachear($driveId, $abs);
+            if (is_file($abs)) $poster = $rel;
         }
     }
     if ($abs === '' || !is_file($abs)) { http_response_code(404); exit; }
     $mime = (string)(mime_content_type($abs) ?: 'image/jpeg');
     if (!str_starts_with($mime, 'image/')) $mime = 'image/jpeg';
-    blens_stream_archivo($abs, $mime);
+    $accel = preg_match('~^(uploads|media)/~i', $poster) ? blens_accel_ruta($poster) : '';
+    blens_stream_archivo($abs, $mime, null, $accel);
     exit;
 }
 
 $video = blens_video_local($r);
-if ($video !== '') { blens_stream_archivo(blens_ruta_publica($video), 'video/mp4'); exit; }
+if ($video !== '') { blens_stream_archivo(blens_ruta_publica($video), 'video/mp4', null, blens_accel_ruta($video)); exit; }
 $driveId = blens_proyecto_drive_id($db, $id);
 if ($driveId !== '') {
     blens_lanzar_cachear_drive($id);

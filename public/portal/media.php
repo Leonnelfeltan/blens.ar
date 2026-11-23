@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/../../blens-config/bootstrap.php';
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: SAMEORIGIN');
 session_name('blens_cliente'); session_start();
 $cid = (int)($_SESSION['cliente_id'] ?? $_SESSION['cid'] ?? 0);
 if (!$cid || !empty($_SESSION['forzar'])) { http_response_code(403); exit; }
@@ -16,10 +18,13 @@ if ($t === 'p') {
     if (!$path || !is_file($path)) { http_response_code(404); exit; }
     $mime = (string)(mime_content_type($path) ?: 'image/jpeg');
     if (!str_starts_with($mime, 'image/')) $mime = 'image/jpeg';
-    blens_stream_archivo($path, $mime);
+    $public = blens_ruta_publica($path);
+    blens_stream_archivo($path, $mime, null, $public !== '' ? blens_accel_ruta($public) : '');
     exit;
 }
 $f = (string)($r['preview'] ?? '');
 $path = $f !== '' ? BLENS_ENTREGAS_DIR . '/' . basename(str_replace('\\', '/', $f)) : '';
-if ($path === '' || !is_file($path)) { http_response_code(404); exit; }
-blens_stream_archivo($path, 'video/mp4');
+if ($path !== '' && is_file($path)) { blens_stream_archivo($path, 'video/mp4'); exit; }
+$drive = blens_drive_id((string)($r['link_hd'] ?? '')) ?: blens_drive_id((string)($r['link_4k'] ?? ''));
+if ($drive !== '' && blens_stream_drive($drive)) exit;
+http_response_code(404);

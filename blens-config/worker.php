@@ -37,20 +37,6 @@ function lanzar_entrega_ia(PDO $pdo, int $pid): void {
     } catch (Throwable $x) { error_log('[blens worker entrega vinculada] ' . $x->getMessage()); }
 }
 
-// Busca ffmpeg/ffprobe en el PATH, en rutas habituales o en una copia local (blens-private/bin).
-function ff_bin(string $name): string {
-    $env = getenv(strtoupper($name) . '_BIN');
-    if ($env && @is_file($env) && @is_executable($env)) return $env;
-    $o = []; $rc = 1; @exec('command -v ' . escapeshellarg($name) . ' 2>/dev/null', $o, $rc);
-    $c = trim((string)($o[0] ?? ''));
-    if ($rc === 0 && $c !== '') return $c;
-    foreach ([dirname(__DIR__, 2) . '/blens-private/bin', __DIR__ . '/bin', '/usr/local/bin', '/usr/bin', '/bin', '/snap/bin'] as $d) {
-        $p = $d . '/' . $name;
-        if (@is_file($p) && @is_executable($p)) return $p;
-    }
-    throw new RuntimeException("Falta $name en el servidor. Instalá FFmpeg con: sudo apt install ffmpeg");
-}
-
 function descargar_drive(string $url, string $dest): void {
     if (!preg_match('#/d/([A-Za-z0-9_-]{10,})#', $url, $m) && !preg_match('#[?&]id=([A-Za-z0-9_-]{10,})#', $url, $m)) throw new RuntimeException('No pude leer el ID del link de Drive.');
     $id = $m[1]; $jar = $dest . '.jar'; $u = 'https://drive.google.com/uc?export=download&id=' . $id; $ct = '';
@@ -256,7 +242,7 @@ if ($tipo === 'entrega') {
         if ($src) {
             $provisorio = titulo_provisorio((string)$e['titulo'], $e, $src);
             if ($forzar || $provisorio || trim((string)($e['descripcion'] ?? '')) === '') {
-                $ffmpeg = ff_bin('ffmpeg');
+                $ffmpeg = blens_ff_bin('ffmpeg');
                 $ia = ai_textos($src, $ffmpeg, ['tipo' => 'entrega', 'titulo' => (string)$e['titulo']]);
                 $titIa = ai_campo($ia, 'titulo', 120);
                 $desc = ai_campo($ia, 'descripcion', 4000);
@@ -299,7 +285,7 @@ if ($tipo === 'ia') {
             $src = $tmp;
         }
         if ($src) {
-            $ffmpeg = ff_bin('ffmpeg');
+            $ffmpeg = blens_ff_bin('ffmpeg');
             $provisorio = titulo_provisorio((string)$p['titulo'], $p, $src);
             $ia = ai_textos($src, $ffmpeg, [
                 'tipo' => 'proyecto',
@@ -342,7 +328,7 @@ try {
     if (!$src && $p['fuente_drive']) { $src = COLA . '/dl_' . bin2hex(random_bytes(6)) . '.bin'; $descargado = true; descargar_drive((string)$p['fuente_drive'], $src); }
     if (!$src) throw new RuntimeException('No hay un archivo de origen para procesar.');
 
-    $ffmpeg = ff_bin('ffmpeg'); $ffprobe = ff_bin('ffprobe');
+    $ffmpeg = blens_ff_bin('ffmpeg'); $ffprobe = blens_ff_bin('ffprobe');
 
     // 2) medidas del video (solo la pista de video: los videos sin audio también son válidos)
     $o = []; exec(escapeshellarg($ffprobe) . ' -v error -select_streams v:0 -show_entries stream=width,height -of json ' . escapeshellarg($src) . ' 2>&1', $o, $prc);

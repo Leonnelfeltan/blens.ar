@@ -1,8 +1,21 @@
 // Ajusta el reproductor de Drive al formato real del video (vertical u horizontal), usando la miniatura
 document.querySelectorAll('.dfr[data-did]').forEach(el => {
   const im = new Image(); im.referrerPolicy = 'no-referrer';
-  im.onload = () => { if (im.naturalWidth > 0 && im.naturalHeight > 0) el.style.aspectRatio = im.naturalWidth + ' / ' + im.naturalHeight; };
+  im.onload = () => {
+    if (im.naturalWidth <= 0 || im.naturalHeight <= 0) return;
+    el.classList.remove('ratio-wide', 'ratio-square');
+    const ratio = im.naturalWidth / im.naturalHeight;
+    if (ratio > 1.2) el.classList.add('ratio-wide');
+    else if (ratio >= 0.85) el.classList.add('ratio-square');
+  };
+  im.onerror = () => el.classList.remove('ratio-wide', 'ratio-square');
   im.src = 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(el.dataset.did) + '&sz=w800';
+  const v = el.querySelector('video');
+  if (!v) return;
+  const fail = () => el.classList.add('dfr-error');
+  v.addEventListener('error', fail, { once: true });
+  const source = v.querySelector('source');
+  if (source) source.addEventListener('error', fail, { once: true });
 });
 
 (function () {

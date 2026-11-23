@@ -30,7 +30,7 @@ $vence = date('d/m/Y', strtotime((string)$p['creado_en'] . ' +' . (int)$p['valid
 <div class="p-sheet">
     <div class="p-head">
         <div>
-            <img class="p-logo" loading="lazy" width="180" height="48" src="../assets/brand/blens_logo-horizontal_color_fondo-claro.png" alt="blens.ar">
+            <img class="p-logo" loading="lazy" width="180" height="48" src="../assets/brand/blens_logo-horizontal_color_fondo-oscuro.svg" alt="blens.ar">
             <p class="p-tag">Contenido audiovisual para empresas</p>
         </div>
         <div class="p-meta">

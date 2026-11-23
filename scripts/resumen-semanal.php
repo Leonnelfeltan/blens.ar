@@ -11,14 +11,15 @@ try {
     $hoy = new DateTimeImmutable('today');
     $desde = $hoy->modify('-6 days')->format('Y-m-d');
     $hasta = $hoy->format('Y-m-d');
-    $finAgenda = $hoy->modify('+6 days')->format('Y-m-d');
+    $finAgenda = $hoy->modify('+7 days')->format('Y-m-d');
+    $finCobrado = $hoy->modify('+1 day')->format('Y-m-d');
 
-    $s = $pdo->prepare("SELECT COALESCE(SUM(cantidad*monto_unit),0) FROM trabajos WHERE estado='cobrado' AND prueba=? AND fecha_pago BETWEEN ? AND ?");
-    $s->execute([modo_prueba($pdo), $desde, $hasta]);
+    $s = $pdo->prepare("SELECT COALESCE(SUM(cantidad*monto_unit),0) FROM trabajos WHERE estado='cobrado' AND prueba=? AND fecha_pago >= ? AND fecha_pago < ?");
+    $s->execute([modo_prueba($pdo), $desde, $finCobrado]);
     $cobrado = round((float)$s->fetchColumn(), 2);
     $pendiente = por_cobrar($pdo);
 
-    $s = $pdo->prepare("SELECT a.*, c.nombre AS cliente_nombre, c.empresa AS cliente_empresa FROM agenda a LEFT JOIN clientes c ON c.id=a.cliente_id WHERE a.completado=0 AND a.fecha BETWEEN ? AND ? ORDER BY a.fecha, a.hora IS NULL, a.hora, a.id");
+    $s = $pdo->prepare("SELECT a.*, c.nombre AS cliente_nombre, c.empresa AS cliente_empresa FROM agenda a LEFT JOIN clientes c ON c.id=a.cliente_id WHERE a.completado=0 AND a.fecha >= ? AND a.fecha < ? ORDER BY a.fecha, a.hora IS NULL, a.hora, a.id");
     $s->execute([$hasta, $finAgenda]);
     $eventos = $s->fetchAll();
     $proximo = '';
